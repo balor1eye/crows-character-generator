@@ -161,6 +161,16 @@
     state.esBonus.forEach(function (o) { if (o === 'stamina') s += 2; else if (o === 'mix') s += 1; });
     return s + characteristics().extraStamina;
   }
+  function curStamina() {
+    var m = staminaMax(), p = state.play.stamina;
+    return p === null ? m : Math.max(0, Math.min(m, p));
+  }
+  function adMax(card) {
+    var it = item(card.key), m = /Parry (\d+)/.exec(it.txt);
+    return it.ad || (m ? +m[1] : 0);
+  }
+  function adNow(card) { return Math.max(0, adMax(card) - (card.dmg || 0)); }
+  function woundCount() { return Object.keys(state.play.wounds).length; }
   function armorInfo() {
     var worn = null, shield = null;
     state.inv.forEach(function (c) {
@@ -240,10 +250,16 @@
   }
   function autoArrange() {
     // merge identical stacks first
-    var merged = {}, order = [];
-    state.inv.forEach(function (c) { if (!(c.key in merged)) { merged[c.key] = 0; order.push(c.key); } merged[c.key] += c.qty; });
+    var merged = {}, order = [], live = {};
+    state.inv.forEach(function (c) {
+      if (!(c.key in merged)) { merged[c.key] = 0; order.push(c.key); live[c.key] = liveProps(c, {}); }
+      merged[c.key] += c.qty;
+    });
     var cards = [];
-    order.forEach(function (k) { var q = merged[k], st = item(k).st; while (q > 0) { var n = Math.min(q, st); cards.push(newCard(k, n)); q -= n; } });
+    order.forEach(function (k) {
+      var q = merged[k], st = item(k).st, first = true;
+      while (q > 0) { var n = Math.min(q, st), nc = newCard(k, n); if (first) liveProps(live[k], nc); first = false; cards.push(nc); q -= n; }
+    });
     state.inv = cards;
     var occ = occupancy();
     function put(c, area, idx) { place(c, area, idx); occ = occupancy(); }
@@ -336,8 +352,30 @@
       name: '', player: '', feature: '', village: '', institution: '',
       coins: 0, coinDice: null, bgDice: null,
       txp: 0, esBonus: [], esAlloc: {}, charBonus: [], traits: [],
-      inv: [], connName: '', connRel: '', connBenefit: '', notes: '', pets: (b.pets || []).slice()
+      inv: [], connName: '', connRel: '', connBenefit: '', notes: '', pets: (b.pets || []).slice(),
+      play: freshPlay()
     };
+  }
+  // Live, at-the-table state (Play mode). stamina null = at maximum; wounds maps backpack slot index -> 'w' or 's' (starvation).
+  function freshPlay() {
+    return { stamina: null, cruelty: 0, conds: {}, spent: {}, temp: {}, wounds: {}, dt: 0, miasma: false,
+      pendingXP: 0, xpLog: [], log: [], magic: {}, petStam: {} };
+  }
+  function normalizePlay(p) {
+    var base = freshPlay();
+    if (!p || typeof p !== 'object') return base;
+    Object.keys(base).forEach(function (k) {
+      if (base[k] === null) return;
+      if (!(k in p) || typeof p[k] !== typeof base[k] || Array.isArray(p[k]) !== Array.isArray(base[k]) || p[k] === null) p[k] = base[k];
+    });
+    if (p.stamina !== null && typeof p.stamina !== 'number') p.stamina = null;
+    return p;
+  }
+  // Per-card live values kept across saves: ud = usage dice left, dmg = AD lost, ammo = shots left.
+  var CARD_LIVE = ['ud', 'dmg', 'ammo'];
+  function liveProps(src, dst) {
+    CARD_LIVE.forEach(function (k) { if (typeof src[k] === 'number' && isFinite(src[k])) dst[k] = Math.max(0, Math.floor(src[k])); });
+    return dst;
   }
   function rollCoins() {
     var r = [d(6), d(6), d(6)];
@@ -393,8 +431,9 @@
     var base = freshState(s.bg);
     Object.keys(base).forEach(function (k) { if (!(k in s)) s[k] = base[k]; });
     s.inv = s.inv.filter(function (c) { return c && CROWS.ITEMS[c.key]; }).map(function (c) {
-      return { id: uid++, key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 };
+      return liveProps(c, { id: uid++, key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 });
     });
+    s.play = normalizePlay(s.play);
     state = s;
     syncBonusArrays();
     pruneTraits();
@@ -421,6 +460,7 @@
     renderVillage();
     renderAdvance();
     renderSummary();
+    if (window.CrowsPlay) window.CrowsPlay.render();
     save();
   }
 
@@ -795,11 +835,18 @@
     v['Name'] = state.name; v['Background'] = b.name; v['Player'] = state.player; v['Feature'] = state.feature;
     v['Village'] = state.village;
     CROWS.CHARS.forEach(function (c) { v[c] = String(ch[c]); });
-    v['Stamina Max'] = String(staminaMax()); v['Stamina Current'] = String(staminaMax());
+    var pl = state.play;
+    v['Stamina Max'] = String(staminaMax()); v['Stamina Current'] = String(curStamina());
     v['Speed'] = String(CROWS.BASE_SPEED);
-    v['Armor AD'] = ai.total ? ai.total + (ai.worn && ai.shield ? '\n(' + ai.text + ')' : '') : '0';
-    v['Coins'] = String(state.coins); v['Cruelty'] = '0';
+    var adParts = [ai.worn, ai.shield].filter(Boolean).map(function (c) { return adNow(c) + (c.dmg ? '/' + adMax(c) : '') + ' ' + (c === ai.shield ? 'shield' : c.key.replace(' Armor', '').toLowerCase()); });
+    var adTotal = [ai.worn, ai.shield].filter(Boolean).reduce(function (s, c) { return s + adNow(c); }, 0);
+    v['Armor AD'] = adParts.length ? adTotal + (adParts.length > 1 || adTotal !== ai.total ? '\n(' + adParts.join(' + ') + ')' : '') : '0';
+    v['Coins'] = String(state.coins); v['Cruelty'] = String(pl.cruelty);
+    Object.keys(pl.conds).forEach(function (k) { if (pl.conds[k]) v['Cond ' + k] = true; });
     Object.keys(uses).forEach(function (k) { if (uses[k]) v['Exp ' + k] = String(uses[k]); });
+    Object.keys(pl.spent).forEach(function (k) { for (var i = 1; i <= pl.spent[k]; i++) v['Exp ' + k + ' Spent ' + i] = true; });
+    Object.keys(pl.wounds).forEach(function (i) { v['Wound ' + (+i + 1)] = true; });
+    Object.keys(pl.magic).forEach(function (k) { if (pl.magic[k]) v['Slot ' + k] = pl.magic[k]; });
     v['Max Uses'] = String(maxUses(state.txp));
     var spent = traitXP();
     v['TXP'] = fmt(state.txp); v['XP Spent'] = fmt(spent); v['XP Unspent'] = fmt(state.txp - spent);
@@ -811,7 +858,10 @@
       return t ? t.n + ' (' + p[0] + (i === 0 ? ', background' : ', ' + fmt(t.x) + ' XP') + '): ' + t.d : id;
     });
     v['Traits'] = traits.join('\n');
-    var pets = state.pets.map(function (p) { return CROWS.PETS[p] || p; });
+    var pets = state.pets.map(function (p, i) {
+      var st = pl.petStam[i];
+      return (CROWS.PETS[p] || p) + (typeof st === 'number' ? ' [Stamina now ' + st + ']' : '');
+    });
     v['Pets'] = pets.join('\n') || '';
     v['Connection Name'] = state.connName; v['Connection Relationship'] = state.connRel;
     var ben = CROWS.CONNECTION_BENEFITS.filter(function (x) { return x[0] === state.connBenefit; })[0];
@@ -820,6 +870,7 @@
     if (state.notes.trim()) notes.push(state.notes.trim());
     var inst = ['Blacksmith', 'Crypt', 'General Store', 'Inn', 'Temple'].concat(state.institution ? [state.institution] : []);
     notes.push('Village institutions (1st level): ' + inst.join(', ') + '. Prosperity 0.');
+    if (pl.pendingXP) notes.push('XP awaiting a rest: ' + fmt(pl.pendingXP) + '.');
     if (state.esBonus.length) notes.push('E&S bonuses: ' + state.esBonus.map(function (o) { return esLabels[o]; }).join('; ') + '.');
     var loose = state.inv.filter(function (c) { return c.area === 'none'; });
     if (loose.length) notes.push('Left at home: ' + loose.map(function (c) { return c.key + (c.qty > 1 ? ' x' + c.qty : ''); }).join(', ') + '.');
@@ -858,6 +909,7 @@
             }
             var cb = form.createCheckBox(f.name);
             cb.addToPage(page, { x: rect.x, y: rect.y, width: rect.width, height: rect.height, borderWidth: 0.75, borderColor: P.rgb(0.12, 0.11, 0.12), backgroundColor: P.rgb(1, 1, 1) });
+            if (vals[f.name] === true) cb.check();
             return;
           }
           var tf = form.createTextField(f.name);
@@ -982,7 +1034,7 @@
     });
     $('btn-save').addEventListener('click', function () {
       var data = clone(state);
-      data.inv = data.inv.map(function (c) { return { key: c.key, qty: c.qty, area: c.area, idx: c.idx }; });
+      data.inv = data.inv.map(function (c) { return liveProps(c, { key: c.key, qty: c.qty, area: c.area, idx: c.idx }); });
       download(JSON.stringify(data, null, 2), fileBase() + '_Crows_Character.json', 'application/json');
     });
     $('file-load').addEventListener('change', function () {
@@ -1007,7 +1059,15 @@
   // Expose a tiny API for testing/debugging.
   window.CrowsApp = {
     get state() { return state; }, fieldValues: function () { return fieldValues(); }, buildPdf: buildPdf,
-    randomCrow: function () { randomCrow(); render(); }, setBackground: function (i) { setBackground(i, true); render(); }
+    randomCrow: function () { randomCrow(); render(); }, setBackground: function (i) { setBackground(i, true); render(); },
+    // Shared with play.js (Play mode).
+    core: {
+      render: render, save: save, toast: toast, el: el, $: $, d: d, fmt: fmt, signed: signed, ordinal: ordinal, DIE: DIE,
+      item: item, bg: bg, characteristics: characteristics, staminaMax: staminaMax, curStamina: curStamina,
+      expertiseUses: expertiseUses, maxUses: maxUses, armorInfo: armorInfo, adMax: adMax, adNow: adNow,
+      woundCount: woundCount, occupancy: occupancy, cardById: cardById, spanOf: spanOf, traitXP: traitXP,
+      esBonusCount: esBonusCount, charBonusCount: charBonusCount, usePool: usePool, allocTotal: allocTotal
+    }
   };
 
   function init() {

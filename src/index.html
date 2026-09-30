@@ -13,9 +13,13 @@
       <span class="brand-mark">CROWS</span>
       <span class="brand-sub">Playtest 2 Character Generator</span>
     </div>
+    <div class="mode-tabs" role="group" aria-label="Mode">
+      <button type="button" id="tab-build" aria-pressed="true">Build</button>
+      <button type="button" id="tab-play" aria-pressed="false">Play</button>
+    </div>
     <nav class="actions">
-      <button type="button" id="btn-random" class="btn">Random crow</button>
-      <button type="button" id="btn-new" class="btn btn-ghost">Start over</button>
+      <button type="button" id="btn-random" class="btn build-only">Random crow</button>
+      <button type="button" id="btn-new" class="btn btn-ghost build-only">Start over</button>
       <button type="button" id="btn-save" class="btn btn-ghost">Save file</button>
       <label class="btn btn-ghost file-btn">Load file<input type="file" id="file-load" accept=".json,application/json"></label>
       <button type="button" id="btn-pdf" class="btn btn-primary">Download PDF</button>
@@ -171,13 +175,26 @@
     </section>
   </div>
 
+  <div class="play-main" id="play">
+    <section class="card" id="play-vitals"></section>
+    <section class="card" id="play-time"></section>
+    <section class="card" id="play-attacks"></section>
+    <section class="card" id="play-exp"></section>
+    <section class="card" id="play-items"></section>
+    <section class="card" id="play-advance"></section>
+    <section class="card" id="play-gear"></section>
+    <section class="card" id="play-log"></section>
+  </div>
+
   <aside class="summary" id="summary">
     <div class="summary-inner">
       <h2>Crow</h2>
       <div id="summary-body"></div>
-      <button type="button" class="btn btn-primary wide" id="btn-pdf-2">Download fillable PDF</button>
-      <p class="fine">The PDF has a character record, the official inventory sheet with every slot filled in, and a 3-page cheat sheet. Every field stays editable.</p>
-      <div id="checklist" class="checklist"></div>
+      <p class="play-only play-sum" id="play-sum"></p>
+      <div class="play-only play-side" id="play-side"></div>
+      <button type="button" class="btn btn-primary wide build-only" id="btn-pdf-2">Download fillable PDF</button>
+      <p class="fine build-only">The PDF has a character record, the official inventory sheet with every slot filled in, and a 3-page cheat sheet. Every field stays editable. In Play mode it also records current Stamina, AD, wounds, conditions, cruelty, and spent expertise uses.</p>
+      <div id="checklist" class="checklist build-only"></div>
     </div>
   </aside>
 </main>
@@ -193,5 +210,6 @@
 <script src="game-data.js"></script>
 <script src="traits-data.js"></script>
 <script src="app.js"></script>
+<script src="play.js"></script>
 </body>
 </html>

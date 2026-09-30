@@ -219,3 +219,103 @@ textarea { width: 100%; resize: vertical; }
   .masthead, .summary, .footer, .add-item, .inv-tools, .tree-browser { display: none; }
 }
 .coins { display: flex; gap: .6rem; align-items: flex-end; flex-wrap: wrap; }
+
+/* ---------------------------------------------------------------- Mode tabs + Play mode */
+.mode-tabs { display: inline-flex; border: 1px solid #5a5354; border-radius: 6px; overflow: hidden; }
+.mode-tabs button { background: transparent; color: #f4efe6; border: 0; padding: .4rem .95rem; cursor: pointer; font-weight: 600; min-height: 36px; }
+.mode-tabs button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.mode-tabs button:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
+.play-main { display: none; flex-direction: column; gap: 1rem; min-width: 0; }
+.play-only { display: none; }
+body[data-mode="play"] .steps, body[data-mode="play"] .build-only { display: none; }
+body[data-mode="play"] .play-main { display: flex; }
+body[data-mode="play"] .play-only { display: block; }
+.play-main h3 { font-family: var(--font); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 1rem 0 .4rem; }
+.muted { color: var(--muted); }
+.spacer { flex: 1; }
+input.mini { width: 5.5rem; padding: .35rem .45rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-height: 32px; }
+.check { display: inline-flex; align-items: center; gap: .3rem; font-size: .88rem; cursor: pointer; }
+.vital-top { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: .7rem; }
+.vital-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .6rem; margin-top: .6rem; }
+.vital { border: 1px solid var(--line); border-radius: 6px; padding: .45rem .6rem; background: var(--slot); min-width: 0; }
+.vital .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+.vital .val b { font: bold 1.6rem/1.1 var(--serif); }
+.vital .val span { color: var(--muted); }
+.vital.big .val b { font-size: 2.3rem; }
+.vital.danger { border-color: var(--bad); }
+.meter { height: 8px; background: var(--soft); border-radius: 4px; overflow: hidden; margin: .3rem 0 .4rem; }
+.meter span { display: block; height: 100%; background: var(--ok); transition: width .2s; }
+.pm-row { display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; margin-top: .3rem; }
+.pm-row .btn { min-width: 34px; }
+.ad-row { display: flex; align-items: center; gap: .4rem; margin-top: .3rem; font-size: .9rem; }
+.ad-row .ad-name { flex: 1; min-width: 0; }
+.conds { display: flex; flex-wrap: wrap; gap: .4rem; }
+.cond { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: .3rem .8rem; cursor: pointer; min-height: 34px; }
+.cond.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.dmg-row { align-items: flex-end; }
+.wound-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.wslot { border: 1px solid var(--ink); border-radius: 4px; background: var(--slot); padding: 3px 5px; text-align: left; cursor: pointer; min-height: 54px; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.wslot .n { font-size: .68rem; font-weight: 700; color: var(--muted); }
+.wslot .it { font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wslot .wk { font-size: .7rem; font-weight: 700; color: var(--bad); text-transform: uppercase; }
+.wslot.hurt { background: color-mix(in srgb, var(--bad) 16%, var(--slot)); border-color: var(--bad); }
+.wslot.starve .wk { color: var(--warn); }
+.dt-row { align-items: center; }
+.rest-box { border: 1px dashed var(--line); border-radius: 6px; padding: .6rem .7rem; }
+.rest-box .checks { gap: .4rem 1.2rem; margin: .5rem 0; }
+.rest-box select, .play-main select { padding: .35rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-height: 34px; max-width: 100%; }
+.play-exp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1.2rem; }
+.play-exp .row-r { display: inline-flex; gap: .5rem; align-items: center; }
+.tag { color: var(--accent); font-weight: 600; }
+.upip { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--ink); background: var(--ink); cursor: pointer; padding: 0; }
+.upip.used { background: transparent; border-style: dashed; opacity: .6; }
+.atk-list { display: flex; flex-direction: column; gap: .45rem; }
+.atk { display: flex; gap: .7rem; align-items: center; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 6px; padding: .45rem .6rem; background: var(--slot); }
+.atk-main { flex: 1; min-width: 0; }
+.warnish { color: var(--warn); }
+.item-list { display: flex; flex-direction: column; }
+.item-row { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: .5rem; align-items: center; padding: .3rem 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.item-row .loc { color: var(--muted); font-size: .78rem; }
+.item-row .ctl { display: flex; gap: .3rem; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.ud { font-size: .78rem; font-weight: 700; background: var(--soft); border-radius: 999px; padding: .1rem .5rem; }
+.xp-hist { font-size: .88rem; display: flex; flex-direction: column; gap: .15rem; }
+.magic-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem .8rem; }
+.magic-grid input { font-weight: normal; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-height: 34px; width: 100%; }
+.play-log { list-style: none; padding: 0; margin: 0 0 .6rem; max-height: 360px; overflow: auto; font-size: .86rem; }
+.play-log li { padding: .25rem 0; border-bottom: 1px solid var(--line); }
+.play-sum { font-size: .85rem; margin: .4rem 0 0; }
+.play-side { margin-top: .8rem; border-top: 1px solid var(--line); padding-top: .6rem; }
+.play-side h3 { margin-bottom: .4rem; }
+.seg { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-right: 1px solid var(--line); background: var(--card); padding: .35rem .1rem; font-size: .74rem; cursor: pointer; min-height: 32px; }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: var(--ink); color: var(--paper); font-weight: 700; }
+.side-mod { align-items: flex-end; margin: .5rem 0; flex-wrap: wrap; }
+.side-btns { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem; }
+.side-btns .btn-primary { grid-column: span 2; }
+.roll-result { margin-top: .7rem; border: 1px solid var(--line); border-radius: 6px; padding: .55rem .65rem; background: var(--slot); }
+.rr-label { font-weight: 700; }
+.rr-line { font-size: 1.05rem; }
+.rr-total { font: bold 1.5rem var(--serif); }
+.tier { display: inline-block; margin: .3rem 0; padding: .1rem .6rem; border-radius: 999px; font-weight: 700; color: #fff; }
+.tier.t1 { background: var(--bad); } .tier.t2 { background: var(--warn); } .tier.t3 { background: var(--ok); }
+.rr-dmg { font-weight: 700; margin: .2rem 0; }
+.roll-result .btn { margin-top: .4rem; }
+.exp-spend { margin-top: .5rem; align-items: center; flex-wrap: wrap; }
+.exp-spend select { flex: 1; min-width: 0; padding: .3rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-height: 32px; }
+@media (max-width: 1000px) {
+  body[data-mode="play"] .summary .play-side { display: block; }
+}
+@media (max-width: 700px) {
+  .vital-top { grid-template-columns: 1fr; }
+  .vital-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .play-exp, .magic-grid { grid-template-columns: 1fr; }
+  .item-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .item-row .loc { grid-column: 1 / -1; }
+  .wslot .it { font-size: .68rem; }
+}
+body[data-mode="play"] .summary .play-side .fine { display: revert; }
+@media (min-width: 1001px) {
+  body[data-mode="play"] .summary-inner { max-height: calc(100vh - 92px); overflow: auto; }
+}
+.play-main .field input.mini, .play-side .field input.mini { width: 5.5rem; }

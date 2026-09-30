@@ -227,6 +227,106 @@ textarea { width: 100%; resize: vertical; }
 }
 .coins { display: flex; gap: .6rem; align-items: flex-end; flex-wrap: wrap; }
 
+/* ---------------------------------------------------------------- Mode tabs + Play mode */
+.mode-tabs { display: inline-flex; border: 1px solid #5a5354; border-radius: 6px; overflow: hidden; }
+.mode-tabs button { background: transparent; color: #f4efe6; border: 0; padding: .4rem .95rem; cursor: pointer; font-weight: 600; min-height: 36px; }
+.mode-tabs button[aria-pressed="true"] { background: var(--accent); color: #fff; }
+.mode-tabs button:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
+.play-main { display: none; flex-direction: column; gap: 1rem; min-width: 0; }
+.play-only { display: none; }
+body[data-mode="play"] .steps, body[data-mode="play"] .build-only { display: none; }
+body[data-mode="play"] .play-main { display: flex; }
+body[data-mode="play"] .play-only { display: block; }
+.play-main h3 { font-family: var(--font); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 1rem 0 .4rem; }
+.muted { color: var(--muted); }
+.spacer { flex: 1; }
+input.mini { width: 5.5rem; padding: .35rem .45rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-height: 32px; }
+.check { display: inline-flex; align-items: center; gap: .3rem; font-size: .88rem; cursor: pointer; }
+.vital-top { display: grid; grid-template-columns: minmax(0, 1.2fr) minmax(0, 1fr); gap: .7rem; }
+.vital-grid { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: .6rem; margin-top: .6rem; }
+.vital { border: 1px solid var(--line); border-radius: 6px; padding: .45rem .6rem; background: var(--slot); min-width: 0; }
+.vital .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+.vital .val b { font: bold 1.6rem/1.1 var(--serif); }
+.vital .val span { color: var(--muted); }
+.vital.big .val b { font-size: 2.3rem; }
+.vital.danger { border-color: var(--bad); }
+.meter { height: 8px; background: var(--soft); border-radius: 4px; overflow: hidden; margin: .3rem 0 .4rem; }
+.meter span { display: block; height: 100%; background: var(--ok); transition: width .2s; }
+.pm-row { display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; margin-top: .3rem; }
+.pm-row .btn { min-width: 34px; }
+.ad-row { display: flex; align-items: center; gap: .4rem; margin-top: .3rem; font-size: .9rem; }
+.ad-row .ad-name { flex: 1; min-width: 0; }
+.conds { display: flex; flex-wrap: wrap; gap: .4rem; }
+.cond { border: 1px solid var(--line); background: var(--card); border-radius: 999px; padding: .3rem .8rem; cursor: pointer; min-height: 34px; }
+.cond.on { background: var(--accent); border-color: var(--accent); color: #fff; font-weight: 600; }
+.dmg-row { align-items: flex-end; }
+.wound-grid { display: grid; grid-template-columns: repeat(5, minmax(0, 1fr)); gap: 5px; }
+.wslot { border: 1px solid var(--ink); border-radius: 4px; background: var(--slot); padding: 3px 5px; text-align: left; cursor: pointer; min-height: 54px; display: flex; flex-direction: column; gap: 1px; min-width: 0; }
+.wslot .n { font-size: .68rem; font-weight: 700; color: var(--muted); }
+.wslot .it { font-size: .78rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.wslot .wk { font-size: .7rem; font-weight: 700; color: var(--bad); text-transform: uppercase; }
+.wslot.hurt { background: color-mix(in srgb, var(--bad) 16%, var(--slot)); border-color: var(--bad); }
+.wslot.starve .wk { color: var(--warn); }
+.dt-row { align-items: center; }
+.rest-box { border: 1px dashed var(--line); border-radius: 6px; padding: .6rem .7rem; }
+.rest-box .checks { gap: .4rem 1.2rem; margin: .5rem 0; }
+.rest-box select, .play-main select { padding: .35rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-height: 34px; max-width: 100%; }
+.play-exp { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 0 1.2rem; }
+.play-exp .row-r { display: inline-flex; gap: .5rem; align-items: center; }
+.tag { color: var(--accent); font-weight: 600; }
+.upip { width: 20px; height: 20px; border-radius: 50%; border: 2px solid var(--ink); background: var(--ink); cursor: pointer; padding: 0; }
+.upip.used { background: transparent; border-style: dashed; opacity: .6; }
+.atk-list { display: flex; flex-direction: column; gap: .45rem; }
+.atk { display: flex; gap: .7rem; align-items: center; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 6px; padding: .45rem .6rem; background: var(--slot); }
+.atk-main { flex: 1; min-width: 0; }
+.warnish { color: var(--warn); }
+.item-list { display: flex; flex-direction: column; }
+.item-row { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: .5rem; align-items: center; padding: .3rem 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
+.item-row .loc { color: var(--muted); font-size: .78rem; }
+.item-row .ctl { display: flex; gap: .3rem; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
+.ud { font-size: .78rem; font-weight: 700; background: var(--soft); border-radius: 999px; padding: .1rem .5rem; }
+.xp-hist { font-size: .88rem; display: flex; flex-direction: column; gap: .15rem; }
+.magic-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: .5rem .8rem; }
+.magic-grid input { font-weight: normal; padding: .4rem .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-height: 34px; width: 100%; }
+.play-log { list-style: none; padding: 0; margin: 0 0 .6rem; max-height: 360px; overflow: auto; font-size: .86rem; }
+.play-log li { padding: .25rem 0; border-bottom: 1px solid var(--line); }
+.play-sum { font-size: .85rem; margin: .4rem 0 0; }
+.play-side { margin-top: .8rem; border-top: 1px solid var(--line); padding-top: .6rem; }
+.play-side h3 { margin-bottom: .4rem; }
+.seg { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
+.seg button { border: 0; border-right: 1px solid var(--line); background: var(--card); padding: .35rem .1rem; font-size: .74rem; cursor: pointer; min-height: 32px; }
+.seg button:last-child { border-right: 0; }
+.seg button.on { background: var(--ink); color: var(--paper); font-weight: 700; }
+.side-mod { align-items: flex-end; margin: .5rem 0; flex-wrap: wrap; }
+.side-btns { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem; }
+.side-btns .btn-primary { grid-column: span 2; }
+.roll-result { margin-top: .7rem; border: 1px solid var(--line); border-radius: 6px; padding: .55rem .65rem; background: var(--slot); }
+.rr-label { font-weight: 700; }
+.rr-line { font-size: 1.05rem; }
+.rr-total { font: bold 1.5rem var(--serif); }
+.tier { display: inline-block; margin: .3rem 0; padding: .1rem .6rem; border-radius: 999px; font-weight: 700; color: #fff; }
+.tier.t1 { background: var(--bad); } .tier.t2 { background: var(--warn); } .tier.t3 { background: var(--ok); }
+.rr-dmg { font-weight: 700; margin: .2rem 0; }
+.roll-result .btn { margin-top: .4rem; }
+.exp-spend { margin-top: .5rem; align-items: center; flex-wrap: wrap; }
+.exp-spend select { flex: 1; min-width: 0; padding: .3rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-height: 32px; }
+@media (max-width: 1000px) {
+  body[data-mode="play"] .summary .play-side { display: block; }
+}
+@media (max-width: 700px) {
+  .vital-top { grid-template-columns: 1fr; }
+  .vital-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  .play-exp, .magic-grid { grid-template-columns: 1fr; }
+  .item-row { grid-template-columns: minmax(0, 1fr) auto; }
+  .item-row .loc { grid-column: 1 / -1; }
+  .wslot .it { font-size: .68rem; }
+}
+body[data-mode="play"] .summary .play-side .fine { display: revert; }
+@media (min-width: 1001px) {
+  body[data-mode="play"] .summary-inner { max-height: calc(100vh - 92px); overflow: auto; }
+}
+.play-main .field input.mini, .play-side .field input.mini { width: 5.5rem; }
+
 </style>
 </head>
 <body>
@@ -236,9 +336,13 @@ textarea { width: 100%; resize: vertical; }
       <span class="brand-mark">CROWS</span>
       <span class="brand-sub">Playtest 2 Character Generator</span>
     </div>
+    <div class="mode-tabs" role="group" aria-label="Mode">
+      <button type="button" id="tab-build" aria-pressed="true">Build</button>
+      <button type="button" id="tab-play" aria-pressed="false">Play</button>
+    </div>
     <nav class="actions">
-      <button type="button" id="btn-random" class="btn">Random crow</button>
-      <button type="button" id="btn-new" class="btn btn-ghost">Start over</button>
+      <button type="button" id="btn-random" class="btn build-only">Random crow</button>
+      <button type="button" id="btn-new" class="btn btn-ghost build-only">Start over</button>
       <button type="button" id="btn-save" class="btn btn-ghost">Save file</button>
       <label class="btn btn-ghost file-btn">Load file<input type="file" id="file-load" accept=".json,application/json"></label>
       <button type="button" id="btn-pdf" class="btn btn-primary">Download PDF</button>
@@ -394,13 +498,26 @@ textarea { width: 100%; resize: vertical; }
     </section>
   </div>
 
+  <div class="play-main" id="play">
+    <section class="card" id="play-vitals"></section>
+    <section class="card" id="play-time"></section>
+    <section class="card" id="play-attacks"></section>
+    <section class="card" id="play-exp"></section>
+    <section class="card" id="play-items"></section>
+    <section class="card" id="play-advance"></section>
+    <section class="card" id="play-gear"></section>
+    <section class="card" id="play-log"></section>
+  </div>
+
   <aside class="summary" id="summary">
     <div class="summary-inner">
       <h2>Crow</h2>
       <div id="summary-body"></div>
-      <button type="button" class="btn btn-primary wide" id="btn-pdf-2">Download fillable PDF</button>
-      <p class="fine">The PDF has a character record, the official inventory sheet with every slot filled in, and a 3-page cheat sheet. Every field stays editable.</p>
-      <div id="checklist" class="checklist"></div>
+      <p class="play-only play-sum" id="play-sum"></p>
+      <div class="play-only play-side" id="play-side"></div>
+      <button type="button" class="btn btn-primary wide build-only" id="btn-pdf-2">Download fillable PDF</button>
+      <p class="fine build-only">The PDF has a character record, the official inventory sheet with every slot filled in, and a 3-page cheat sheet. Every field stays editable. In Play mode it also records current Stamina, AD, wounds, conditions, cruelty, and spent expertise uses.</p>
+      <div id="checklist" class="checklist build-only"></div>
     </div>
   </aside>
 </main>
@@ -6794,6 +6911,16 @@ var CROWS_TRAIT_TREES = [
     state.esBonus.forEach(function (o) { if (o === 'stamina') s += 2; else if (o === 'mix') s += 1; });
     return s + characteristics().extraStamina;
   }
+  function curStamina() {
+    var m = staminaMax(), p = state.play.stamina;
+    return p === null ? m : Math.max(0, Math.min(m, p));
+  }
+  function adMax(card) {
+    var it = item(card.key), m = /Parry (\d+)/.exec(it.txt);
+    return it.ad || (m ? +m[1] : 0);
+  }
+  function adNow(card) { return Math.max(0, adMax(card) - (card.dmg || 0)); }
+  function woundCount() { return Object.keys(state.play.wounds).length; }
   function armorInfo() {
     var worn = null, shield = null;
     state.inv.forEach(function (c) {
@@ -6873,10 +7000,16 @@ var CROWS_TRAIT_TREES = [
   }
   function autoArrange() {
     // merge identical stacks first
-    var merged = {}, order = [];
-    state.inv.forEach(function (c) { if (!(c.key in merged)) { merged[c.key] = 0; order.push(c.key); } merged[c.key] += c.qty; });
+    var merged = {}, order = [], live = {};
+    state.inv.forEach(function (c) {
+      if (!(c.key in merged)) { merged[c.key] = 0; order.push(c.key); live[c.key] = liveProps(c, {}); }
+      merged[c.key] += c.qty;
+    });
     var cards = [];
-    order.forEach(function (k) { var q = merged[k], st = item(k).st; while (q > 0) { var n = Math.min(q, st); cards.push(newCard(k, n)); q -= n; } });
+    order.forEach(function (k) {
+      var q = merged[k], st = item(k).st, first = true;
+      while (q > 0) { var n = Math.min(q, st), nc = newCard(k, n); if (first) liveProps(live[k], nc); first = false; cards.push(nc); q -= n; }
+    });
     state.inv = cards;
     var occ = occupancy();
     function put(c, area, idx) { place(c, area, idx); occ = occupancy(); }
@@ -6969,8 +7102,30 @@ var CROWS_TRAIT_TREES = [
       name: '', player: '', feature: '', village: '', institution: '',
       coins: 0, coinDice: null, bgDice: null,
       txp: 0, esBonus: [], esAlloc: {}, charBonus: [], traits: [],
-      inv: [], connName: '', connRel: '', connBenefit: '', notes: '', pets: (b.pets || []).slice()
+      inv: [], connName: '', connRel: '', connBenefit: '', notes: '', pets: (b.pets || []).slice(),
+      play: freshPlay()
     };
+  }
+  // Live, at-the-table state (Play mode). stamina null = at maximum; wounds maps backpack slot index -> 'w' or 's' (starvation).
+  function freshPlay() {
+    return { stamina: null, cruelty: 0, conds: {}, spent: {}, temp: {}, wounds: {}, dt: 0, miasma: false,
+      pendingXP: 0, xpLog: [], log: [], magic: {}, petStam: {} };
+  }
+  function normalizePlay(p) {
+    var base = freshPlay();
+    if (!p || typeof p !== 'object') return base;
+    Object.keys(base).forEach(function (k) {
+      if (base[k] === null) return;
+      if (!(k in p) || typeof p[k] !== typeof base[k] || Array.isArray(p[k]) !== Array.isArray(base[k]) || p[k] === null) p[k] = base[k];
+    });
+    if (p.stamina !== null && typeof p.stamina !== 'number') p.stamina = null;
+    return p;
+  }
+  // Per-card live values kept across saves: ud = usage dice left, dmg = AD lost, ammo = shots left.
+  var CARD_LIVE = ['ud', 'dmg', 'ammo'];
+  function liveProps(src, dst) {
+    CARD_LIVE.forEach(function (k) { if (typeof src[k] === 'number' && isFinite(src[k])) dst[k] = Math.max(0, Math.floor(src[k])); });
+    return dst;
   }
   function rollCoins() {
     var r = [d(6), d(6), d(6)];
@@ -7026,8 +7181,9 @@ var CROWS_TRAIT_TREES = [
     var base = freshState(s.bg);
     Object.keys(base).forEach(function (k) { if (!(k in s)) s[k] = base[k]; });
     s.inv = s.inv.filter(function (c) { return c && CROWS.ITEMS[c.key]; }).map(function (c) {
-      return { id: uid++, key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 };
+      return liveProps(c, { id: uid++, key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 });
     });
+    s.play = normalizePlay(s.play);
     state = s;
     syncBonusArrays();
     pruneTraits();
@@ -7054,6 +7210,7 @@ var CROWS_TRAIT_TREES = [
     renderVillage();
     renderAdvance();
     renderSummary();
+    if (window.CrowsPlay) window.CrowsPlay.render();
     save();
   }
 
@@ -7428,11 +7585,18 @@ var CROWS_TRAIT_TREES = [
     v['Name'] = state.name; v['Background'] = b.name; v['Player'] = state.player; v['Feature'] = state.feature;
     v['Village'] = state.village;
     CROWS.CHARS.forEach(function (c) { v[c] = String(ch[c]); });
-    v['Stamina Max'] = String(staminaMax()); v['Stamina Current'] = String(staminaMax());
+    var pl = state.play;
+    v['Stamina Max'] = String(staminaMax()); v['Stamina Current'] = String(curStamina());
     v['Speed'] = String(CROWS.BASE_SPEED);
-    v['Armor AD'] = ai.total ? ai.total + (ai.worn && ai.shield ? '\n(' + ai.text + ')' : '') : '0';
-    v['Coins'] = String(state.coins); v['Cruelty'] = '0';
+    var adParts = [ai.worn, ai.shield].filter(Boolean).map(function (c) { return adNow(c) + (c.dmg ? '/' + adMax(c) : '') + ' ' + (c === ai.shield ? 'shield' : c.key.replace(' Armor', '').toLowerCase()); });
+    var adTotal = [ai.worn, ai.shield].filter(Boolean).reduce(function (s, c) { return s + adNow(c); }, 0);
+    v['Armor AD'] = adParts.length ? adTotal + (adParts.length > 1 || adTotal !== ai.total ? '\n(' + adParts.join(' + ') + ')' : '') : '0';
+    v['Coins'] = String(state.coins); v['Cruelty'] = String(pl.cruelty);
+    Object.keys(pl.conds).forEach(function (k) { if (pl.conds[k]) v['Cond ' + k] = true; });
     Object.keys(uses).forEach(function (k) { if (uses[k]) v['Exp ' + k] = String(uses[k]); });
+    Object.keys(pl.spent).forEach(function (k) { for (var i = 1; i <= pl.spent[k]; i++) v['Exp ' + k + ' Spent ' + i] = true; });
+    Object.keys(pl.wounds).forEach(function (i) { v['Wound ' + (+i + 1)] = true; });
+    Object.keys(pl.magic).forEach(function (k) { if (pl.magic[k]) v['Slot ' + k] = pl.magic[k]; });
     v['Max Uses'] = String(maxUses(state.txp));
     var spent = traitXP();
     v['TXP'] = fmt(state.txp); v['XP Spent'] = fmt(spent); v['XP Unspent'] = fmt(state.txp - spent);
@@ -7444,7 +7608,10 @@ var CROWS_TRAIT_TREES = [
       return t ? t.n + ' (' + p[0] + (i === 0 ? ', background' : ', ' + fmt(t.x) + ' XP') + '): ' + t.d : id;
     });
     v['Traits'] = traits.join('\n');
-    var pets = state.pets.map(function (p) { return CROWS.PETS[p] || p; });
+    var pets = state.pets.map(function (p, i) {
+      var st = pl.petStam[i];
+      return (CROWS.PETS[p] || p) + (typeof st === 'number' ? ' [Stamina now ' + st + ']' : '');
+    });
     v['Pets'] = pets.join('\n') || '';
     v['Connection Name'] = state.connName; v['Connection Relationship'] = state.connRel;
     var ben = CROWS.CONNECTION_BENEFITS.filter(function (x) { return x[0] === state.connBenefit; })[0];
@@ -7453,6 +7620,7 @@ var CROWS_TRAIT_TREES = [
     if (state.notes.trim()) notes.push(state.notes.trim());
     var inst = ['Blacksmith', 'Crypt', 'General Store', 'Inn', 'Temple'].concat(state.institution ? [state.institution] : []);
     notes.push('Village institutions (1st level): ' + inst.join(', ') + '. Prosperity 0.');
+    if (pl.pendingXP) notes.push('XP awaiting a rest: ' + fmt(pl.pendingXP) + '.');
     if (state.esBonus.length) notes.push('E&S bonuses: ' + state.esBonus.map(function (o) { return esLabels[o]; }).join('; ') + '.');
     var loose = state.inv.filter(function (c) { return c.area === 'none'; });
     if (loose.length) notes.push('Left at home: ' + loose.map(function (c) { return c.key + (c.qty > 1 ? ' x' + c.qty : ''); }).join(', ') + '.');
@@ -7491,6 +7659,7 @@ var CROWS_TRAIT_TREES = [
             }
             var cb = form.createCheckBox(f.name);
             cb.addToPage(page, { x: rect.x, y: rect.y, width: rect.width, height: rect.height, borderWidth: 0.75, borderColor: P.rgb(0.12, 0.11, 0.12), backgroundColor: P.rgb(1, 1, 1) });
+            if (vals[f.name] === true) cb.check();
             return;
           }
           var tf = form.createTextField(f.name);
@@ -7615,7 +7784,7 @@ var CROWS_TRAIT_TREES = [
     });
     $('btn-save').addEventListener('click', function () {
       var data = clone(state);
-      data.inv = data.inv.map(function (c) { return { key: c.key, qty: c.qty, area: c.area, idx: c.idx }; });
+      data.inv = data.inv.map(function (c) { return liveProps(c, { key: c.key, qty: c.qty, area: c.area, idx: c.idx }); });
       download(JSON.stringify(data, null, 2), fileBase() + '_Crows_Character.json', 'application/json');
     });
     $('file-load').addEventListener('change', function () {
@@ -7640,7 +7809,15 @@ var CROWS_TRAIT_TREES = [
   // Expose a tiny API for testing/debugging.
   window.CrowsApp = {
     get state() { return state; }, fieldValues: function () { return fieldValues(); }, buildPdf: buildPdf,
-    randomCrow: function () { randomCrow(); render(); }, setBackground: function (i) { setBackground(i, true); render(); }
+    randomCrow: function () { randomCrow(); render(); }, setBackground: function (i) { setBackground(i, true); render(); },
+    // Shared with play.js (Play mode).
+    core: {
+      render: render, save: save, toast: toast, el: el, $: $, d: d, fmt: fmt, signed: signed, ordinal: ordinal, DIE: DIE,
+      item: item, bg: bg, characteristics: characteristics, staminaMax: staminaMax, curStamina: curStamina,
+      expertiseUses: expertiseUses, maxUses: maxUses, armorInfo: armorInfo, adMax: adMax, adNow: adNow,
+      woundCount: woundCount, occupancy: occupancy, cardById: cardById, spanOf: spanOf, traitXP: traitXP,
+      esBonusCount: esBonusCount, charBonusCount: charBonusCount, usePool: usePool, allocTotal: allocTotal
+    }
   };
 
   function init() {
@@ -7650,6 +7827,772 @@ var CROWS_TRAIT_TREES = [
     render();
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
+})();
+
+</script>
+<script>
+/*
+ * Crows Playtest 2 Character Generator — Play mode (at-the-table character management).
+ * Tracks Stamina, AD, wounds, conditions, cruelty, expertise uses, usage dice, ammo, dungeon turns,
+ * rests, XP, and rolls tests/attacks/castings. Depends on app.js (window.CrowsApp.core) and game-data.js.
+ * Live state lives in state.play; per-card live values (ud, dmg, ammo) live on the inventory cards.
+ */
+(function () {
+  'use strict';
+
+  var C = window.CrowsApp.core;
+  var el = C.el, $ = C.$, d = C.d, fmt = C.fmt, signed = C.signed, item = C.item;
+  var MODE_KEY = 'crows-pt2-mode';
+  var CONDITIONS = ['Blessed', 'Grabbed', 'Prone', 'Vulnerable', 'Weakened', 'Unconscious'];
+  var DT_CONDITIONS = ['Blessed', 'Vulnerable', 'Weakened']; // end at the end of a dungeon turn
+  var LORE = ['Historical Lore', 'Magic Lore', 'Monster Lore', 'Nature Lore', 'Religious Lore'];
+  var AMMO = { Shortbow: 'Quiver of 20 Arrows', Longbow: 'Quiver of 20 Arrows', Crossbow: 'Case of 20 Crossbow Bolts' };
+  var MAGIC_SLOTS = ['Head', 'Neck', 'Waist', 'Arms', 'Finger', 'Feet'];
+  var PET_FEED = { 'Riding Horse': 2 };
+
+  // UI-only state (not saved with the character).
+  var ui = { eb: 0, mod: 0, dmg: '', pierce: false, first: '', heal: '', coins: '', tDesc: '', tGc: '', tPlayers: 4, xpAmt: '',
+    ration: '', activity: '', repair: '', study: '', tended: false, caretaker: false };
+  var last = null; // most recent roll
+
+  function S() { return window.CrowsApp.state; }
+  function P() { return S().play; }
+  function log(msg) {
+    var l = P().log;
+    l.unshift({ t: Date.now(), m: msg });
+    if (l.length > 200) l.length = 200;
+  }
+  function commit(msg) { if (msg) log(msg); C.render(); }
+
+  // ------------------------------------------------------------------ mode switch
+  function mode() { try { return localStorage.getItem(MODE_KEY) === 'play' ? 'play' : 'build'; } catch (e) { return 'build'; } }
+  function setMode(m) {
+    try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* storage unavailable */ }
+    applyMode(m);
+    C.render();
+    window.scrollTo(0, 0);
+  }
+  function applyMode(m) {
+    document.body.setAttribute('data-mode', m);
+    $('tab-build').setAttribute('aria-pressed', String(m === 'build'));
+    $('tab-play').setAttribute('aria-pressed', String(m === 'play'));
+  }
+  function gotoBuild(sectionId) {
+    setMode('build');
+    var n = $(sectionId);
+    if (n) { if (n.tagName === 'DETAILS') n.open = true; n.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  }
+
+  // ------------------------------------------------------------------ inventory helpers
+  function carried() { return S().inv.filter(function (c) { return c.area !== 'none'; }); }
+  function inHands() { return S().inv.filter(function (c) { return c.area === 'hand'; }).sort(function (a, b) { return a.idx - b.idx; }); }
+  function where(c) {
+    return c.area === 'hand' ? 'Hand ' + (c.idx + 1) : c.area === 'belt' ? 'Belt ' + (c.idx + 1) : c.area === 'pack' ? 'Backpack ' + (c.idx + 1) : 'Not carried';
+  }
+  function udInfo(key) {
+    var m = /UD:?\s*(\d+)\s*\(([^)]*)\)/.exec(item(key).txt);
+    if (!m) return null;
+    var f = m[2];
+    return { max: +m[1], useless: /Useless/.test(f), refuel: /Refuel/.test(f), rest: /Rest/.test(f), activate: /Activate/.test(f), dt: /DT/.test(f), fuel: /oil/i.test(f) ? 'Oil Flask' : null };
+  }
+  function udNow(c) { var u = udInfo(c.key); return u ? (typeof c.ud === 'number' ? Math.min(c.ud, u.max) : u.max) : 0; }
+  function removeCard(c) { S().inv = S().inv.filter(function (x) { return x !== c; }); }
+  function useOne(c) { // consume one item from a stack
+    c.qty--; delete c.ud;
+    if (c.qty <= 0) removeCard(c);
+  }
+  function findCarried(key) { return carried().filter(function (c) { return c.key === key; })[0] || null; }
+  // Roll a card's usage dice: each 1 or 2 is removed.
+  function rollUD(c, why) {
+    var u = udInfo(c.key), n = udNow(c);
+    if (!u || n <= 0) return c.key + ' has no usage dice left.';
+    var r = []; for (var i = 0; i < n; i++) r.push(d(6));
+    var lost = r.filter(function (x) { return x <= 2; }).length;
+    c.ud = n - lost;
+    var msg = c.key + ' UD' + (why ? ' (' + why + ')' : '') + ': rolled ' + r.join(', ') + (lost ? ' - lost ' + lost + ', ' + c.ud + ' left' : ' - no loss');
+    if (c.ud === 0) {
+      if (u.useless) { msg += '. It is used up'; useOne(c); if (c.qty > 0) msg += ' (' + c.qty + ' left in the stack)'; }
+      else if (u.refuel) msg += '. Needs refuelling (' + (u.fuel || 'fuel') + ')';
+      else if (u.rest) msg += '. Recharges on a rest';
+    }
+    return msg + '.';
+  }
+
+  // ------------------------------------------------------------------ vitals helpers
+  function setStamina(v) { var m = C.staminaMax(); v = Math.max(0, Math.min(m, v)); P().stamina = v >= m ? null : v; }
+  function absorbers() {
+    var ai = C.armorInfo(), out = [];
+    if (ai.worn) out.push(ai.worn);
+    inHands().forEach(function (c) { if (C.adMax(c) > 0 && out.indexOf(c) < 0) out.push(c); });
+    return out;
+  }
+  function speed() {
+    var p = P(), occ = C.occupancy(), slow = 0;
+    Object.keys(p.wounds).forEach(function (i) { if (occ.pack[+i] !== null) slow++; });
+    var base = Math.max(0, CROWS.BASE_SPEED - slow), note = slow ? '-' + slow + ' wounded slots' : '';
+    if (p.conds.Grabbed || p.conds.Unconscious) return { v: 0, note: p.conds.Grabbed ? 'grabbed' : 'unconscious' };
+    if (p.conds.Prone) return { v: Math.floor(base / 2), note: (note ? note + ', ' : '') + 'halved (prone)' };
+    return { v: base, note: note };
+  }
+  // Put n wounds in backpack slots: empty slots first, then the highest-numbered ones.
+  function addWounds(n, kind) {
+    var p = P(), occ = C.occupancy(), placed = 0;
+    var order = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
+    var free = order.filter(function (i) { return !p.wounds[i] && occ.pack[i] === null; })
+      .concat(order.filter(function (i) { return !p.wounds[i] && occ.pack[i] !== null; }));
+    for (var k = 0; k < n && k < free.length; k++) { p.wounds[free[k]] = kind || 'w'; placed++; }
+    return placed;
+  }
+  // Heal n ordinary wounds, freeing item slots first (restores speed).
+  function healWounds(n) {
+    var p = P(), occ = C.occupancy(), healed = 0;
+    var ws = Object.keys(p.wounds).map(Number).filter(function (i) { return p.wounds[i] === 'w'; })
+      .sort(function (a, b) { return (occ.pack[b] !== null) - (occ.pack[a] !== null) || b - a; });
+    for (var k = 0; k < n && k < ws.length; k++) { delete p.wounds[ws[k]]; healed++; }
+    return healed;
+  }
+  function takeDamage() {
+    var p = P(), amt = parseInt(ui.dmg, 10);
+    if (!(amt > 0)) { C.toast('Enter the damage first.'); return; }
+    var parts = [], dmg = amt;
+    if (p.conds.Vulnerable) { var v = d(6); dmg += v; parts.push('vulnerable +' + v); }
+    if (!ui.pierce) {
+      var abs = absorbers().filter(function (c) { return C.adNow(c) > 0; });
+      abs.sort(function (a, b) { return (String(b.id) === ui.first) - (String(a.id) === ui.first); });
+      abs.forEach(function (c) {
+        if (!dmg) return;
+        var a = Math.min(dmg, C.adNow(c)); c.dmg = (c.dmg || 0) + a; dmg -= a;
+        parts.push(c.key + ' absorbs ' + a + ' (AD ' + C.adNow(c) + ' left)');
+      });
+    } else parts.push('piercing');
+    var cur = C.curStamina(), s = Math.min(dmg, cur);
+    if (s) { setStamina(cur - s); dmg -= s; parts.push('-' + s + ' Stamina'); }
+    if (dmg > 0) { var w = addWounds(dmg, 'w'); parts.push(w + ' wound' + (w === 1 ? '' : 's')); }
+    ui.dmg = '';
+    var dead = C.woundCount() >= 10;
+    commit('Took ' + amt + ' damage: ' + parts.join(', ') + '.' + (dead ? ' All 10 backpack slots are wounded: your crow is dead.' : ''));
+  }
+
+  // ------------------------------------------------------------------ expertise
+  function expList() {
+    var uses = C.expertiseUses(), p = P(), out = [];
+    Object.keys(CROWS.EXPERTISES).forEach(function (g) {
+      CROWS.EXPERTISES[g].forEach(function (e) {
+        var n = e[0], total = (uses[n] || 0) + (p.temp[n] || 0);
+        if (total > 0) out.push({ name: n, group: g, total: total, spent: Math.min(p.spent[n] || 0, total), desc: e[1] });
+      });
+    });
+    return out;
+  }
+  function spendExp(name) {
+    var e = expList().filter(function (x) { return x.name === name; })[0];
+    if (!e || e.spent >= e.total) return false;
+    P().spent[name] = e.spent + 1;
+    return true;
+  }
+
+  // ------------------------------------------------------------------ dice
+  function netEdge(extraE, extraB) {
+    var e = 0, b = 0;
+    if (ui.eb > 0) e = ui.eb; else b = -ui.eb;
+    e += extraE; b += extraB;
+    return Math.min(e, 2) - Math.min(b, 2);
+  }
+  function tierOf(total) { return total >= 17 ? 3 : total >= 12 ? 2 : 1; }
+  // opts: label, charName, charVal, kind ('test'|'attack'|'cast'|'miasma'), group (expertise group allowed), wtype, melee, dmg {t2,t3,brutal}, card
+  function rollTest(opts) {
+    var p = P(), ch = C.characteristics().values;
+    var extraE = p.conds.Blessed ? 1 : 0, extraB = p.conds.Weakened ? 1 : 0;
+    if (opts.kind === 'attack' && opts.melee && p.conds.Prone) extraB++;
+    var net = netEdge(extraE, extraB);
+    var a = d(10), b = d(10), nat = a + b;
+    var bonus = net === 1 ? 2 : net === -1 ? -2 : 0;
+    var mod = (opts.charVal || 0) + (ui.mod || 0) + (opts.extraMod || 0) + bonus;
+    var total = nat + mod;
+    var crit = nat >= 19, doom = nat <= 3;
+    if (p.conds.Unconscious && /Agility|Strength/.test(opts.charName || '')) doom = true;
+    var tier = doom ? 1 : crit ? 3 : tierOf(total);
+    if (!doom && !crit && net === 2) tier = Math.min(3, tier + 1);
+    if (!doom && !crit && net === -2) tier = Math.max(1, tier - 1);
+    var r = { label: opts.label, opts: opts, dice: [a, b], nat: nat, mod: mod, total: total, net: net, crit: crit, doom: doom,
+      baseTier: tier, tier: tier, exp: null, extra: [], conds: [] };
+    if (extraE) r.conds.push('blessed: edge');
+    if (extraB) r.conds.push((p.conds.Weakened ? 'weakened' : 'prone') + ': bane');
+    void ch;
+    after(r);
+    last = r;
+    ui.eb = 0;
+    log(describe(r));
+    C.render();
+  }
+  function after(r) {
+    var o = r.opts, p = P();
+    if (o.kind === 'attack' && o.ammo) {
+      var q = findCarried(o.ammo);
+      if (q) {
+        q.ammo = (typeof q.ammo === 'number' ? q.ammo : 20) - 1;
+        r.extra.push(o.ammo.replace(/ of 20.*/, '') + ': ' + q.ammo + ' left');
+        if (q.ammo <= 0) { removeCard(q); r.extra.push('that was the last one'); }
+      }
+    }
+    if (o.kind === 'cast') {
+      if (r.doom) r.extra.push('Doom: a BACKLASH happens (Ref rolls d100 + rank).');
+      else if (r.baseTier === 1) {
+        var ch = d(6);
+        r.extra.push('Chaos roll d6 = ' + ch + (ch === 1 ? ': BACKLASH (Ref rolls d100 + rank) instead of the effect.' : ': no backlash.'));
+      }
+      if (o.card) {
+        if (r.crit) r.extra.push('Crit: no usage die roll for the book.');
+        else r.extra.push(rollUD(o.card, 'after casting'));
+      }
+    }
+    if (o.kind === 'miasma') r.miasmaPending = true;
+    void p;
+  }
+  function damageText(r) {
+    var o = r.opts;
+    if (!o.dmg) return '';
+    if (r.tier === 1) return o.kind === 'attack' ? 'Miss.' + (o.melee ? ' The target can counter.' : '') : '';
+    var base = r.tier === 3 ? o.dmg.t3 : o.dmg.t2;
+    var bless = P().conds.Blessed ? o.charVal : 0;
+    var n = base + o.charVal + bless;
+    if (r.crit && o.dmg.brutal) n *= 2;
+    return n + ' damage' + (bless ? ' (incl. +' + bless + ' blessed)' : '') + (r.crit && o.dmg.brutal ? ' (brutal crit: doubled)' : '') + '.';
+  }
+  function describe(r) {
+    var s = r.label + ': ' + r.dice.join('+') + (r.mod ? ' ' + signed(r.mod) : '') + ' = ' + r.total + ' -> tier ' + r.tier;
+    if (r.crit) s += ' (CRIT)'; if (r.doom) s += ' (DOOM)';
+    if (r.exp) s += ', improved with ' + r.exp;
+    var dm = damageText(r); if (dm) s += '. ' + dm;
+    if (r.extra.length) s += ' ' + r.extra.join(' ');
+    return s;
+  }
+  function plainRoll(label, n, sides, note) {
+    var r = []; for (var i = 0; i < n; i++) r.push(d(sides));
+    var tot = r.reduce(function (a, b) { return a + b; }, 0);
+    last = { plain: true, label: label, dice: r, total: tot, note: note ? note(tot) : '' };
+    commit(label + ': ' + r.join(' + ') + (n > 1 ? ' = ' + tot : '') + (last.note ? ' (' + last.note + ')' : '') + '.');
+  }
+
+  // Parse attacks from wielded weapons and attack spellbooks.
+  function weaponAttack(c) {
+    var it = item(c.key), ch = C.characteristics().values;
+    var m = /Attack 2d10 \+ (A or S|A|S)\. 12-16: (\d+)[^;]*; 17\+: (\d+)/.exec(it.txt);
+    if (!m) return null;
+    var cn = m[1] === 'A' ? 'Agility' : m[1] === 'S' ? 'Strength' : (ch.Agility >= ch.Strength ? 'Agility' : 'Strength');
+    return { label: 'Attack with ' + c.key, charName: cn, charVal: ch[cn], kind: 'attack', group: 'Weapon', wtype: it.wt,
+      melee: /^Melee/.test(it.txt), dmg: { t2: +m[2], t3: +m[3], brutal: /Brutal/.test(it.txt) }, ammo: AMMO[c.key] || null, card: c,
+      summary: 'Attack 2d10 + ' + CROWS.CHAR_ABBR[cn] + ' (' + signed(ch[cn]) + '). 12-16: ' + (+m[2] + ch[cn]) + ' dam; 17+: ' + (+m[3] + ch[cn]) + ' dam' + (/Brutal/.test(it.txt) ? ' (brutal)' : '') };
+  }
+  function unarmedAttack() {
+    var ch = C.characteristics().values, cn = ch.Agility >= ch.Strength ? 'Agility' : 'Strength';
+    return { label: 'Unarmed strike', charName: cn, charVal: ch[cn], kind: 'attack', group: 'Weapon', wtype: 'Unarmed', melee: true,
+      dmg: { t2: 1, t3: 2, brutal: false }, summary: '2d10 + ' + CROWS.CHAR_ABBR[cn] + ' (' + signed(ch[cn]) + '). 12-16: ' + (1 + ch[cn]) + ' dam; 17+: ' + (2 + ch[cn]) + ' dam' };
+  }
+  function castOpts(c) {
+    var it = item(c.key), ch = C.characteristics().values;
+    var disc = (/R\d (\w+)/.exec(it.txt) || [])[1] || null;
+    var m = /12-16: (\d+)\s*\+\s*M[^;]*; 17\+: (\d+)\s*\+\s*M/.exec(it.txt);
+    return { label: 'Cast ' + c.key.replace(/ Book$/, ''), charName: 'Mind', charVal: ch.Mind, kind: 'cast', group: 'Spellcasting', wtype: disc,
+      dmg: it.atk && m ? { t2: +m[1], t3: +m[2], brutal: false } : null, card: c, summary: it.txt };
+  }
+
+  // ------------------------------------------------------------------ rest, dungeon turn, XP
+  function endDT() {
+    var p = P(), msgs = [];
+    p.dt++;
+    var ended = DT_CONDITIONS.filter(function (k) { return p.conds[k]; });
+    ended.forEach(function (k) { delete p.conds[k]; });
+    if (ended.length) msgs.push(ended.join(', ') + ' ended.');
+    inHands().forEach(function (c) { var u = udInfo(c.key); if (u && u.dt && udNow(c) > 0) msgs.push(rollUD(c, 'end of DT')); });
+    commit('End of dungeon turn ' + p.dt + '. ' + (msgs.join(' ') || 'Nothing in hand burns down.') + ' The Ref makes an encounter check.');
+  }
+  function foodCards() { return carried().filter(function (c) { return c.key === 'Ration' || c.key === 'Hearty Ration'; }); }
+  function rest() {
+    var s = S(), p = P(), msgs = [];
+    var food = ui.ration === 'none' ? null : foodCards().filter(function (c) { return c.key === (ui.ration || 'Ration'); })[0] || foodCards()[0] || null;
+    if (!food) {
+      var sw = addWounds(1, 's');
+      commit('Rested without eating: no rest benefits' + (sw ? ' and 1 starvation wound' : '') + '.');
+      return;
+    }
+    var hearty = food.key === 'Hearty Ration';
+    useOne(food);
+    msgs.push('Ate a ' + food.key.toLowerCase() + '.');
+    var starve = Object.keys(p.wounds).filter(function (i) { return p.wounds[i] === 's'; });
+    starve.forEach(function (i) { delete p.wounds[i]; });
+    if (starve.length) msgs.push('Starvation wounds gone (' + starve.length + ').');
+    setStamina(C.staminaMax());
+    msgs.push('Stamina full.');
+    var heal = 1 + (hearty ? 1 : 0) + (ui.tended ? 1 : 0) + (ui.caretaker ? 2 : 0);
+    var h = healWounds(heal);
+    if (h) msgs.push('Healed ' + h + ' wound' + (h === 1 ? '' : 's') + '.');
+    var uses = C.expertiseUses();
+    p.temp = {};
+    if (p.miasma) {
+      Object.keys(p.spent).forEach(function (k) { p.spent[k] = Math.min(p.spent[k], uses[k] || 0); if (!p.spent[k]) delete p.spent[k]; });
+      msgs.push('In the Miasma: expertise uses are NOT restored. Make your Miasma RR.');
+    } else {
+      p.spent = {};
+      msgs.push('Expertise uses restored.');
+      if (p.cruelty) { p.cruelty = 0; msgs.push('Rested free of the Miasma: all cruelty lost.'); }
+    }
+    s.inv.forEach(function (c) { var u = udInfo(c.key); if (u && u.rest && udNow(c) < u.max) { c.ud = u.max; msgs.push(c.key + ' recharged.'); } });
+    CONDITIONS.forEach(function (k) { if (k !== 'Grabbed') delete p.conds[k]; });
+    if (ui.activity === 'repair') {
+      var rc = C.cardById(+ui.repair);
+      if (rc) { rc.dmg = 0; msgs.push('Repaired ' + rc.key + ' to full AD.'); }
+    } else if (ui.activity === 'study' && ui.study) {
+      p.temp[ui.study] = 1; msgs.push('Studied a lore book: +1 use of ' + ui.study + ' until the next rest.');
+    } else if (ui.activity) msgs.push('Rest activity: ' + ui.activity + '.');
+    // pets eat animal feed
+    s.pets.forEach(function (pet, i) {
+      var need = PET_FEED[pet] || 1, feed = findCarried('Animal Feed'), have = carried().filter(function (c) { return c.key === 'Animal Feed'; }).reduce(function (t, c) { return t + c.qty; }, 0);
+      if (have >= need) {
+        for (var k = 0; k < need; k++) { feed = findCarried('Animal Feed'); useOne(feed); }
+        delete p.petStam[i]; msgs.push('Your ' + pet.toLowerCase() + ' ate and rested.');
+      } else msgs.push('Your ' + pet.toLowerCase() + ' had no animal feed (no rest benefit).');
+    });
+    if (p.pendingXP) msgs.push(applyXP());
+    ui.activity = ''; ui.tended = false; ui.caretaker = false;
+    commit('Rested. ' + msgs.join(' '));
+  }
+  function applyXP() {
+    var s = S(), p = P(), before = C.esBonusCount(s.txp), cb = C.charBonusCount(s.txp), gained = p.pendingXP;
+    s.txp = Math.min(999999, s.txp + gained); p.pendingXP = 0;
+    var msg = 'Gained ' + fmt(gained) + ' XP (TXP ' + fmt(s.txp) + ').';
+    var nb = C.esBonusCount(s.txp) - before, nc = C.charBonusCount(s.txp) - cb;
+    if (nb) msg += ' New Expertise & Stamina bonus' + (nb > 1 ? 'es' : '') + ' (' + nb + '): choose in Build > Advancement.';
+    if (nc) msg += ' New characteristic bonus' + (nc > 1 ? 'es' : '') + ' (' + nc + ').';
+    return msg;
+  }
+  function nextAt(txp) {
+    var es = null, ch = null;
+    CROWS.ES_ADV.forEach(function (r) { if (es === null && r[0] > txp) es = r[0]; });
+    if (es === null) es = 30000 * (Math.floor(txp / 30000) + 1);
+    CROWS.CHAR_ADV.forEach(function (t) { if (ch === null && t > txp) ch = t; });
+    if (ch === null) ch = 30000 * (Math.floor(txp / 30000) + 1);
+    return { es: es, ch: ch };
+  }
+
+  // ------------------------------------------------------------------ rendering
+  function btn(text, onclick, cls, extra) {
+    var a = { type: 'button', class: 'btn btn-small' + (cls ? ' ' + cls : ''), text: text, onclick: onclick };
+    if (extra) Object.keys(extra).forEach(function (k) { a[k] = extra[k]; });
+    return el('button', a);
+  }
+  function num(val, oninput, attrs) {
+    var a = { type: 'number', value: val, oninput: function () { oninput(this.value); } };
+    if (attrs) Object.keys(attrs).forEach(function (k) { a[k] = attrs[k]; });
+    return el('input', a);
+  }
+  function card(id, title, kids) {
+    var box = $(id); box.innerHTML = '';
+    box.appendChild(el('h2', { text: title }));
+    kids.forEach(function (k) { if (k) box.appendChild(k); });
+  }
+
+  function renderVitals() {
+    var p = P(), m = C.staminaMax(), cur = C.curStamina(), sp = speed(), w = C.woundCount();
+    var stam = el('div', { class: 'vital big' }, [
+      el('div', { class: 'lbl', text: 'Stamina' }),
+      el('div', { class: 'val' }, [el('b', { text: String(cur) }), el('span', { text: ' / ' + m })]),
+      el('div', { class: 'meter' }, [el('span', { style: 'width:' + (m ? Math.round(cur / m * 100) : 0) + '%' })]),
+      el('div', { class: 'pm-row' }, [
+        btn('−5', function () { setStamina(cur - 5); commit(); }), btn('−1', function () { setStamina(cur - 1); commit(); }),
+        btn('+1', function () { setStamina(cur + 1); commit(); }), btn('+5', function () { setStamina(cur + 5); commit(); }),
+        btn('Full', function () { setStamina(m); commit(); }, 'btn-ghost')])
+    ]);
+    var adBox = el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: 'Armor Defense' })]);
+    var abs = absorbers();
+    if (!abs.length) adBox.appendChild(el('div', { class: 'fine', text: 'No armor worn, shield, or parry weapon wielded.' }));
+    abs.forEach(function (c) {
+      var mx = C.adMax(c), now = C.adNow(c);
+      adBox.appendChild(el('div', { class: 'ad-row' }, [
+        el('span', { class: 'ad-name', text: c.key + (item(c.key).cat === 'weapon' ? ' (parry)' : '') }),
+        el('b', { text: now + '/' + mx }),
+        btn('−', function () { c.dmg = Math.min(mx, (c.dmg || 0) + 1); commit(); }, '', { 'aria-label': 'Lower ' + c.key + ' AD' }),
+        btn('+', function () { c.dmg = Math.max(0, (c.dmg || 0) - 1); commit(); }, '', { 'aria-label': 'Raise ' + c.key + ' AD' })
+      ]));
+    });
+    var small = el('div', { class: 'vital-grid' }, [
+      el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: 'Speed' }), el('div', { class: 'val' }, [el('b', { text: String(sp.v) })]), sp.note ? el('div', { class: 'fine', text: sp.note }) : null]),
+      el('div', { class: 'vital' + (w >= 7 ? ' danger' : '') }, [el('div', { class: 'lbl', text: 'Wounds' }), el('div', { class: 'val' }, [el('b', { text: String(w) }), el('span', { text: ' / 10' })])]),
+      el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: 'Cruelty' }), el('div', { class: 'val' }, [el('b', { text: String(p.cruelty) })]),
+        el('div', { class: 'pm-row' }, [btn('−', function () { p.cruelty = Math.max(0, p.cruelty - 1); commit('Cruelty ' + p.cruelty + '.'); }, '', { 'aria-label': 'Lower cruelty' }),
+          btn('+', function () { p.cruelty++; commit('Cruelty ' + p.cruelty + '.'); }, '', { 'aria-label': 'Raise cruelty' })])]),
+      el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: 'Coins' }), el('div', { class: 'val' }, [el('b', { text: fmt(S().coins) }), el('span', { text: ' gc' })]),
+        el('div', { class: 'pm-row' }, [num(ui.coins, function (v) { ui.coins = v; }, { min: 0, placeholder: 'gc', 'aria-label': 'Coins to add or spend', class: 'mini' }),
+          btn('+', function () { var n = parseInt(ui.coins, 10) || 0; if (n) { S().coins += n; ui.coins = ''; commit('Gained ' + fmt(n) + ' gc.'); } }, '', { 'aria-label': 'Gain coins' }),
+          btn('−', function () { var n = parseInt(ui.coins, 10) || 0; if (n) { S().coins = Math.max(0, S().coins - n); ui.coins = ''; commit('Spent ' + fmt(n) + ' gc.'); } }, '', { 'aria-label': 'Spend coins' })])])
+    ]);
+    var conds = el('div', { class: 'conds' }, CONDITIONS.map(function (k) {
+      return el('button', { type: 'button', class: 'cond' + (p.conds[k] ? ' on' : ''), 'aria-pressed': String(!!p.conds[k]), text: k, onclick: function () {
+        if (p.conds[k]) delete p.conds[k]; else p.conds[k] = true;
+        commit((p.conds[k] ? 'Now ' : 'No longer ') + k.toLowerCase() + '.');
+      } });
+    }));
+    var firstSel = el('select', { 'aria-label': 'Damage hits first', onchange: function () { ui.first = this.value; } },
+      abs.filter(function (c) { return C.adNow(c) > 0; }).map(function (c) { return el('option', { value: String(c.id), text: c.key + ' first' }); }));
+    if (!firstSel.options.length) firstSel = null; else if (ui.first) firstSel.value = ui.first; else ui.first = firstSel.value;
+    var dmgRow = el('div', { class: 'row wrap dmg-row' }, [
+      el('label', { class: 'field' }, ['Damage', num(ui.dmg, function (v) { ui.dmg = v; }, { min: 0, class: 'mini', onkeydown: function (e) { if (e.key === 'Enter') takeDamage(); } })]),
+      el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.pierce, onchange: function () { ui.pierce = this.checked; } }), ' Piercing']),
+      firstSel, btn('Take damage', takeDamage, 'btn-primary'),
+      el('span', { class: 'spacer' }),
+      el('label', { class: 'field' }, ['Heal', num(ui.heal, function (v) { ui.heal = v; }, { min: 0, class: 'mini' })]),
+      btn('Regain Stamina', function () { var n = parseInt(ui.heal, 10) || 0; if (n) { setStamina(C.curStamina() + n); ui.heal = ''; commit('Regained ' + n + ' Stamina.'); } })
+    ]);
+    // backpack wound grid
+    var occ = C.occupancy(), grid = el('div', { class: 'wound-grid' });
+    for (var i = 0; i < 10; i++) (function (i) {
+      var cid = occ.pack[i], c = cid !== null ? C.cardById(cid) : null, wk = p.wounds[i];
+      grid.appendChild(el('button', { type: 'button', class: 'wslot' + (wk ? ' hurt' : '') + (wk === 's' ? ' starve' : ''), 'aria-pressed': String(!!wk),
+        title: wk ? 'Click to heal this wound' : 'Click to mark a wound here',
+        onclick: function () { if (p.wounds[i]) delete p.wounds[i]; else p.wounds[i] = 'w'; commit((p.wounds[i] ? 'Wound marked in' : 'Wound healed in') + ' backpack slot ' + (i + 1) + '.'); } },
+        [el('span', { class: 'n', text: String(i + 1) }), el('span', { class: 'it', text: c ? c.key : 'empty' }), el('span', { class: 'wk', text: wk === 's' ? 'starving' : wk ? 'wound' : '' })]));
+    })(i);
+    var dead = w >= 10 ? el('div', { class: 'banner bad', text: 'All 10 backpack slots are wounded: your crow is dead. Make a new crow and roll on the Backgrounds table ' +
+      (1 + C.esBonusCount(S().txp)) + ' time' + (C.esBonusCount(S().txp) ? 's' : '') + ' (1 + one per Expertise & Stamina bonus), choosing any result.' }) : null;
+    card('play-vitals', 'Vitals', [dead, el('div', { class: 'vital-top' }, [stam, adBox]), small,
+      el('h3', { text: 'Conditions' }), conds, el('h3', { text: 'Damage & healing' }), dmgRow,
+      el('h3', {}, ['Backpack wounds ', el('small', { text: '(each wound fills a slot; -1 speed per slot with both a wound and an item. Click to mark or heal.)' })]), grid]);
+  }
+
+  function renderTime() {
+    var p = P(), s = S();
+    var foods = foodCards(), rationSel = el('select', { onchange: function () { ui.ration = this.value; } });
+    var kinds = []; foods.forEach(function (c) { if (kinds.indexOf(c.key) < 0) kinds.push(c.key); });
+    kinds.forEach(function (k) {
+      var n = foods.filter(function (c) { return c.key === k; }).reduce(function (t, c) { return t + c.qty; }, 0);
+      rationSel.appendChild(el('option', { value: k, text: 'Eat a ' + k.toLowerCase() + ' (' + n + ' carried)' }));
+    });
+    rationSel.appendChild(el('option', { value: 'none', text: kinds.length ? "Don't eat (no rest benefits)" : 'No rations! (no rest benefits, starvation wound)' }));
+    rationSel.value = kinds.indexOf(ui.ration) >= 0 || ui.ration === 'none' ? ui.ration : (kinds[0] || 'none');
+    ui.ration = rationSel.value;
+    var act = el('select', { onchange: function () { ui.activity = this.value; C.render(); } }, [
+      el('option', { value: '', text: 'No rest activity / not tracked' }),
+      el('option', { value: 'repair', text: 'Repair Armor' }),
+      el('option', { value: 'study', text: 'Study a lore book' }),
+      el('option', { value: 'Craft Equipment', text: 'Craft Equipment' }), el('option', { value: 'Harvest', text: 'Harvest' }),
+      el('option', { value: 'Identify Item', text: 'Identify Item' }), el('option', { value: 'Prepare for Task', text: 'Prepare for Task (+2 until next rest)' }),
+      el('option', { value: 'Seclude Camp', text: 'Seclude Camp' }), el('option', { value: 'Tend Wounds', text: 'Tend Wounds (on another)' })
+    ]);
+    act.value = ui.activity;
+    var sub = null;
+    if (ui.activity === 'repair') {
+      var rep = s.inv.filter(function (c) { return C.adMax(c) > 0 && c.dmg; });
+      sub = rep.length ? el('select', { onchange: function () { ui.repair = this.value; } }, rep.map(function (c) { return el('option', { value: String(c.id), text: c.key + ' (' + C.adNow(c) + '/' + C.adMax(c) + ')' }); })) :
+        el('span', { class: 'fine', text: 'Nothing is damaged.' });
+      if (rep.length) { if (!rep.some(function (c) { return String(c.id) === ui.repair; })) ui.repair = String(rep[0].id); sub.value = ui.repair; }
+    } else if (ui.activity === 'study') {
+      var books = carried().filter(function (c) { return /^Lore Book/.test(c.key); });
+      var opts = [];
+      books.forEach(function (c) { var m = /\((.+)\)/.exec(c.key); (m ? [m[1]] : LORE).forEach(function (x) { if (opts.indexOf(x) < 0) opts.push(x); }); });
+      sub = opts.length ? el('select', { onchange: function () { ui.study = this.value; } }, opts.map(function (x) { return el('option', { value: x, text: x }); })) :
+        el('span', { class: 'fine', text: 'You carry no lore book.' });
+      if (opts.length) { if (opts.indexOf(ui.study) < 0) ui.study = opts[0]; sub.value = ui.study; } else ui.study = '';
+    }
+    var restBox = el('div', { class: 'rest-box' }, [
+      el('div', { class: 'row wrap' }, [
+        el('label', { class: 'field' }, ['Food', rationSel]),
+        el('label', { class: 'field' }, ['Rest activity', act]), sub
+      ]),
+      el('div', { class: 'row wrap checks' }, [
+        el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: p.miasma, onchange: function () { p.miasma = this.checked; commit(); } }), ' Resting in the Miasma']),
+        el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.tended, onchange: function () { ui.tended = this.checked; } }), ' Someone used Tend Wounds on me (+1 wound healed)']),
+        s.connBenefit === 'Caretaker' ? el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.caretaker, onchange: function () { ui.caretaker = this.checked; } }), ' Resting at my Caretaker connection\'s home (+2 wounds; 3 at Prosperity 6+)']) : null
+      ]),
+      el('p', { class: 'fine', text: '6 uninterrupted hours (4 asleep), eat 1 ration: regain all Stamina, heal 1 wound, regain expertise uses (not in the Miasma), recharge spellbooks and other rest usage dice' +
+        (p.pendingXP ? ', and gain your ' + fmt(p.pendingXP) + ' pending XP' : '') + '.' }),
+      btn('Rest', rest, 'btn-primary')
+    ]);
+    card('play-time', 'Dungeon turns & rest', [
+      el('div', { class: 'row wrap dt-row' }, [
+        el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: 'Dungeon turn' }), el('div', { class: 'val' }, [el('b', { text: String(p.dt + 1) })])]),
+        btn('End dungeon turn', endDT, 'btn-primary'),
+        btn('Reset count', function () { p.dt = 0; commit('Dungeon turn count reset.'); }, 'btn-ghost'),
+        el('p', { class: 'fine grow', text: 'Ending a DT rolls the usage dice of lights in your hands and ends blessed, vulnerable, and weakened. 30 real minutes each; greed bonus +30/20/10% in DT 1/2/3.' })
+      ]),
+      el('h3', { text: 'Rest' }), restBox
+    ]);
+  }
+
+  function renderExp() {
+    var list = expList(), p = P();
+    var grid = el('div', { class: 'play-exp' });
+    if (!list.length) grid.appendChild(el('p', { class: 'fine', text: 'No expertise uses.' }));
+    list.forEach(function (e) {
+      var pips = el('span', { class: 'pips' });
+      for (var i = 0; i < e.total; i++) (function (i) {
+        var used = i < e.spent;
+        pips.appendChild(el('button', { type: 'button', class: 'upip' + (used ? ' used' : ''), 'aria-label': (used ? 'Restore' : 'Spend') + ' a use of ' + e.name,
+          title: used ? 'Spent (click to restore)' : 'Available (click to spend)',
+          onclick: function () {
+            if (used) { p.spent[e.name] = e.spent - 1; if (!p.spent[e.name]) delete p.spent[e.name]; commit('Restored a use of ' + e.name + '.'); }
+            else { spendExp(e.name); commit('Spent a use of ' + e.name + '.'); }
+          } }));
+      })(i);
+      grid.appendChild(el('div', { class: 'exp-row has', title: e.desc }, [
+        el('span', {}, [el('span', { text: e.name }), p.temp[e.name] ? el('small', { class: 'tag', text: ' +lore book' }) : null, el('small', { class: 'muted', text: ' ' + e.group })]),
+        el('span', { class: 'row-r' }, [el('small', { class: 'muted', text: (e.total - e.spent) + '/' + e.total }), pips])
+      ]));
+    });
+    card('play-exp', 'Expertise uses', [el('p', { class: 'hint', text: 'After a roll, spend 1 use of a relevant expertise to improve the result by 1 tier (one per test). The dice roller offers this automatically. ' +
+      (p.miasma ? 'You are in the Miasma: resting will not restore uses.' : 'All uses return when you rest outside the Miasma.') }), grid]);
+  }
+
+  function renderAttacks() {
+    var rows = el('div', { class: 'atk-list' });
+    function row(title, sub, action, label, disabled, extra) {
+      rows.appendChild(el('div', { class: 'atk' }, [
+        el('div', { class: 'atk-main' }, [el('b', { text: title }), el('div', { class: 'fine', text: sub }), extra ? el('div', { class: 'fine warnish', text: extra }) : null]),
+        btn(label, action, 'btn-primary', { disabled: disabled || null })
+      ]));
+    }
+    var hands = inHands();
+    hands.forEach(function (c) {
+      var it = item(c.key);
+      if (it.cat === 'weapon') {
+        var a = weaponAttack(c);
+        if (!a) return;
+        var note = null, dis = false;
+        if (a.ammo) {
+          var q = findCarried(a.ammo);
+          note = q ? a.ammo.replace(/ of 20.*/, '') + ': ' + (typeof q.ammo === 'number' ? q.ammo : 20) + ' left' : 'No ' + a.ammo.toLowerCase() + ' carried!';
+          dis = !q;
+        }
+        row(c.key + ' (' + where(c) + ')', a.summary, function () { rollTest(a); }, 'Attack', dis, note);
+      } else if (it.cat === 'spell') {
+        var o = castOpts(c), u = udNow(c);
+        row(c.key.replace(/ Book$/, '') + ' (' + where(c) + ')', o.summary, function () { rollTest(o); }, 'Cast', u <= 0, u > 0 ? null : 'Usage die spent: recharges on a rest.');
+      }
+    });
+    var ua = unarmedAttack();
+    row('Unarmed / improvised', ua.summary, function () { rollTest(ua); }, 'Attack', false, null);
+    var stowed = carried().filter(function (c) { return c.area !== 'hand' && (item(c.key).cat === 'spell' || item(c.key).cat === 'weapon'); });
+    card('play-attacks', 'Attacks & spells', [
+      el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee).' }),
+      rows,
+      stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Move items between slots in Build > Equipment.' }) : null
+    ]);
+  }
+
+  function renderItems() {
+    var tbl = el('div', { class: 'item-list' });
+    var cards = carried().slice().sort(function (a, b) { var o = { hand: 0, belt: 1, pack: 2 }; return o[a.area] - o[b.area] || a.idx - b.idx; });
+    cards.forEach(function (c) {
+      var it = item(c.key), u = udInfo(c.key), ctl = [];
+      if (u) {
+        var n = udNow(c);
+        ctl.push(el('span', { class: 'ud', title: item(c.key).txt.split('.')[0], text: 'UD ' + n + '/' + u.max }));
+        if (n > 0 && (u.activate || u.dt)) ctl.push(btn('Roll UD', function () { commit(rollUD(c)); }));
+        if (u.refuel && n < u.max) {
+          var fuel = findCarried(u.fuel || 'Oil Flask');
+          ctl.push(btn('Refuel', function () { useOne(fuel); c.ud = u.max; commit('Refuelled ' + c.key + ' with ' + (u.fuel || 'fuel').toLowerCase() + '.'); }, '', { disabled: !fuel || null, title: fuel ? '' : 'No ' + (u.fuel || 'fuel') + ' carried' }));
+        }
+        if (n < u.max) ctl.push(btn('Reset UD', function () { c.ud = u.max; commit(); }, 'btn-ghost'));
+      }
+      if (AMMO_CASES[c.key]) {
+        var am = typeof c.ammo === 'number' ? c.ammo : 20;
+        ctl.push(el('span', { class: 'ud', text: am + ' shots' }));
+        ctl.push(btn('−', function () { c.ammo = Math.max(0, am - 1); commit(); }, '', { 'aria-label': 'One fewer' }));
+        ctl.push(btn('+', function () { c.ammo = Math.min(20, am + 1); commit(); }, '', { 'aria-label': 'One more' }));
+      }
+      if (c.key === 'Healing Potion') ctl.push(btn('Drink', function () {
+        var m = C.staminaMax(), cur = C.curStamina(), msg;
+        if (cur >= m && C.woundCount()) { healWounds(1); msg = 'Drank a healing potion: healed 1 wound.'; }
+        else { var r = d(6); setStamina(cur + r); msg = 'Drank a healing potion: rolled ' + r + ', regained ' + (Math.min(m, cur + r) - cur) + ' Stamina.'; }
+        useOne(c); commit(msg);
+      }));
+      else if (it.st > 1 || it.cat === 'consumable' || it.cat === 'food') ctl.push(btn(it.cat === 'consumable' || it.cat === 'food' ? 'Use 1' : '−1', function () { useOne(c); commit('Used 1 ' + c.key + '.'); }));
+      if (it.st > 1 && c.qty < it.st && c.area !== 'hand') ctl.push(btn('+1', function () { c.qty++; delete c.ud; commit(); }, 'btn-ghost'));
+      tbl.appendChild(el('div', { class: 'item-row cat-' + it.cat }, [
+        el('span', { class: 'loc', text: where(c) }),
+        el('span', { class: 'nm', title: it.txt }, [el('b', { text: c.key }), c.qty > 1 ? ' ×' + c.qty : '', C.adMax(c) && c.dmg ? el('small', { class: 'muted', text: ' AD ' + C.adNow(c) + '/' + C.adMax(c) }) : null]),
+        el('span', { class: 'ctl' }, ctl)
+      ]));
+    });
+    if (!cards.length) tbl.appendChild(el('p', { class: 'fine', text: 'You carry nothing.' }));
+    card('play-items', 'Carried items', [el('p', { class: 'hint' }, ['Usage dice: each 1 or 2 rolled removes a die. To add found items or move things between hand, belt, and backpack, use ',
+      el('a', { href: '#sec-equipment', text: 'Build > Equipment', onclick: function (e) { e.preventDefault(); gotoBuild('sec-equipment'); } }), '.']), tbl]);
+  }
+  var AMMO_CASES = { 'Quiver of 20 Arrows': 1, 'Case of 20 Crossbow Bolts': 1 };
+
+  function renderAdvance() {
+    var s = S(), p = P(), spent = C.traitXP(), unspent = s.txp - spent, nx = nextAt(s.txp);
+    var stats = el('div', { class: 'vital-grid' }, [
+      ['Total XP', fmt(s.txp)], ['Unspent XP', fmt(unspent)], ['Pending (after rest)', fmt(p.pendingXP)], ['Max uses/expertise', C.maxUses(s.txp)]
+    ].map(function (x) { return el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: x[0] }), el('div', { class: 'val' }, [el('b', { text: String(x[1]) })])]); }));
+    var todo = [];
+    var pool = C.usePool(), used = C.allocTotal();
+    if (pool > used) todo.push('Assign ' + (pool - used) + ' bonus expertise use' + (pool - used === 1 ? '' : 's'));
+    if (s.charBonus.some(function (c) { return !c; })) todo.push('Choose a characteristic bonus');
+    var banner = todo.length ? el('div', { class: 'banner warn' }, [todo.join('. ') + '. ', el('a', { href: '#sec-advance', text: 'Open Advancement', onclick: function (e) { e.preventDefault(); gotoBuild('sec-advance'); } })]) : null;
+    var share = ui.tPlayers > 0 && parseInt(ui.tGc, 10) > 0 ? Math.floor(parseInt(ui.tGc, 10) / ui.tPlayers) : 0;
+    var shareEl = el('span', { class: 'fine', id: 'play-share', text: share ? '= ' + fmt(share) + ' XP each' : '' });
+    function updShare() { var sh = ui.tPlayers > 0 && parseInt(ui.tGc, 10) > 0 ? Math.floor(parseInt(ui.tGc, 10) / ui.tPlayers) : 0; shareEl.textContent = sh ? '= ' + fmt(sh) + ' XP each' : ''; }
+    var form = el('div', { class: 'row wrap' }, [
+      el('label', { class: 'field grow' }, ['Treasure recovered', el('input', { type: 'text', value: ui.tDesc, maxlength: 80, placeholder: 'e.g. silver chalice', oninput: function () { ui.tDesc = this.value; } })]),
+      el('label', { class: 'field' }, ['Value (gc)', num(ui.tGc, function (v) { ui.tGc = v; updShare(); }, { min: 0, class: 'mini' })]),
+      el('label', { class: 'field' }, ['Players', num(ui.tPlayers, function (v) { ui.tPlayers = Math.max(1, parseInt(v, 10) || 1); updShare(); }, { min: 1, max: 12, class: 'mini' })]),
+      shareEl,
+      btn('Add XP', function () {
+        var gc = parseInt(ui.tGc, 10) || 0, n = Math.max(1, ui.tPlayers | 0), xp = Math.floor(gc / n);
+        if (!xp) { C.toast('Enter the treasure value.'); return; }
+        p.pendingXP += xp;
+        p.xpLog.unshift({ t: Date.now(), desc: ui.tDesc || 'Treasure', gc: gc, n: n, xp: xp });
+        if (p.xpLog.length > 100) p.xpLog.length = 100;
+        var d0 = ui.tDesc || 'treasure'; ui.tDesc = ''; ui.tGc = '';
+        commit('Recovered ' + d0 + ' worth ' + fmt(gc) + ' gc: ' + fmt(xp) + ' XP each (applies after the next rest).');
+      }, 'btn-primary')
+    ]);
+    var other = el('div', { class: 'row wrap' }, [
+      el('label', { class: 'field' }, ['Other XP (Ref award or correction)', num(ui.xpAmt, function (v) { ui.xpAmt = v; }, { class: 'mini' })]),
+      btn('Add to pending', function () {
+        var n = parseInt(ui.xpAmt, 10) || 0; if (!n) return;
+        p.pendingXP = Math.max(0, p.pendingXP + n); p.xpLog.unshift({ t: Date.now(), desc: 'Adjustment', gc: 0, n: 1, xp: n }); ui.xpAmt = '';
+        commit((n > 0 ? 'Added ' : 'Removed ') + fmt(Math.abs(n)) + ' pending XP.');
+      }),
+      btn('Apply pending XP now', function () { if (p.pendingXP) commit(applyXP()); }, 'btn-ghost', { disabled: !p.pendingXP || null, title: 'Normally XP applies after a rest' })
+    ]);
+    var hist = el('div', { class: 'xp-hist' }, p.xpLog.slice(0, 8).map(function (x) {
+      return el('div', {}, [el('span', { class: 'muted', text: new Date(x.t).toLocaleDateString() + ' ' }), x.desc + (x.gc ? ' (' + fmt(x.gc) + ' gc / ' + x.n + ')' : '') + ': ', el('b', { text: signed(x.xp) + ' XP' })]);
+    }));
+    card('play-advance', 'Experience & advancement', [
+      el('p', { class: 'hint', text: 'Recovered treasure (not bought, crafted, taken from innocents, or an ally\'s) gives XP = its gc value / number of players. XP and TXP bonuses apply only after a rest.' }),
+      stats, banner,
+      el('p', { class: 'fine' }, ['Next Expertise & Stamina bonus at ' + fmt(nx.es) + ' TXP; next characteristic bonus at ' + fmt(nx.ch) + ' TXP. ',
+        el('a', { href: '#sec-traits', text: 'Buy traits', onclick: function (e) { e.preventDefault(); gotoBuild('tree-browser'); } }), ' with unspent XP.']),
+      form, other, p.xpLog.length ? el('h3', { text: 'Recent XP' }) : null, hist
+    ]);
+  }
+
+  function renderGear() {
+    var s = S(), p = P();
+    var magicItems = carried().filter(function (c) { return item(c.key).cat === 'magic' || c.key === 'Holy Symbol'; }).map(function (c) { return c.key; });
+    var dl = el('datalist', { id: 'play-magic-list' }, magicItems.map(function (k) { return el('option', { value: k }); }));
+    var slots = el('div', { class: 'magic-grid' }, MAGIC_SLOTS.map(function (k) {
+      return el('label', { class: 'field' }, [k, el('input', { type: 'text', list: 'play-magic-list', maxlength: 80, value: p.magic[k] || '', oninput: function () {
+        if (this.value) p.magic[k] = this.value; else delete p.magic[k]; C.save();
+      }, onchange: function () { C.render(); } })]);
+    }));
+    var pets = s.pets.map(function (pet, i) {
+      var m = /Stamina (\d+)/.exec(CROWS.PETS[pet] || ''), mx = m ? +m[1] : 0, cur = typeof p.petStam[i] === 'number' ? p.petStam[i] : mx;
+      function set(v) { v = Math.max(0, Math.min(mx, v)); if (v >= mx) delete p.petStam[i]; else p.petStam[i] = v; commit(); }
+      return el('div', { class: 'pet' }, [el('div', { class: 'row wrap' }, [el('b', { text: pet }), el('span', { text: 'Stamina ' + cur + ' / ' + mx }),
+        btn('−1', function () { set(cur - 1); }), btn('+1', function () { set(cur + 1); }), btn('Full', function () { set(mx); }, 'btn-ghost')]),
+        el('div', { class: 'fine', text: CROWS.PETS[pet] || '' })]);
+    });
+    card('play-gear', 'Magic item slots & pets', [
+      el('p', { class: 'hint', text: 'Wearing two magic items in one slot: you can\'t rest and take 1d6 wounds at the end of each dungeon turn.' }),
+      dl, slots,
+      pets.length ? el('h3', { text: 'Pets' }) : null
+    ].concat(pets).concat([pets.length ? el('p', { class: 'fine', text: 'Command: maneuver. Complex or dangerous: 2d10 + M (1 refuses; 2 obeys, then weakened; 3 obeys). Pets eat animal feed when you rest.' }) : null]));
+  }
+
+  function renderLog() {
+    var p = P();
+    var list = el('ol', { class: 'play-log' }, p.log.slice(0, 60).map(function (x) {
+      var t = new Date(x.t);
+      return el('li', {}, [el('span', { class: 'muted', text: t.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }) + ' ' }), x.m]);
+    }));
+    card('play-log', 'Session log', [
+      p.log.length ? list : el('p', { class: 'fine', text: 'Rolls, damage, rests, and XP appear here.' }),
+      p.log.length ? btn('Clear log', function () { if (confirm('Clear the session log?')) { p.log = []; commit(); } }, 'btn-ghost') : null
+    ]);
+  }
+
+  function renderRoller() {
+    var box = $('play-side'); box.innerHTML = '';
+    var p = P(), ch = C.characteristics().values;
+    box.appendChild(el('h3', { text: 'Dice' }));
+    var eb = el('div', { class: 'seg', role: 'group', 'aria-label': 'Edges and banes' }, [[-2, 'Dbl bane'], [-1, 'Bane'], [0, 'None'], [1, 'Edge'], [2, 'Dbl edge']].map(function (x) {
+      return el('button', { type: 'button', class: ui.eb === x[0] ? 'on' : '', 'aria-pressed': String(ui.eb === x[0]), text: x[1], onclick: function () { ui.eb = x[0]; renderRoller(); } });
+    }));
+    box.appendChild(eb);
+    var auto = [];
+    if (p.conds.Blessed) auto.push('blessed: edge'); if (p.conds.Weakened) auto.push('weakened: bane');
+    box.appendChild(el('div', { class: 'row side-mod' }, [
+      el('label', { class: 'field' }, ['Other modifier', num(ui.mod || '', function (v) { ui.mod = parseInt(v, 10) || 0; }, { class: 'mini', placeholder: '0' })]),
+      auto.length ? el('span', { class: 'fine', text: 'Auto: ' + auto.join(', ') }) : null
+    ]));
+    box.appendChild(el('div', { class: 'side-btns' }, CROWS.CHARS.map(function (c) {
+      return btn(c + ' ' + signed(ch[c]), function () { rollTest({ label: c + ' test', charName: c, charVal: ch[c], kind: 'test', group: 'General' }); }, 'btn-primary');
+    }).concat([
+      btn('Miasma RR', function () {
+        var mask = /Plague Mask/i.test(p.magic.Head || '') ? 2 : 0;
+        rollTest({ label: 'Miasma RR' + (p.cruelty ? ' (cruelty -' + p.cruelty + ')' : '') + (mask ? ' (plague mask +2)' : ''), charName: 'Mind', charVal: ch.Mind, extraMod: mask - p.cruelty, kind: 'miasma', group: 'General' });
+      }),
+      btn('Initiative', function () { plainRoll('Initiative', 1, 10, function (t) { return t >= 6 ? 'PCs and allies act first' : 'enemies act first'; }); }),
+      btn('Draw from pack', function () { plainRoll('Draw from pack', 1, 10, function (t) { return 'you get an item in slots 1-' + t; }); }),
+      btn('d6', function () { plainRoll('d6', 1, 6); }), btn('d10', function () { plainRoll('d10', 1, 10); }),
+      btn('2d10', function () { plainRoll('2d10', 2, 10); }), btn('d100', function () { plainRoll('d100', 1, 100); })
+    ])));
+    var res = el('div', { class: 'roll-result', 'aria-live': 'polite' });
+    if (!last) res.appendChild(el('p', { class: 'fine', text: 'Tests: 2d10 + characteristic. 11 or lower = tier 1, 12-16 = tier 2, 17+ = tier 3. Natural 19-20 crit; 2-3 doom.' }));
+    else if (last.plain) {
+      res.appendChild(el('div', { class: 'rr-label', text: last.label }));
+      res.appendChild(el('div', { class: 'rr-total', text: String(last.total) }));
+      res.appendChild(el('div', { class: 'fine', text: (last.dice.length > 1 ? last.dice.join(' + ') : '') + (last.note ? ' ' + last.note : '') }));
+    } else {
+      var r = last;
+      res.appendChild(el('div', { class: 'rr-label', text: r.label }));
+      res.appendChild(el('div', { class: 'rr-line' }, [el('span', { class: 'rr-dice', text: r.dice.map(function (x) { return x; }).join(' + ') }),
+        r.mod ? el('span', { text: ' ' + signed(r.mod) }) : null, el('span', { text: ' = ' }), el('b', { class: 'rr-total', text: String(r.total) })]));
+      res.appendChild(el('div', { class: 'tier t' + r.tier, text: 'Tier ' + r.tier + (r.crit ? ' · CRIT' : '') + (r.doom ? ' · DOOM' : '') + (r.exp ? ' · +' + r.exp : '') }));
+      var notes = [];
+      if (r.net === 1) notes.push('edge +2'); if (r.net === -1) notes.push('bane -2');
+      if (r.net === 2) notes.push('double edge: +1 tier'); if (r.net === -2) notes.push('double bane: -1 tier');
+      if (r.conds.length) notes.push(r.conds.join(', '));
+      if (notes.length) res.appendChild(el('div', { class: 'fine', text: notes.join(' · ') }));
+      if (r.crit) res.appendChild(el('div', { class: 'fine', text: r.opts.kind === 'attack' ? 'Crit: you get another action.' : 'Crit: tier 3 plus something extra.' }));
+      if (r.doom) res.appendChild(el('div', { class: 'fine', text: 'Doom: tier 1 and a major setback.' }));
+      var dm = damageText(r); if (dm) res.appendChild(el('div', { class: 'rr-dmg', text: dm }));
+      r.extra.forEach(function (x) { res.appendChild(el('div', { class: 'fine', text: x })); });
+      if (r.opts.kind === 'miasma' && r.miasmaPending) {
+        if (r.tier === 1) res.appendChild(btn('Apply: gain cruelty + Miasma Effects', function () {
+          p.cruelty++; var e = d(10), tot = e + p.cruelty; r.miasmaPending = false;
+          r.extra.push('Miasma Effects: 1d10 (' + e + ') + cruelty ' + p.cruelty + ' = ' + tot + (tot >= 13 ? ': your crow becomes an NPC.' : '. Ask the Ref for the effect.'));
+          commit('Miasma: gained a cruelty level (now ' + p.cruelty + '); Miasma Effects roll ' + tot + '.');
+        }, 'btn-primary'));
+        else if (r.tier === 3 && p.cruelty) res.appendChild(btn('Apply: remove all cruelty', function () { p.cruelty = 0; r.miasmaPending = false; commit('Miasma RR tier 3: all cruelty removed.'); }, 'btn-primary'));
+        else if (r.tier === 2) res.appendChild(el('div', { class: 'fine', text: 'No effect.' }));
+      }
+      if (!r.exp && r.tier < 3) {
+        var opts = expList().filter(function (e) {
+          if (e.spent >= e.total || e.group !== r.opts.group) return false;
+          if (r.opts.kind === 'attack') return e.name === r.opts.wtype;
+          if (r.opts.kind === 'cast') return !r.opts.wtype || e.name === r.opts.wtype;
+          return true;
+        });
+        if (opts.length) {
+          var sel = el('select', { 'aria-label': 'Expertise to spend' }, opts.map(function (e) { return el('option', { value: e.name, text: e.name + ' (' + (e.total - e.spent) + ' left)' }); }));
+          res.appendChild(el('div', { class: 'row exp-spend' }, [sel, btn('Spend: +1 tier', function () {
+            if (!spendExp(sel.value)) return;
+            r.exp = sel.value; r.tier = Math.min(3, r.tier + 1);
+            commit(r.label + ': spent ' + sel.value + ', now tier ' + r.tier + '.' + (damageText(r) ? ' ' + damageText(r) : ''));
+          })]));
+        }
+      }
+    }
+    box.appendChild(res);
+  }
+
+  function render() {
+    if (!$('play')) return;
+    applyMode(mode());
+    if (mode() !== 'play') return;
+    renderVitals(); renderTime(); renderAttacks(); renderExp(); renderItems(); renderAdvance(); renderGear(); renderLog(); renderRoller();
+    var sb = $('play-sum'), p = P(), sp = speed();
+    if (sb) sb.textContent = 'Stamina ' + C.curStamina() + '/' + C.staminaMax() + ' · Speed ' + sp.v + ' · Wounds ' + C.woundCount() + '/10' + (p.cruelty ? ' · Cruelty ' + p.cruelty : '') +
+      (Object.keys(p.conds).length ? ' · ' + Object.keys(p.conds).join(', ') : '');
+  }
+
+  $('tab-build').addEventListener('click', function () { setMode('build'); });
+  $('tab-play').addEventListener('click', function () { setMode('play'); });
+  applyMode(mode());
+  window.CrowsPlay = { render: render, setMode: setMode };
 })();
 
 </script>

@@ -24,6 +24,26 @@ What it does:
 8. **Advancement** (optional): enter Total XP for Expertise & Stamina bonuses, characteristic
    bonuses, and trait purchases (for the "Starting With More" rule).
 
+**Play mode** (the *Play* tab in the header) turns the app into a character manager for the table:
+
+- **Vitals**: current Stamina, AD of worn armor, shields, and parry weapons, speed (with wound and
+  condition penalties), wounds, cruelty, coins, and the six conditions. **Take damage** runs it through
+  AD, then Stamina, then wounds (piercing skips AD, vulnerable adds 1d6); click backpack slots to move
+  or heal wounds.
+- **Dice**: tests (2d10 + characteristic) with edges/banes, crits, dooms, and tiers; conditions apply
+  automatically. After a roll it offers to spend a matching expertise use for +1 tier. Also Miasma RRs
+  (with cruelty), initiative, draw from pack, and plain dice.
+- **Attacks & spells**: one-click attacks with wielded weapons (damage by tier, brutal crits, ammo
+  used) and castings of wielded spellbooks (chaos roll, backlash, the book's usage die).
+- **Dungeon turns & rest**: ending a DT rolls usage dice of lights in hand and ends blessed/vulnerable/
+  weakened. **Rest** eats a ration (or gives a starvation wound), restores Stamina, heals wounds
+  (hearty ration, Tend Wounds, Caretaker), restores expertise uses outside the Miasma, recharges
+  spellbooks, handles repair armor and lore book study, feeds pets, and applies pending XP.
+- **Expertise uses**, **carried items** (usage dice, refuelling, ammo, healing potions, using up
+  consumables), **magic item slots**, **pet Stamina**, and a **session log**.
+- **Experience**: log recovered treasure (XP = gc / players), which applies after the next rest, and
+  see the next bonus thresholds. New bonuses and trait purchases are chosen in Build > Advancement.
+
 **Download PDF** builds a fillable, editable PDF:
 
 - **Page 1**: Character Record: identity, characteristics, Stamina, AD, coins, conditions,
@@ -33,7 +53,10 @@ What it does:
 - **Pages 3–5**: a 3-page player cheat sheet covering tests, damage, conditions, inventory, combat,
   dungeon turns, resting, spellcasting, crafting, travel, the Miasma, and advancement.
 
-**Save file / Load file** stores the character as a small `.json` file. The page also autosaves to
+The PDF also records the play state: current Stamina and AD, cruelty, ticked conditions, spent
+expertise uses, wounds, and magic item slots.
+
+**Save file / Load file** stores the character (including play state) as a small `.json` file. The page also autosaves to
 the browser's local storage.
 
 ## Project layout
@@ -41,6 +64,7 @@ the browser's local storage.
 ```
 dist/Crows_Character_Generator.html   the finished single-file app (this is what you share)
 src/index.html, app.css, app.js       the app (dev version loads the files below separately)
+src/play.js                           Play mode: vitals, dice, rests, usage dice, XP tracking
 src/game-data.js                      backgrounds, expertises, item cards, tables
 src/traits-data.js                    all 23 trait trees + their connection lines (extracted from the book)
 src/template-data.js                  generated: base64 PDF template + field positions
