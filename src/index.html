@@ -1,0 +1,197 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crows Character Generator</title>
+<link rel="stylesheet" href="app.css">
+</head>
+<body>
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="brand">
+      <span class="brand-mark">CROWS</span>
+      <span class="brand-sub">Playtest 2 Character Generator</span>
+    </div>
+    <nav class="actions">
+      <button type="button" id="btn-random" class="btn">Random crow</button>
+      <button type="button" id="btn-new" class="btn btn-ghost">Start over</button>
+      <button type="button" id="btn-save" class="btn btn-ghost">Save file</button>
+      <label class="btn btn-ghost file-btn">Load file<input type="file" id="file-load" accept=".json,application/json"></label>
+      <button type="button" id="btn-pdf" class="btn btn-primary">Download PDF</button>
+    </nav>
+  </div>
+</header>
+
+<main class="layout">
+  <div class="steps">
+
+    <section class="card" id="sec-background">
+      <h2><span class="step">1</span> Background</h2>
+      <p class="hint">You weren't always a crow. Roll 2d6 (first die = left column, second = right) or pick one.</p>
+      <div class="row">
+        <label class="field grow">Background
+          <select id="bg-select"></select>
+        </label>
+        <button type="button" class="btn" id="btn-roll-bg">Roll 2d6</button>
+        <span class="dice" id="bg-dice" aria-live="polite"></span>
+      </div>
+      <div id="bg-details" class="bg-details"></div>
+    </section>
+
+    <section class="card" id="sec-chars">
+      <h2><span class="step">2</span> Characteristics</h2>
+      <p class="hint">Your background sets one characteristic to 2. The other two are either a 1 and a 0, or a -1 and a 2.</p>
+      <div class="row wrap">
+        <label class="field">At 2 (from background)
+          <select id="char-two"></select>
+        </label>
+        <fieldset class="field radio-group">
+          <legend>The other two</legend>
+          <label><input type="radio" name="pattern" value="10"> a 1 and a 0</label>
+          <label><input type="radio" name="pattern" value="m12"> a -1 and a 2</label>
+        </fieldset>
+        <label class="field">Higher of the two goes to
+          <select id="char-high"></select>
+        </label>
+      </div>
+      <div class="stat-row" id="char-display"></div>
+    </section>
+
+    <section class="card" id="sec-identity">
+      <h2><span class="step">3</span> Name &amp; Feature</h2>
+      <div class="grid2">
+        <label class="field">Name
+          <span class="with-btn"><input type="text" id="in-name" maxlength="60" autocomplete="off"><button type="button" class="btn btn-small" id="btn-rand-name" title="Random name">Random</button></span>
+        </label>
+        <label class="field">Player
+          <input type="text" id="in-player" maxlength="40" autocomplete="off">
+        </label>
+        <label class="field span2">Distinguishing feature <small>(a tattoo, a smell, a voice, a personality quirk...)</small>
+          <span class="with-btn"><input type="text" id="in-feature" maxlength="120" autocomplete="off"><button type="button" class="btn btn-small" id="btn-rand-feature" title="Random feature">Random</button></span>
+        </label>
+      </div>
+    </section>
+
+    <section class="card" id="sec-expertise">
+      <h2><span class="step">4</span> Expertises &amp; Stamina</h2>
+      <p class="hint">Spend a use after a roll to improve the result by one tier. Uses return when you finish a rest.</p>
+      <div class="stat-row small" id="derived-stats"></div>
+      <div id="alloc-banner" class="banner" hidden></div>
+      <div class="exp-grid" id="exp-grid"></div>
+    </section>
+
+    <section class="card" id="sec-traits">
+      <h2><span class="step">5</span> Traits</h2>
+      <div id="trait-list"></div>
+      <details class="tree-browser" id="tree-browser">
+        <summary>Browse trait trees<span id="xp-chip" class="chip"></span></summary>
+        <p class="hint">Starting traits (top row) cost 500 XP. Other traits must connect by a line to a trait you already own in the same tree. New crows start with 0 XP; set Total XP in the Advancement section if your Ref lets a new crow start with more.</p>
+        <label class="field">Tree
+          <select id="tree-select"></select>
+        </label>
+        <p class="tree-sub" id="tree-sub"></p>
+        <div class="tree-grid" id="tree-grid"></div>
+      </details>
+    </section>
+
+    <section class="card" id="sec-equipment">
+      <h2><span class="step">6</span> Equipment &amp; Inventory</h2>
+      <p class="hint">Every crow starts with an empty coin purse, a knife, a rope, six rations, and 3d6 gc, plus their background's gear. Click a card to select it, then click a slot to move it (or drag it). Hands can't hold stacks; multi-slot items need adjacent slots of one type.</p>
+      <div class="row wrap">
+        <div class="coins">
+          <label class="field">Coins (gc)
+            <input type="number" id="in-coins" min="0" max="99999" step="1">
+          </label>
+          <button type="button" class="btn" id="btn-roll-coins">Roll 3d6</button>
+          <span class="dice" id="coin-dice" aria-live="polite"></span>
+        </div>
+        <div class="row inv-tools">
+          <button type="button" class="btn" id="btn-arrange">Auto-arrange</button>
+          <button type="button" class="btn btn-ghost" id="btn-reset-gear">Reset to starting gear</button>
+        </div>
+      </div>
+      <div id="inv-warnings" class="banner warn" hidden></div>
+      <div class="inventory" id="inventory"></div>
+      <div class="tray-wrap">
+        <h3>Not carried <small>(drop here to set aside; left behind at home)</small></h3>
+        <div class="tray" id="tray"></div>
+      </div>
+      <div class="card-detail" id="card-detail" hidden></div>
+      <div class="add-item row wrap">
+        <label class="field grow">Add an item
+          <select id="add-item-select"></select>
+        </label>
+        <label class="field qty">Qty
+          <input type="number" id="add-item-qty" min="1" max="99" value="1">
+        </label>
+        <button type="button" class="btn" id="btn-add-item">Add</button>
+      </div>
+      <div id="pets" class="pets"></div>
+    </section>
+
+    <section class="card" id="sec-village">
+      <h2><span class="step">7</span> Village &amp; Connection</h2>
+      <p class="hint">Make an NPC in your village who matters to your crow, and pick the benefit they give you.</p>
+      <div class="grid2">
+        <label class="field">Village name
+          <input type="text" id="in-village" maxlength="60" autocomplete="off">
+        </label>
+        <label class="field">Extra starting institution <small>(chosen by the group)</small>
+          <select id="in-institution"></select>
+        </label>
+        <label class="field">Connection's name
+          <input type="text" id="in-conn-name" maxlength="60" autocomplete="off">
+        </label>
+        <label class="field">Relationship to you
+          <input type="text" id="in-conn-rel" maxlength="60" autocomplete="off" placeholder="e.g. older sister, old mentor, drinking buddy">
+        </label>
+        <label class="field span2">Connection benefit
+          <select id="in-conn-benefit"></select>
+        </label>
+        <p class="span2 benefit-text" id="conn-benefit-text"></p>
+      </div>
+    </section>
+
+    <section class="card" id="sec-advance">
+      <h2><span class="step">8</span> Advancement <small>(optional)</small></h2>
+      <p class="hint">New crows start at 0 TXP. If every other crow has 5,000+ TXP, the Ref can start a new crow at the lowest TXP in the party. Enter Total XP here to apply bonuses and buy traits.</p>
+      <div class="row wrap">
+        <label class="field">Total XP (TXP)
+          <input type="number" id="in-txp" min="0" max="999999" step="50">
+        </label>
+        <div class="xp-summary" id="xp-summary"></div>
+      </div>
+      <div id="bonus-list" class="bonus-list"></div>
+    </section>
+
+    <section class="card" id="sec-notes">
+      <h2><span class="step">9</span> Notes</h2>
+      <textarea id="in-notes" rows="4" maxlength="1500" placeholder="Backstory, goals, debts, grudges..."></textarea>
+    </section>
+  </div>
+
+  <aside class="summary" id="summary">
+    <div class="summary-inner">
+      <h2>Crow</h2>
+      <div id="summary-body"></div>
+      <button type="button" class="btn btn-primary wide" id="btn-pdf-2">Download fillable PDF</button>
+      <p class="fine">The PDF has a character record, the official inventory sheet with every slot filled in, and a 3-page cheat sheet. Every field stays editable.</p>
+      <div id="checklist" class="checklist"></div>
+    </div>
+  </aside>
+</main>
+
+<footer class="footer">
+  <p>Unofficial fan tool for the MCDM <em>Crows</em> public playtest (August&ndash;September 2026). Rules, names, and the inventory sheet are &copy; MCDM Productions LLC. Everything runs in your browser: nothing is uploaded.</p>
+</footer>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="../vendor/pdf-lib.min.js"></script>
+<script src="template-data.js"></script>
+<script src="game-data.js"></script>
+<script src="traits-data.js"></script>
+<script src="app.js"></script>
+</body>
+</html>
