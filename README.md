@@ -31,10 +31,16 @@ What it does:
   AD, then Stamina, then wounds (piercing skips AD, vulnerable adds 1d6); click backpack slots to move
   or heal wounds.
 - **Dice**: tests (2d10 + characteristic) with edges/banes, crits, dooms, and tiers; conditions apply
-  automatically. After a roll it offers to spend a matching expertise use for +1 tier. Also Miasma RRs
-  (with cruelty), initiative, draw from pack, and plain dice.
+  automatically. After a roll it offers to spend a matching expertise use for +1 tier (never on a doom).
+  Also Miasma RRs (with cruelty), initiative, draw from pack, and plain dice.
 - **Attacks & spells**: one-click attacks with wielded weapons (damage by tier, brutal crits, ammo
-  used) and castings of wielded spellbooks (chaos roll, backlash, the book's usage die).
+  used, the light-weapon bonus for two light weapons or an empty hand, -1 for a parry weapon at 0 AD),
+  throws with Melee/Ranged weapons, and castings of wielded spellbooks (the book's usage die, and a
+  chaos roll only once a tier 1 result is final). Ranged misses offer the roll to see if a nearby ally
+  is hit.
+- **Village**: set Prosperity in Build > Village; the Caretaker connection heals 3 wounds at 6+.
+  Surgical kits add a wound healed to Tend Wounds, and ticking "2+ items here" on a magic item slot
+  blocks resting and deals 1d6 wounds at the end of each dungeon turn.
 - **Dungeon turns & rest**: ending a DT rolls usage dice of lights in hand and ends blessed/vulnerable/
   weakened. **Rest** eats a ration (or gives a starvation wound), restores Stamina, heals wounds
   (hearty ration, Tend Wounds, Caretaker), restores expertise uses outside the Miasma, recharges

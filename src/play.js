@@ -19,7 +19,7 @@
 
   // UI-only state (not saved with the character).
   var ui = { eb: 0, mod: 0, dmg: '', pierce: false, first: '', heal: '', coins: '', tDesc: '', tGc: '', tPlayers: 4, xpAmt: '',
-    ration: '', activity: '', repair: '', study: '', tended: false, caretaker: false };
+    ration: '', activity: '', repair: '', study: '', tended: false, tendedKit: false, useKit: false, caretaker: false };
   var last = null; // most recent roll
 
   function S() { return window.CrowsApp.state; }
@@ -168,9 +168,10 @@
   function tierOf(total) { return total >= 17 ? 3 : total >= 12 ? 2 : 1; }
   // opts: label, charName, charVal, kind ('test'|'attack'|'cast'|'miasma'), group (expertise group allowed), wtype, melee, dmg {t2,t3,brutal}, card
   function rollTest(opts) {
+    if (last && last.chaosPending) log(last.label + ': kept tier 1. ' + chaosRoll(last));
     var p = P(), ch = C.characteristics().values;
     var extraE = p.conds.Blessed ? 1 : 0, extraB = p.conds.Weakened ? 1 : 0;
-    if (opts.kind === 'attack' && opts.melee && p.conds.Prone) extraB++;
+    if (isAttack(opts) && opts.melee && p.conds.Prone) extraB++;
     var net = netEdge(extraE, extraB);
     var a = d(10), b = d(10), nat = a + b;
     var bonus = net === 1 ? 2 : net === -1 ? -2 : 0;
@@ -202,11 +203,12 @@
         if (q.ammo <= 0) { removeCard(q); r.extra.push('that was the last one'); }
       }
     }
+    if (o.thrown) r.extra.push('The ' + o.card.key.toLowerCase() + ' leaves your hand; you can recover it later.');
     if (o.kind === 'cast') {
       if (r.doom) r.extra.push('Doom: a BACKLASH happens (Ref rolls d100 + rank).');
       else if (r.baseTier === 1) {
-        var ch = d(6);
-        r.extra.push('Chaos roll d6 = ' + ch + (ch === 1 ? ': BACKLASH (Ref rolls d100 + rank) instead of the effect.' : ': no backlash.'));
+        // The chaos roll is for a final tier 1 result, so wait if an expertise could still improve it.
+        if (expOptions(r).length) r.chaosPending = true; else chaosRoll(r);
       }
       if (o.card) {
         if (r.crit) r.extra.push('Crit: no usage die roll for the book.');
@@ -216,15 +218,61 @@
     if (o.kind === 'miasma') r.miasmaPending = true;
     void p;
   }
+  function isAttack(o) { return o.kind === 'attack' || (o.kind === 'cast' && !!o.dmg); }
+  function chaosRoll(r) {
+    var ch = d(6);
+    r.chaosPending = false; r.chaosDone = true; // the tier 1 result is final now
+    var t = 'Chaos roll d6 = ' + ch + (ch === 1 ? ': BACKLASH (Ref rolls d100 + rank) instead of the effect.' : ': no backlash.');
+    r.extra.push(t);
+    return t;
+  }
+  // Expertises that could improve this roll. A doom is tier 1 regardless of expertises.
+  function expOptions(r) {
+    if (r.doom || r.exp || r.chaosDone || r.tier >= 3) return [];
+    return expList().filter(function (e) {
+      if (e.spent >= e.total || e.group !== r.opts.group) return false;
+      if (r.opts.kind === 'attack') return e.name === r.opts.wtype;
+      if (r.opts.kind === 'cast') return !r.opts.wtype || e.name === r.opts.wtype;
+      return true;
+    });
+  }
+  // Parry X: a wielded weapon whose parry AD is down to 0 takes a -1 damage penalty.
+  function parryBroken(c) { return !!c && /Parry \d+/.test(item(c.key).txt) && C.adMax(c) > 0 && C.adNow(c) === 0; }
+  function isLightWeapon(c) { return item(c.key).cat === 'weapon' && /\bLight\b/.test(item(c.key).txt); }
+  // Light: a melee hit while wielding two light weapons adds the unused weapon's tier 2 damage (without A/S).
+  // An empty hand counts as a light weapon that makes unarmed strikes (tier 2 = 1).
+  function lightBonus(o) {
+    if (o.kind !== 'attack' || !o.melee) return null;
+    var h = C.occupancy().hand, a = o.card || null, other;
+    if (a) {
+      if (!isLightWeapon(a) || C.spanOf(a, 'hand') > 1) return null;
+      other = a.idx === 0 ? 1 : 0;
+    } else {
+      if (h[0] !== null && h[1] !== null) return null; // no free hand to strike with
+      other = h[0] === null ? 1 : 0;
+    }
+    if (h[other] === null) return { dmg: 1, from: 'empty hand' };
+    var oc = C.cardById(h[other]);
+    if (!oc || oc === a || !isLightWeapon(oc)) return null;
+    var m = /12-16: (\d+)/.exec(item(oc.key).txt);
+    return m ? { dmg: +m[1], from: oc.key.toLowerCase() } : null;
+  }
+  // The weapon's own damage at a tier (characteristic included), used for hits on allies too.
+  function tierDamage(o, tier) {
+    return (tier === 3 ? o.dmg.t3 : o.dmg.t2) + o.charVal - (parryBroken(o.card) ? 1 : 0);
+  }
   function damageText(r) {
     var o = r.opts;
     if (!o.dmg) return '';
-    if (r.tier === 1) return o.kind === 'attack' ? 'Miss.' + (o.melee ? ' The target can counter.' : '') : '';
-    var base = r.tier === 3 ? o.dmg.t3 : o.dmg.t2;
+    if (r.tier === 1) return 'Miss.' + (o.melee ? ' The target can counter.' : '');
+    var n = tierDamage(o, r.tier), parts = [];
+    if (parryBroken(o.card)) parts.push('-1: parry AD is 0');
     var bless = P().conds.Blessed ? o.charVal : 0;
-    var n = base + o.charVal + bless;
-    if (r.crit && o.dmg.brutal) n *= 2;
-    return n + ' damage' + (bless ? ' (incl. +' + bless + ' blessed)' : '') + (r.crit && o.dmg.brutal ? ' (brutal crit: doubled)' : '') + '.';
+    if (bless) { n += bless; parts.push(signed(bless) + ' blessed'); }
+    var lb = lightBonus(o);
+    if (lb) { n += lb.dmg; parts.push('+' + lb.dmg + ' light (' + lb.from + ')'); }
+    if (r.crit && o.dmg.brutal) { n *= 2; parts.push('brutal crit: doubled'); }
+    return Math.max(0, n) + ' damage' + (parts.length ? ' (' + parts.join(', ') + ')' : '') + '.';
   }
   function describe(r) {
     var s = r.label + ': ' + r.dice.join('+') + (r.mod ? ' ' + signed(r.mod) : '') + ' = ' + r.total + ' -> tier ' + r.tier;
@@ -242,14 +290,20 @@
   }
 
   // Parse attacks from wielded weapons and attack spellbooks.
-  function weaponAttack(c) {
+  // thrown: a Melee X/Ranged Y weapon used as a ranged attack (decided before the roll).
+  function weaponAttack(c, thrown) {
     var it = item(c.key), ch = C.characteristics().values;
     var m = /Attack 2d10 \+ (A or S|A|S)\. 12-16: (\d+)[^;]*; 17\+: (\d+)/.exec(it.txt);
     if (!m) return null;
+    var range = /^Melee \d+\/Ranged (\d+)/.exec(it.txt);
+    if (thrown && !range) return null;
+    var melee = /^Melee/.test(it.txt) && !thrown;
     var cn = m[1] === 'A' ? 'Agility' : m[1] === 'S' ? 'Strength' : (ch.Agility >= ch.Strength ? 'Agility' : 'Strength');
-    return { label: 'Attack with ' + c.key, charName: cn, charVal: ch[cn], kind: 'attack', group: 'Weapon', wtype: it.wt,
-      melee: /^Melee/.test(it.txt), dmg: { t2: +m[2], t3: +m[3], brutal: /Brutal/.test(it.txt) }, ammo: AMMO[c.key] || null, card: c,
-      summary: 'Attack 2d10 + ' + CROWS.CHAR_ABBR[cn] + ' (' + signed(ch[cn]) + '). 12-16: ' + (+m[2] + ch[cn]) + ' dam; 17+: ' + (+m[3] + ch[cn]) + ' dam' + (/Brutal/.test(it.txt) ? ' (brutal)' : '') };
+    var pen = parryBroken(c) ? 1 : 0;
+    return { label: (thrown ? 'Throw ' : 'Attack with ') + c.key, charName: cn, charVal: ch[cn], kind: 'attack', group: 'Weapon', wtype: it.wt,
+      melee: melee, ranged: !melee, thrown: !!thrown, dmg: { t2: +m[2], t3: +m[3], brutal: /Brutal/.test(it.txt) }, ammo: AMMO[c.key] || null, card: c,
+      summary: (thrown ? 'Ranged ' + range[1] + '. ' : '') + 'Attack 2d10 + ' + CROWS.CHAR_ABBR[cn] + ' (' + signed(ch[cn]) + '). 12-16: ' + (+m[2] + ch[cn] - pen) + ' dam; 17+: ' + (+m[3] + ch[cn] - pen) + ' dam' +
+        (/Brutal/.test(it.txt) ? ' (brutal)' : '') + (pen ? ' (-1: parry AD is 0)' : '') };
   }
   function unarmedAttack() {
     var ch = C.characteristics().values, cn = ch.Agility >= ch.Strength ? 'Agility' : 'Strength';
@@ -261,6 +315,7 @@
     var disc = (/R\d (\w+)/.exec(it.txt) || [])[1] || null;
     var m = /12-16: (\d+)\s*\+\s*M[^;]*; 17\+: (\d+)\s*\+\s*M/.exec(it.txt);
     return { label: 'Cast ' + c.key.replace(/ Book$/, ''), charName: 'Mind', charVal: ch.Mind, kind: 'cast', group: 'Spellcasting', wtype: disc,
+      melee: /Melee \d/.test(it.txt), ranged: /Ranged \d/.test(it.txt),
       dmg: it.atk && m ? { t2: +m[1], t3: +m[2], brutal: false } : null, card: c, summary: it.txt };
   }
 
@@ -272,11 +327,23 @@
     ended.forEach(function (k) { delete p.conds[k]; });
     if (ended.length) msgs.push(ended.join(', ') + ' ended.');
     inHands().forEach(function (c) { var u = udInfo(c.key); if (u && u.dt && udNow(c) > 0) msgs.push(rollUD(c, 'end of DT')); });
+    var over = overloadedSlots();
+    if (over.length) {
+      var n = d(6), placed = addWounds(n, 'w');
+      msgs.push('Two magic items in one slot (' + over.join(', ') + '): chaos deals 1d6 = ' + n + ' wound' + (n === 1 ? '' : 's') + (placed < n ? ' (' + placed + ' fit)' : '') + '.');
+      if (C.woundCount() >= 10) msgs.push('All 10 backpack slots are wounded: your crow is dead.');
+    }
     commit('End of dungeon turn ' + p.dt + '. ' + (msgs.join(' ') || 'Nothing in hand burns down.') + ' The Ref makes an encounter check.');
   }
+  // Rules: more than one magic item equipped in the same slot -> can't rest; 1d6 wounds at the end of each DT.
+  function overloadedSlots() { var m = P().magicMulti || {}; return MAGIC_SLOTS.filter(function (k) { return m[k]; }); }
+  function caretakerBonus() { return (S().prosperity || 0) >= 6 ? 3 : 2; }
+  function surgicalKit() { return carried().filter(function (c) { return c.key === 'Surgical Kit' && udNow(c) > 0; })[0] || null; }
   function foodCards() { return carried().filter(function (c) { return c.key === 'Ration' || c.key === 'Hearty Ration'; }); }
   function rest() {
     var s = S(), p = P(), msgs = [];
+    var over = overloadedSlots();
+    if (over.length) { C.toast('You can\'t rest with two magic items in one slot (' + over.join(', ') + ').'); return; }
     var food = ui.ration === 'none' ? null : foodCards().filter(function (c) { return c.key === (ui.ration || 'Ration'); })[0] || foodCards()[0] || null;
     if (!food) {
       var sw = addWounds(1, 's');
@@ -291,7 +358,7 @@
     if (starve.length) msgs.push('Starvation wounds gone (' + starve.length + ').');
     setStamina(C.staminaMax());
     msgs.push('Stamina full.');
-    var heal = 1 + (hearty ? 1 : 0) + (ui.tended ? 1 : 0) + (ui.caretaker ? 2 : 0);
+    var heal = 1 + (hearty ? 1 : 0) + (ui.tended ? 1 : 0) + (ui.tended && ui.tendedKit ? 1 : 0) + (ui.caretaker ? caretakerBonus() : 0);
     var h = healWounds(heal);
     if (h) msgs.push('Healed ' + h + ' wound' + (h === 1 ? '' : 's') + '.');
     var uses = C.expertiseUses();
@@ -311,6 +378,10 @@
       if (rc) { rc.dmg = 0; msgs.push('Repaired ' + rc.key + ' to full AD.'); }
     } else if (ui.activity === 'study' && ui.study) {
       p.temp[ui.study] = 1; msgs.push('Studied a lore book: +1 use of ' + ui.study + ' until the next rest.');
+    } else if (ui.activity === 'Tend Wounds') {
+      var kit = ui.useKit ? surgicalKit() : null;
+      if (kit) msgs.push('Tended an ally\'s wounds with a surgical kit: they lose 3 wounds instead of 1. ' + rollUD(kit, 'Tend Wounds'));
+      else msgs.push('Tended an ally\'s wounds: they lose 2 wounds instead of 1.');
     } else if (ui.activity) msgs.push('Rest activity: ' + ui.activity + '.');
     // pets eat animal feed
     s.pets.forEach(function (pet, i) {
@@ -321,7 +392,7 @@
       } else msgs.push('Your ' + pet.toLowerCase() + ' had no animal feed (no rest benefit).');
     });
     if (p.pendingXP) msgs.push(applyXP());
-    ui.activity = ''; ui.tended = false; ui.caretaker = false;
+    ui.activity = ''; ui.tended = false; ui.tendedKit = false; ui.useKit = false; ui.caretaker = false;
     commit('Rested. ' + msgs.join(' '));
   }
   function applyXP() {
@@ -459,7 +530,13 @@
       sub = opts.length ? el('select', { onchange: function () { ui.study = this.value; } }, opts.map(function (x) { return el('option', { value: x, text: x }); })) :
         el('span', { class: 'fine', text: 'You carry no lore book.' });
       if (opts.length) { if (opts.indexOf(ui.study) < 0) ui.study = opts[0]; sub.value = ui.study; } else ui.study = '';
+    } else if (ui.activity === 'Tend Wounds') {
+      var kit = surgicalKit();
+      sub = kit ? el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.useKit, onchange: function () { ui.useKit = this.checked; } }), ' Use my surgical kit (they lose 1 more wound; rolls its usage die)']) :
+        el('span', { class: 'fine', text: 'Pick someone with 2+ wounds (not you): they lose 2 wounds instead of 1.' });
+      if (!kit) ui.useKit = false;
     }
+    var over = overloadedSlots();
     var restBox = el('div', { class: 'rest-box' }, [
       el('div', { class: 'row wrap' }, [
         el('label', { class: 'field' }, ['Food', rationSel]),
@@ -467,19 +544,22 @@
       ]),
       el('div', { class: 'row wrap checks' }, [
         el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: p.miasma, onchange: function () { p.miasma = this.checked; commit(); } }), ' Resting in the Miasma']),
-        el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.tended, onchange: function () { ui.tended = this.checked; } }), ' Someone used Tend Wounds on me (+1 wound healed)']),
-        s.connBenefit === 'Caretaker' ? el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.caretaker, onchange: function () { ui.caretaker = this.checked; } }), ' Resting at my Caretaker connection\'s home (+2 wounds; 3 at Prosperity 6+)']) : null
+        el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.tended, onchange: function () { ui.tended = this.checked; if (!this.checked) ui.tendedKit = false; C.render(); } }), ' Someone used Tend Wounds on me (+1 wound healed)']),
+        ui.tended ? el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.tendedKit, onchange: function () { ui.tendedKit = this.checked; } }), ' ...with a surgical kit (+1 more)']) : null,
+        s.connBenefit === 'Caretaker' ? el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.caretaker, onchange: function () { ui.caretaker = this.checked; } }),
+          ' Resting at my Caretaker connection\'s home (+' + caretakerBonus() + ' wounds: 2, or 3 at Prosperity 6+; your village is at ' + (s.prosperity || 0) + ')']) : null
       ]),
+      over.length ? el('div', { class: 'banner bad', text: 'You can\'t rest: two magic items are equipped in one slot (' + over.join(', ') + '). Unequip one under Magic item slots.' }) : null,
       el('p', { class: 'fine', text: '6 uninterrupted hours (4 asleep), eat 1 ration: regain all Stamina, heal 1 wound, regain expertise uses (not in the Miasma), recharge spellbooks and other rest usage dice' +
         (p.pendingXP ? ', and gain your ' + fmt(p.pendingXP) + ' pending XP' : '') + '.' }),
-      btn('Rest', rest, 'btn-primary')
+      btn('Rest', rest, 'btn-primary', { disabled: over.length ? true : null })
     ]);
     card('play-time', 'Dungeon turns & rest', [
       el('div', { class: 'row wrap dt-row' }, [
         el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: 'Dungeon turn' }), el('div', { class: 'val' }, [el('b', { text: String(p.dt + 1) })])]),
         btn('End dungeon turn', endDT, 'btn-primary'),
         btn('Reset count', function () { p.dt = 0; commit('Dungeon turn count reset.'); }, 'btn-ghost'),
-        el('p', { class: 'fine grow', text: 'Ending a DT rolls the usage dice of lights in your hands and ends blessed, vulnerable, and weakened. 30 real minutes each; greed bonus +30/20/10% in DT 1/2/3.' })
+        el('p', { class: 'fine grow', text: 'Ending a DT rolls the usage dice of lights in your hands, ends blessed, vulnerable, and weakened, and deals 1d6 wounds if two magic items share a slot. 30 real minutes each; greed bonus +30/20/10% in DT 1/2/3.' })
       ]),
       el('h3', { text: 'Rest' }), restBox
     ]);
@@ -530,6 +610,8 @@
           dis = !q;
         }
         row(c.key + ' (' + where(c) + ')', a.summary, function () { rollTest(a); }, 'Attack', dis, note);
+        var t = weaponAttack(c, true);
+        if (t) row('Throw ' + c.key.toLowerCase() + ' (' + where(c) + ')', t.summary, function () { rollTest(t); }, 'Throw', false, null);
       } else if (it.cat === 'spell') {
         var o = castOpts(c), u = udNow(c);
         row(c.key.replace(/ Book$/, '') + ' (' + where(c) + ')', o.summary, function () { rollTest(o); }, 'Cast', u <= 0, u > 0 ? null : 'Usage die spent: recharges on a rest.');
@@ -539,7 +621,7 @@
     row('Unarmed / improvised', ua.summary, function () { rollTest(ua); }, 'Attack', false, null);
     var stowed = carried().filter(function (c) { return c.area !== 'hand' && (item(c.key).cat === 'spell' || item(c.key).cat === 'weapon'); });
     card('play-attacks', 'Attacks & spells', [
-      el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee).' }),
+      el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee). A ranged attack against a creature adjacent to you takes a bane: set it before rolling. Light weapon and parry damage adjustments are included.' }),
       rows,
       stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Move items between slots in Build > Equipment.' }) : null
     ]);
@@ -639,11 +721,17 @@
     var s = S(), p = P();
     var magicItems = carried().filter(function (c) { return item(c.key).cat === 'magic' || c.key === 'Holy Symbol'; }).map(function (c) { return c.key; });
     var dl = el('datalist', { id: 'play-magic-list' }, magicItems.map(function (k) { return el('option', { value: k }); }));
+    if (!p.magicMulti) p.magicMulti = {};
     var slots = el('div', { class: 'magic-grid' }, MAGIC_SLOTS.map(function (k) {
-      return el('label', { class: 'field' }, [k, el('input', { type: 'text', list: 'play-magic-list', maxlength: 80, value: p.magic[k] || '', oninput: function () {
+      return el('div', { class: 'field' }, [el('label', { for: 'magic-' + k, text: k }), el('input', { type: 'text', id: 'magic-' + k, list: 'play-magic-list', maxlength: 80, value: p.magic[k] || '', oninput: function () {
         if (this.value) p.magic[k] = this.value; else delete p.magic[k]; C.save();
-      }, onchange: function () { C.render(); } })]);
+      }, onchange: function () { C.render(); } }),
+      el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: !!p.magicMulti[k], onchange: function () {
+        if (this.checked) p.magicMulti[k] = true; else delete p.magicMulti[k];
+        commit(this.checked ? 'Two magic items now share the ' + k.toLowerCase() + ' slot: no resting, 1d6 wounds at the end of each DT.' : 'Only one magic item in the ' + k.toLowerCase() + ' slot now.');
+      } }), ' 2+ items here'])]);
     }));
+    var over = overloadedSlots();
     var pets = s.pets.map(function (pet, i) {
       var m = /Stamina (\d+)/.exec(CROWS.PETS[pet] || ''), mx = m ? +m[1] : 0, cur = typeof p.petStam[i] === 'number' ? p.petStam[i] : mx;
       function set(v) { v = Math.max(0, Math.min(mx, v)); if (v >= mx) delete p.petStam[i]; else p.petStam[i] = v; commit(); }
@@ -652,7 +740,8 @@
         el('div', { class: 'fine', text: CROWS.PETS[pet] || '' })]);
     });
     card('play-gear', 'Magic item slots & pets', [
-      el('p', { class: 'hint', text: 'Wearing two magic items in one slot: you can\'t rest and take 1d6 wounds at the end of each dungeon turn.' }),
+      el('p', { class: 'hint', text: 'Wearing two magic items in one slot: you can\'t rest and take 1d6 wounds at the end of each dungeon turn. Tick "2+ items here" and the app applies both.' }),
+      over.length ? el('div', { class: 'banner bad', text: 'Overloaded slot: ' + over.join(', ') + '. You can\'t rest; each DT ends with 1d6 wounds.' }) : null,
       dl, slots,
       pets.length ? el('h3', { text: 'Pets' }) : null
     ].concat(pets).concat([pets.length ? el('p', { class: 'fine', text: 'Command: maneuver. Complex or dangerous: 2d10 + M (1 refuses; 2 obeys, then weakened; 3 obeys). Pets eat animal feed when you rest.' }) : null]));
@@ -726,21 +815,27 @@
         else if (r.tier === 3 && p.cruelty) res.appendChild(btn('Apply: remove all cruelty', function () { p.cruelty = 0; r.miasmaPending = false; commit('Miasma RR tier 3: all cruelty removed.'); }, 'btn-primary'));
         else if (r.tier === 2) res.appendChild(el('div', { class: 'fine', text: 'No effect.' }));
       }
-      if (!r.exp && r.tier < 3) {
-        var opts = expList().filter(function (e) {
-          if (e.spent >= e.total || e.group !== r.opts.group) return false;
-          if (r.opts.kind === 'attack') return e.name === r.opts.wtype;
-          if (r.opts.kind === 'cast') return !r.opts.wtype || e.name === r.opts.wtype;
-          return true;
-        });
-        if (opts.length) {
-          var sel = el('select', { 'aria-label': 'Expertise to spend' }, opts.map(function (e) { return el('option', { value: e.name, text: e.name + ' (' + (e.total - e.spent) + ' left)' }); }));
-          res.appendChild(el('div', { class: 'row exp-spend' }, [sel, btn('Spend: +1 tier', function () {
-            if (!spendExp(sel.value)) return;
-            r.exp = sel.value; r.tier = Math.min(3, r.tier + 1);
-            commit(r.label + ': spent ' + sel.value + ', now tier ' + r.tier + '.' + (damageText(r) ? ' ' + damageText(r) : ''));
-          })]));
-        }
+      if (r.doom && r.tier < 3) res.appendChild(el('div', { class: 'fine', text: 'A doom stays tier 1: expertises can\'t improve it.' }));
+      var opts = expOptions(r);
+      if (opts.length) {
+        var sel = el('select', { 'aria-label': 'Expertise to spend' }, opts.map(function (e) { return el('option', { value: e.name, text: e.name + ' (' + (e.total - e.spent) + ' left)' }); }));
+        res.appendChild(el('div', { class: 'row exp-spend' }, [sel, btn('Spend: +1 tier', function () {
+          if (!spendExp(sel.value)) return;
+          r.exp = sel.value; r.tier = Math.min(3, r.tier + 1);
+          var note = '';
+          if (r.chaosPending) { r.chaosPending = false; note = ' No longer tier 1, so no chaos roll.'; r.extra.push('Improved out of tier 1: no chaos roll.'); }
+          commit(r.label + ': spent ' + sel.value + ', now tier ' + r.tier + '.' + (damageText(r) ? ' ' + damageText(r) : '') + note);
+        })]));
+      }
+      if (r.chaosPending) res.appendChild(btn('Keep tier 1: make the chaos roll', function () { commit(r.label + ': kept tier 1. ' + chaosRoll(r)); }, 'btn-primary'));
+      // Ranged miss next to allies (Rules: Ranged Attacks).
+      if (r.opts.ranged && r.opts.dmg && r.tier === 1 && !r.chaosPending) {
+        if (r.doom) res.appendChild(el('div', { class: 'fine warnish', text: 'Ranged doom: if any ally is adjacent to the target, you hit one of them (the Ref picks at random) for ' + Math.max(0, tierDamage(r.opts, 3)) + ' damage (tier 3).' }));
+        else if (!r.allyRolled) res.appendChild(btn('Target was next to an ally? Roll', function () {
+          var x = d(6); r.allyRolled = true;
+          var t = 'Ally check d6 = ' + x + (x % 2 ? ': odd, the shot hits a random adjacent ally (Ref picks) for ' + Math.max(0, tierDamage(r.opts, 2)) + ' damage (tier 2).' : ': even, no ally is hit.');
+          r.extra.push(t); commit(r.label + ': ' + t);
+        }));
       }
     }
     box.appendChild(res);

@@ -349,7 +349,7 @@
     var others = CROWS.CHARS.filter(function (c) { return c !== b.two[0]; });
     return {
       v: 1, bg: bgIndex, twoChar: b.two[0], pattern: '10', highChar: others[0],
-      name: '', player: '', feature: '', village: '', institution: '',
+      name: '', player: '', feature: '', village: '', institution: '', prosperity: 0,
       coins: 0, coinDice: null, bgDice: null,
       txp: 0, esBonus: [], esAlloc: {}, charBonus: [], traits: [],
       inv: [], connName: '', connRel: '', connBenefit: '', notes: '', pets: (b.pets || []).slice(),
@@ -359,7 +359,7 @@
   // Live, at-the-table state (Play mode). stamina null = at maximum; wounds maps backpack slot index -> 'w' or 's' (starvation).
   function freshPlay() {
     return { stamina: null, cruelty: 0, conds: {}, spent: {}, temp: {}, wounds: {}, dt: 0, miasma: false,
-      pendingXP: 0, xpLog: [], log: [], magic: {}, petStam: {} };
+      pendingXP: 0, xpLog: [], log: [], magic: {}, magicMulti: {}, petStam: {} };
   }
   function normalizePlay(p) {
     var base = freshPlay();
@@ -401,7 +401,7 @@
   function randomCrow() {
     var r1 = d(6), r2 = d(6);
     var idx = CROWS.BACKGROUNDS.findIndex(function (b) { return b.d[0] === r1 && b.d[1] === r2; });
-    var keep = { player: state ? state.player : '', village: state ? state.village : '', institution: state ? state.institution : '' };
+    var keep = { player: state ? state.player : '', village: state ? state.village : '', institution: state ? state.institution : '', prosperity: state ? state.prosperity : 0 };
     state = freshState(idx);
     state.bgDice = [r1, r2];
     var b = bg();
@@ -412,7 +412,7 @@
     state.name = randomName();
     state.feature = pick(CROWS.NAME_IDEAS.feature);
     state.connBenefit = pick(CROWS.CONNECTION_BENEFITS)[0];
-    state.player = keep.player; state.village = keep.village; state.institution = keep.institution;
+    state.player = keep.player; state.village = keep.village; state.institution = keep.institution; state.prosperity = keep.prosperity || 0;
     resetGear();
     rollCoins();
   }
@@ -434,6 +434,7 @@
       return liveProps(c, { id: uid++, key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 });
     });
     s.play = normalizePlay(s.play);
+    s.prosperity = typeof s.prosperity === 'number' && isFinite(s.prosperity) ? Math.max(-10, Math.min(10, Math.round(s.prosperity))) : 0;
     state = s;
     syncBonusArrays();
     pruneTraits();
@@ -732,6 +733,7 @@
       if (document.activeElement !== $(p[0])) $(p[0]).value = state[p[1]];
     });
     $('in-institution').value = state.institution;
+    if (document.activeElement !== $('in-prosperity')) $('in-prosperity').value = state.prosperity;
     $('in-conn-benefit').value = state.connBenefit;
     var b = CROWS.CONNECTION_BENEFITS.filter(function (x) { return x[0] === state.connBenefit; })[0];
     $('conn-benefit-text').textContent = b ? b[1] : '';
@@ -847,6 +849,9 @@
     Object.keys(pl.spent).forEach(function (k) { for (var i = 1; i <= pl.spent[k]; i++) v['Exp ' + k + ' Spent ' + i] = true; });
     Object.keys(pl.wounds).forEach(function (i) { v['Wound ' + (+i + 1)] = true; });
     Object.keys(pl.magic).forEach(function (k) { if (pl.magic[k]) v['Slot ' + k] = pl.magic[k]; });
+    Object.keys(pl.magicMulti || {}).forEach(function (k) {
+      if (pl.magicMulti[k]) v['Slot ' + k] = (v['Slot ' + k] ? v['Slot ' + k] + ' ' : '') + '[2+ items: no rest, 1d6 wounds/DT]';
+    });
     v['Max Uses'] = String(maxUses(state.txp));
     var spent = traitXP();
     v['TXP'] = fmt(state.txp); v['XP Spent'] = fmt(spent); v['XP Unspent'] = fmt(state.txp - spent);
@@ -869,7 +874,7 @@
     var notes = [];
     if (state.notes.trim()) notes.push(state.notes.trim());
     var inst = ['Blacksmith', 'Crypt', 'General Store', 'Inn', 'Temple'].concat(state.institution ? [state.institution] : []);
-    notes.push('Village institutions (1st level): ' + inst.join(', ') + '. Prosperity 0.');
+    notes.push('Village institutions (1st level): ' + inst.join(', ') + '. Prosperity ' + state.prosperity + '.');
     if (pl.pendingXP) notes.push('XP awaiting a rest: ' + fmt(pl.pendingXP) + '.');
     if (state.esBonus.length) notes.push('E&S bonuses: ' + state.esBonus.map(function (o) { return esLabels[o]; }).join('; ') + '.');
     var loose = state.inv.filter(function (c) { return c.area === 'none'; });
@@ -1017,6 +1022,9 @@
     inst.appendChild(el('option', { value: '', text: '(not chosen yet)' }));
     CROWS.STARTING_INSTITUTIONS.forEach(function (n) { inst.appendChild(el('option', { value: n, text: n })); });
     inst.addEventListener('change', function () { state.institution = this.value; save(); });
+    $('in-prosperity').addEventListener('change', function () {
+      var n = parseInt(this.value, 10); state.prosperity = isNaN(n) ? 0 : Math.max(-10, Math.min(10, n)); render();
+    });
     var cb = $('in-conn-benefit');
     cb.appendChild(el('option', { value: '', text: '(choose a benefit)' }));
     CROWS.CONNECTION_BENEFITS.forEach(function (b) { cb.appendChild(el('option', { value: b[0], text: b[0] })); });
