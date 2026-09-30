@@ -68,10 +68,35 @@ expertise uses, wounds, and magic item slots.
 **Save file / Load file** stores the character (including play state) as a small `.json` file. The page also autosaves to
 the browser's local storage.
 
+## Ref Screen (for the Ref)
+
+A separate, self-contained app for running sessions and keeping the campaign between them:
+**https://balor1eye.github.io/crows-character-generator/Crows_Ref_Screen.html**, or offline as
+**`dist/Crows_Ref_Screen.html`** (one file, works offline, autosaves in the browser; **Save campaign /
+Load campaign** writes a `.json` file).
+
+- **Session**: the shared dungeon-turn timer (60/30/20 minutes or every 1d6 rooms), Encounter Number with
+  crowded/chaos adjustments, greed bonus, End DT (ends DT conditions, rolls the encounter check and the monster
+  table, tracks signalled encounters), a combat tracker (initiative, Stamina/AD/wounds, conditions, one-click
+  monster attacks, X/Rest uses), the rest procedure, and the session log.
+- **Travel**: hexes and EN from pace, speed, roads, water, and weather; travel encounters with every sub-table;
+  the secret lost-direction roll; Miasma RRs and effects for each crow; the travel roles.
+- **Village**: Prosperity, sale percentage, cycles and village events, institutions with levels and stewards,
+  crypt boons, and the sample village Gadwick.
+- **Party**: the crows (import the character generator's save files), XP awards with the greed bonus,
+  hirelings, and a ledger for loans, credits, and bets.
+- **World**: places (with the Dungeons book's locations), NPCs, campaign notes, and archived session logs.
+- **Bestiary**, **Tables** (every rollable table), and a searchable **Rules** reference.
+
+Source is in `ref/src/`; rebuild with `python ref/build/build.py` (plain Python 3, no packages). The build reads
+`docs/CROWS_PT2_RULES.md` for the Rules tab, so the built file contains that text, and writes to `dist/`,
+which GitHub Pages publishes.
+
 ## Project layout
 
 ```
 dist/Crows_Character_Generator.html   the finished single-file app (this is what you share)
+dist/Crows_Ref_Screen.html            the Ref Screen (built from ref/src by ref/build/build.py)
 dist/index.html                       redirects the site root to the app (for GitHub Pages)
 .github/workflows/pages.yml           publishes dist/ to GitHub Pages
 src/index.html, app.css, app.js       the app (dev version loads the files below separately)

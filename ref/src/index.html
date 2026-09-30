@@ -1,0 +1,90 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>Crows Ref Screen</title>
+<link rel="stylesheet" href="ref.css">
+</head>
+<body data-tab="session">
+<header class="masthead">
+  <div class="masthead-inner">
+    <div class="brand">
+      <span class="brand-mark">CROWS</span>
+      <span class="brand-sub">Playtest 2 Ref Screen</span>
+    </div>
+    <nav class="actions">
+      <span class="camp-name" id="camp-name"></span>
+      <button type="button" id="btn-save" class="btn btn-ghost">Save campaign</button>
+      <label class="btn btn-ghost file-btn">Load campaign<input type="file" id="file-load" accept=".json,application/json"></label>
+      <button type="button" id="btn-new" class="btn btn-ghost">New campaign</button>
+    </nav>
+  </div>
+  <div class="tabbar" role="tablist" aria-label="Sections">
+    <div class="tabbar-inner" id="tabbar"></div>
+  </div>
+</header>
+
+<main class="layout">
+  <div class="pages">
+    <div class="page" id="page-session">
+      <section class="card" id="sec-dt"></section>
+      <section class="card" id="sec-combat"></section>
+      <section class="card" id="sec-rest"></section>
+      <section class="card" id="sec-log"></section>
+      <section class="card" id="sec-quick"></section>
+    </div>
+    <div class="page" id="page-travel">
+      <section class="card" id="sec-travel-day"></section>
+      <section class="card" id="sec-travel-enc"></section>
+      <section class="card" id="sec-miasma"></section>
+      <section class="card" id="sec-travel-roles"></section>
+    </div>
+    <div class="page" id="page-village">
+      <section class="card" id="sec-village"></section>
+      <section class="card" id="sec-institutions"></section>
+      <section class="card" id="sec-crypt"></section>
+    </div>
+    <div class="page" id="page-party">
+      <section class="card" id="sec-party"></section>
+      <section class="card" id="sec-xp"></section>
+      <section class="card" id="sec-hirelings"></section>
+      <section class="card" id="sec-ledger"></section>
+    </div>
+    <div class="page" id="page-world">
+      <section class="card" id="sec-places"></section>
+      <section class="card" id="sec-npcs"></section>
+      <section class="card" id="sec-notes"></section>
+      <section class="card" id="sec-history"></section>
+    </div>
+    <div class="page" id="page-bestiary">
+      <section class="card" id="sec-bestiary"></section>
+    </div>
+    <div class="page" id="page-tables">
+      <section class="card" id="sec-tables"></section>
+    </div>
+    <div class="page" id="page-rules">
+      <section class="card" id="sec-rules"></section>
+    </div>
+  </div>
+
+  <aside class="side" id="side">
+    <div class="side-inner">
+      <div class="side-timer" id="side-timer"></div>
+      <div class="side-dice" id="side-dice"></div>
+      <div class="side-log" id="side-log"></div>
+    </div>
+  </aside>
+</main>
+
+<footer class="footer">
+  <p>Unofficial fan tool for the MCDM <em>Crows</em> public playtest (August&ndash;September 2026). Rules and names are &copy; MCDM Productions LLC. Everything runs in your browser and is saved only on this device (and in the campaign files you download).</p>
+</footer>
+
+<div id="toast" class="toast" role="status" aria-live="polite"></div>
+
+<script src="rules-text.js"></script>
+<script src="ref-data.js"></script>
+<script src="ref.js"></script>
+</body>
+</html>
