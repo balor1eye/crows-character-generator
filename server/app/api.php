@@ -60,15 +60,36 @@ function valid_email(string $e): string {
     if (strlen($e) > 190 || !filter_var($e, FILTER_VALIDATE_EMAIL)) fail('Please enter a valid email address.');
     return $e;
 }
-function valid_password(string $p): string {
-    if (strlen($p) < 8) fail('Passwords need at least 8 characters.');
+// Among the most-used passwords in breach lists; NIST SP 800-63B says to refuse known-bad passwords.
+const COMMON_PASSWORDS = ['12345678', '123456789', '1234567890', '12345678910', '87654321', '11111111', '00000000', '88888888',
+    '123123123', '11223344', 'password', 'password1', 'password12', 'password123', 'passw0rd', 'p@ssw0rd', 'p@ssword',
+    'qwertyui', 'qwerty123', 'qwertyuiop', '1q2w3e4r', '1qaz2wsx', 'zaq12wsx', 'asdfghjk', 'asdfasdf', 'abcd1234',
+    'abc12345', 'iloveyou', 'sunshine', 'princess', 'football', 'baseball', 'welcome1', 'letmein1', 'trustno1',
+    'superman', 'starwars', 'dragon12', 'computer', 'whatever', 'michelle', 'jennifer', 'corvette', 'mercedes',
+    'changeme', 'internet', 'administrator', 'admin123', 'test1234', 'monkey12', 'shadow12', 'master12', 'crows123',
+    'crowscrows', 'playtest', 'dungeons', 'dungeonmaster'];
+
+function valid_password(string $p, string $username = '', string $email = ''): string {
+    if (mb_strlen($p) < 8) fail('Passwords need at least 8 characters.');
     if (strlen($p) > 200) fail('That password is too long.');
+    $low = mb_strtolower($p);
+    if (in_array($low, COMMON_PASSWORDS, true) || preg_match('/^(.)\1+$/u', $p)) fail('That password is too common. Please choose another.');
+    if (($username !== '' && $low === mb_strtolower($username)) || ($email !== '' && $low === mb_strtolower($email))) fail('Your password can\'t be your username or email.');
     return $p;
 }
+/** Re-checks the password for sensitive changes; failures are throttled like logins. */
 function check_password(array $s, string $pw): void {
+    $key = 'pw:' . $s['id'];
+    throttle($key, 5, 30, 900);
     $row = q('SELECT pass_hash FROM users WHERE id = ?', [$s['id']])->fetch();
-    if (!$row || !password_verify($pw, $row['pass_hash'])) fail('Your current password is not correct.', 403);
+    if (!$row || !password_verify($pw, $row['pass_hash'])) {
+        note_attempt($key);
+        audit('password_check_failed', $s['id']);
+        fail('Your current password is not correct.', 403);
+    }
 }
+// Verifying against this when the account doesn't exist keeps login timing the same either way.
+function dummy_hash(): string { static $h = null; return $h ??= hash_password('not-a-real-password-' . token()); }
 
 // ---------------------------------------------------------------- rate limits
 function throttle(string $login, int $maxPerLogin, int $maxPerIp, int $window): void {
@@ -105,14 +126,15 @@ function a_me(): array {
 function a_register(): array {
     $username = valid_username(str('username', 64));
     $email = valid_email(str('email', 300));
-    $pw = valid_password(str('password', 300));
+    $pw = valid_password(str('password', 300), $username, $email);
     throttle('register', 1000, 10, 3600);
     note_attempt('register');
     if (q('SELECT 1 FROM users WHERE username = ?', [$username])->fetch()) fail('That username is taken.', 409);
     if (q('SELECT 1 FROM users WHERE email = ?', [$email])->fetch()) fail('An account already uses that email. Try logging in or resetting your password.', 409);
     q('INSERT INTO users (username, email, pass_hash, role, is_admin, created_at) VALUES (?,?,?,?,0,?)',
-      [$username, $email, password_hash($pw, PASSWORD_DEFAULT), 'player', now()]);
+      [$username, $email, hash_password($pw), 'player', now()]);
     $id = (int)db()->lastInsertId();
+    audit('register', $id, $username);
     $sess = start_session($id);
     $u = q('SELECT * FROM users WHERE id = ?', [$id])->fetch();
     return ['user' => public_user($u), 'csrf' => $sess['csrf']];
@@ -125,13 +147,16 @@ function a_login(): array {
     $key = strtolower($login);
     throttle($key, 8, 30, 900);
     $u = q('SELECT * FROM users WHERE username = ? OR email = ?', [$login, $login])->fetch();
-    if (!$u || !password_verify($pw, $u['pass_hash'])) {
+    $ok = password_verify($pw, $u ? $u['pass_hash'] : dummy_hash());
+    if (!$u || !$ok) {
         note_attempt($key);
+        audit('login_failed', $u ? (int)$u['id'] : null, $u ? '' : 'unknown account');
         fail('That username or password is not correct.', 401);
     }
-    if (password_needs_rehash($u['pass_hash'], PASSWORD_DEFAULT)) {
-        q('UPDATE users SET pass_hash = ? WHERE id = ?', [password_hash($pw, PASSWORD_DEFAULT), $u['id']]);
+    if (password_needs_rehash($u['pass_hash'], pw_algo())) {
+        q('UPDATE users SET pass_hash = ? WHERE id = ?', [hash_password($pw), $u['id']]);
     }
+    audit('login', (int)$u['id']);
     q('DELETE FROM login_attempts WHERE login = ?', [$key]);
     $sess = start_session((int)$u['id']);
     return ['user' => public_user($u), 'csrf' => $sess['csrf']];
@@ -145,6 +170,7 @@ function a_forgot(): array {
     note_attempt('forgot:' . strtolower($email));
     $u = q('SELECT id, username, email FROM users WHERE email = ?', [$email])->fetch();
     if ($u) {
+        audit('reset_requested', (int)$u['id']);
         $link = reset_link((int)$u['id'], 2);
         send_mail($u['email'], 'Reset your Crows password',
             "Hi {$u['username']},\n\nSomeone (hopefully you) asked to reset the password for your Crows account.\n" .
@@ -156,12 +182,13 @@ function a_forgot(): array {
 
 function a_reset(): array {
     $tok = str('token', 100);
-    $pw = valid_password(str('password', 300));
     if (!preg_match('/^[0-9a-f]{64}$/', $tok)) fail('That reset link is not valid.');
-    $row = q('SELECT user_id, expires_at FROM password_resets WHERE token_hash = ?', [sha($tok)])->fetch();
+    $row = q('SELECT r.user_id, r.expires_at, u.username, u.email FROM password_resets r JOIN users u ON u.id = r.user_id WHERE r.token_hash = ?', [sha($tok)])->fetch();
     if (!$row || $row['expires_at'] < now()) fail('That reset link has expired. Ask for a new one.', 410);
+    $pw = valid_password(str('password', 300), $row['username'], $row['email']);
     $uid = (int)$row['user_id'];
-    q('UPDATE users SET pass_hash = ? WHERE id = ?', [password_hash($pw, PASSWORD_DEFAULT), $uid]);
+    q('UPDATE users SET pass_hash = ? WHERE id = ?', [hash_password($pw), $uid]);
+    audit('password_reset', $uid);
     q('DELETE FROM password_resets WHERE user_id = ?', [$uid]);
     q('DELETE FROM sessions WHERE user_id = ?', [$uid]);
     $sess = start_session($uid);
@@ -179,11 +206,20 @@ function a_account_update(): array {
         $email = valid_email($email);
         if (q('SELECT 1 FROM users WHERE email = ? AND id <> ?', [$email, $s['id']])->fetch()) fail('Another account already uses that email.', 409);
         q('UPDATE users SET email = ? WHERE id = ?', [$email, $s['id']]);
+        audit('email_changed', $s['id']);
+        // Tell the old address, so a hijacked account doesn't go unnoticed.
+        send_mail($s['email'], 'Your Crows account email was changed',
+            "Hi {$s['username']},\n\nThe email on your Crows account was just changed to $email.\n" .
+            "If you didn't do this, contact the site admin right away.\n");
     }
     if (is_string($newPw) && $newPw !== '') {
-        q('UPDATE users SET pass_hash = ? WHERE id = ?', [password_hash(valid_password($newPw), PASSWORD_DEFAULT), $s['id']]);
+        q('UPDATE users SET pass_hash = ? WHERE id = ?', [hash_password(valid_password($newPw, $s['username'], (string)($email ?: $s['email']))), $s['id']]);
         // A new password signs out every other device.
         q('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', [$s['id'], $s['token_hash']]);
+        audit('password_changed', $s['id']);
+        send_mail(is_string($email) && $email !== '' ? $email : $s['email'], 'Your Crows password was changed',
+            "Hi {$s['username']},\n\nThe password on your Crows account was just changed, and your other devices were logged out.\n" .
+            "If you didn't do this, reset your password and contact the site admin.\n");
     }
     return ['user' => public_user(q('SELECT * FROM users WHERE id = ?', [$s['id']])->fetch())];
 }
@@ -191,6 +227,7 @@ function a_account_update(): array {
 function a_account_logout_others(): array {
     $s = need_login();
     q('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', [$s['id'], $s['token_hash']]);
+    audit('logout_others', $s['id']);
     return [];
 }
 
@@ -200,6 +237,7 @@ function a_account_delete(): array {
     if ($s['is_admin'] && (int)q('SELECT COUNT(*) FROM users WHERE is_admin = 1')->fetchColumn() <= 1) {
         fail('You are the only admin. Make someone else an admin before deleting your account.', 409);
     }
+    audit('account_deleted', $s['id'], $s['username']);
     q('DELETE FROM users WHERE id = ?', [$s['id']]);   // cascades to sessions, characters, campaigns
     set_session_cookie('', time() - 3600);
     return [];
@@ -325,26 +363,43 @@ function a_admin_set_role(): array {
     $role = str('role', 10);
     if (!in_array($role, ROLES, true)) fail('Role must be player or ref.');
     q('UPDATE users SET role = ? WHERE id = ?', [$role, $id]);
+    audit('role_set', $id, $role, $a['id']);
     return [];
 }
 
 function a_admin_set_admin(): array {
     $a = need_admin();
     $id = target_user($a, false);
-    q('UPDATE users SET is_admin = ? WHERE id = ?', [empty(body()['isAdmin']) ? 0 : 1, $id]);
+    $on = empty(body()['isAdmin']) ? 0 : 1;
+    q('UPDATE users SET is_admin = ? WHERE id = ?', [$on, $id]);
+    audit($on ? 'admin_granted' : 'admin_revoked', $id, '', $a['id']);
     return [];
 }
 
 function a_admin_reset_link(): array {
     $a = need_admin();
     $id = target_user($a, true);
+    audit('reset_link_made', $id, '', $a['id']);
     return ['link' => reset_link($id, 48)];
 }
 
 function a_admin_delete_user(): array {
     $a = need_admin();
-    q('DELETE FROM users WHERE id = ?', [target_user($a, false)]);
+    $id = target_user($a, false);
+    $name = (string)q('SELECT username FROM users WHERE id = ?', [$id])->fetchColumn();
+    q('DELETE FROM users WHERE id = ?', [$id]);
+    audit('user_deleted', $id, $name, $a['id']);
     return [];
+}
+
+function a_admin_audit(): array {
+    need_admin();
+    $rows = q('SELECT l.at, l.event, l.ip, l.detail, u.username AS user, a.username AS actor
+               FROM audit_log l LEFT JOIN users u ON u.id = l.user_id LEFT JOIN users a ON a.id = l.actor_id
+               ORDER BY l.id DESC LIMIT 300')->fetchAll();
+    return ['events' => array_map(function ($r) {
+        return ['at' => $r['at'] . 'Z', 'event' => $r['event'], 'user' => $r['user'], 'actor' => $r['actor'], 'ip' => $r['ip'], 'detail' => $r['detail']];
+    }, $rows)];
 }
 
 // ---------------------------------------------------------------- dispatch
@@ -366,6 +421,7 @@ const ACTIONS = [
     'duplicate' => ['POST', 'a_duplicate', true],
     'delete' => ['POST', 'a_delete', true],
     'admin.users' => ['GET', 'a_admin_users', false],
+    'admin.audit' => ['GET', 'a_admin_audit', false],
     'admin.setRole' => ['POST', 'a_admin_set_role', true],
     'admin.setAdmin' => ['POST', 'a_admin_set_admin', true],
     'admin.resetLink' => ['POST', 'a_admin_reset_link', true],
@@ -375,6 +431,7 @@ const ACTIONS = [
 function run_api(): void {
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
+    header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
     try {
         $a = $_GET['a'] ?? '';
         if (!is_string($a) || !isset(ACTIONS[$a])) fail('Unknown action.', 404);

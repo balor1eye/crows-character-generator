@@ -69,3 +69,16 @@ CREATE TABLE IF NOT EXISTS campaigns (
   KEY k_user (user_id, updated_at),
   CONSTRAINT fk_campaigns_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Security events (logins, account changes, admin actions), kept 180 days. No passwords or tokens.
+CREATE TABLE IF NOT EXISTS audit_log (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  at DATETIME NOT NULL,
+  event VARCHAR(40) NOT NULL,
+  user_id INT UNSIGNED NULL,
+  actor_id INT UNSIGNED NULL,
+  ip VARCHAR(45) NOT NULL,
+  detail VARCHAR(255) NOT NULL DEFAULT '',
+  KEY k_at (at),
+  KEY k_user (user_id, at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

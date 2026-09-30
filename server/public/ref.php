@@ -9,4 +9,5 @@ if (!$s || !can_ref($s)) {
 }
 header('Content-Type: text/html; charset=utf-8');
 header('Cache-Control: no-store');
+header('Content-Security-Policy: ' . trim((string)file_get_contents(dirname(__DIR__, 2) . '/crows-app/ref-csp.txt')));
 readfile(dirname(__DIR__, 2) . '/crows-app/Crows_Ref_Screen.html');

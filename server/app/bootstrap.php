@@ -6,7 +6,11 @@
  */
 declare(strict_types=1);
 
-const SESSION_COOKIE = 'crows_session';
+// Errors go to a log outside the web root, never to the page (this host's default log sits next to the script).
+ini_set('display_errors', '0');
+ini_set('log_errors', '1');
+ini_set('error_log', __DIR__ . '/php-errors.log');
+
 const SESSION_DAYS = 30;
 const MAX_DATA_BYTES = 2000000;      // one character or campaign save
 const MAX_RECORDS = 200;             // per user, per kind
@@ -46,15 +50,30 @@ function now(int $offset = 0): string { return gmdate('Y-m-d H:i:s', time() + $o
 function token(): string { return bin2hex(random_bytes(32)); }
 function sha(string $s): string { return hash('sha256', $s); }
 
-function is_https(): bool {
-    return (!empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off')
-        || (($_SERVER['HTTP_X_FORWARDED_PROTO'] ?? '') === 'https');
+// Only the web server's own flag counts: X-Forwarded-Proto is client-controlled, and there's no proxy here.
+function is_https(): bool { return !empty($_SERVER['HTTPS']) && $_SERVER['HTTPS'] !== 'off'; }
+
+// The __Secure- prefix makes browsers refuse the cookie unless it arrived over HTTPS with the Secure flag.
+function session_cookie(): string { return is_https() ? '__Secure-crows_session' : 'crows_session'; }
+
+// Argon2id (no 72-byte limit, memory-hard) where PHP has it; bcrypt otherwise. Old hashes upgrade at login.
+function pw_algo() { return defined('PASSWORD_ARGON2ID') ? PASSWORD_ARGON2ID : PASSWORD_DEFAULT; }
+function hash_password(string $pw): string { return password_hash($pw, pw_algo()); }
+
+/** Security log: logins, account changes, admin actions. Never contains passwords or tokens. */
+function audit(string $event, ?int $userId, string $detail = '', ?int $actorId = null): void {
+    try {
+        q('INSERT INTO audit_log (at, event, user_id, actor_id, ip, detail) VALUES (?,?,?,?,?,?)',
+          [now(), $event, $userId, $actorId, client_ip(), mb_substr($detail, 0, 255)]);
+    } catch (Throwable $e) {
+        error_log('crows audit: ' . $e->getMessage());
+    }
 }
 
 function cookie_path(): string { return config()['cookie_path'] ?? '/'; }
 
 function set_session_cookie(string $value, int $expires): void {
-    setcookie(SESSION_COOKIE, $value, [
+    setcookie(session_cookie(), $value, [
         'expires' => $expires, 'path' => cookie_path(), 'secure' => is_https(), 'httponly' => true, 'samesite' => 'Lax',
     ]);
 }
@@ -64,7 +83,7 @@ function current_session(): ?array {
     static $cache = false;
     if ($cache !== false) return $cache;
     $cache = null;
-    $tok = $_COOKIE[SESSION_COOKIE] ?? '';
+    $tok = $_COOKIE[session_cookie()] ?? '';
     if (!is_string($tok) || !preg_match('/^[0-9a-f]{64}$/', $tok)) return null;
     $row = q('SELECT s.token_hash, s.csrf, s.expires_at, u.id, u.username, u.email, u.role, u.is_admin
               FROM sessions s JOIN users u ON u.id = s.user_id WHERE s.token_hash = ?', [sha($tok)])->fetch();
@@ -86,12 +105,13 @@ function start_session(int $userId): array {
       [sha($tok), $userId, $csrf, now(), now(SESSION_DAYS * 86400)]);
     q('UPDATE users SET last_login = ? WHERE id = ?', [now(), $userId]);
     q('DELETE FROM sessions WHERE expires_at < ?', [now()]);
+    q('DELETE FROM audit_log WHERE at < ?', [now(-180 * 86400)]);
     set_session_cookie($tok, time() + SESSION_DAYS * 86400);
     return ['csrf' => $csrf];
 }
 
 function end_session(): void {
-    $tok = $_COOKIE[SESSION_COOKIE] ?? '';
+    $tok = $_COOKIE[session_cookie()] ?? '';
     if (is_string($tok) && $tok !== '') q('DELETE FROM sessions WHERE token_hash = ?', [sha($tok)]);
     set_session_cookie('', time() - 3600);
 }

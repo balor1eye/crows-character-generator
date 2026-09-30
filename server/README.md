@@ -64,11 +64,29 @@ old one in the account.
 
 ## Security notes
 
-- Passwords are hashed with PHP's `password_hash`. Sessions are random tokens (only their SHA-256 is stored)
-  in an HttpOnly, SameSite=Lax cookie that lasts 30 days. Writes need a JSON body and the session's CSRF token.
-- Logins are rate-limited per username and IP; registrations and reset emails per IP/email.
+- **Passwords** are hashed with Argon2id (older hashes upgrade on the next login), must be 8+ characters, and
+  can't be a very common password or the account's username/email. Unknown usernames take as long to reject
+  as wrong passwords, so login timing doesn't reveal who has an account.
+- **Sessions** are random tokens (only their SHA-256 is stored) in a `__Secure-` HttpOnly, SameSite=Lax cookie
+  that lasts 30 days. Changing or resetting a password logs out other devices. Writes need a JSON body and the
+  session's CSRF token.
+- **Rate limits:** logins per username and IP, re-entering the current password (account changes/deletion),
+  registrations per IP, and reset emails per address.
+- **Notices:** changing the email tells the old address; changing the password tells the account's email.
+- **Security log:** logins, failed logins, account changes, and admin actions, kept 180 days, shown on the admin
+  page. It never records passwords, tokens, or the text of a failed login name.
+- **Headers:** HTTPS only (HSTS), a Content-Security-Policy on every page (the apps' inline scripts are allowed
+  by hash, computed at staging time by `server/csp.py`, so an injected script can't run), plus nosniff, frame,
+  referrer, permissions, and cross-origin policies. Dotfiles and logs are never served.
+- **Errors** go to `~/crows-app/php-errors.log`, outside the web root; this host's default would put an
+  `error_log` file in the public folder.
+- **Database user** has only SELECT, INSERT, UPDATE, DELETE, CREATE, ALTER, INDEX, and REFERENCES on its own database.
+- **Code and config** live outside the web root in `~/crows-app` (chmod 700; config.php 600).
 - **HTTPS:** a Let's Encrypt certificate for joshuaramsey.com and www.joshuaramsey.com, issued by
   [acme.sh](https://github.com/acmesh-official/acme.sh) (installed in `~/.acme.sh`, source in `~/src/acme.sh`).
-  Its cron job renews it automatically and installs the renewed certificate into cPanel through the
-  `cpanel_uapi` deploy hook. `public/.htaccess` redirects /crows/ to HTTPS, and the session cookie is `Secure`.
-  To check: `~/.acme.sh/acme.sh --list`. To renew by hand: `~/.acme.sh/acme.sh --renew -d joshuaramsey.com --force`.
+  A daily cron job renews it and installs it into cPanel through the `cpanel_uapi` deploy hook. The host has
+  commented this cron line out once; if `crontab -l` shows it starting with `#`, re-enable it (or ask Site5
+  support why). To check: `~/.acme.sh/acme.sh --list`. To renew by hand:
+  `~/.acme.sh/acme.sh --renew -d joshuaramsey.com --force`.
+- **Same account as the legacy sites:** everything on this cPanel account runs as one Unix user, so a hole in any
+  other app on it (see the security review) exposes `~/crows-app/config.php` too.

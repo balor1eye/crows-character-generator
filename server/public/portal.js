@@ -161,7 +161,7 @@
         form([
           field('Username', input('text', 'username', { autocomplete: 'username', autocapitalize: 'off', spellcheck: 'false', maxlength: 32 }), '3–32 letters, numbers, dots, dashes, or underscores.'),
           field('Email', input('email', 'email', { autocomplete: 'email' }), 'Only used to reset your password.'),
-          field('Password', input('password', 'password', { autocomplete: 'new-password' }), 'At least 8 characters.'),
+          field('Password', input('password', 'password', { autocomplete: 'new-password', minlength: 8 }), 'At least 8 characters. A long passphrase is best; very common passwords are refused.'),
           field('Password again', input('password', 'password2', { autocomplete: 'new-password' }))
         ], 'Create account', function (v) {
           if (v.password !== v.password2) throw new Error('The two passwords don\'t match.');
@@ -409,6 +409,24 @@
       if (!body.children.length) body.appendChild(el('tr', null, [el('td', { colspan: 6, class: 'muted', text: 'No matching accounts.' })]));
     }
     search.addEventListener('input', draw);
+    var EVENTS = { login: 'Logged in', login_failed: 'Failed login', register: 'Created account', password_reset: 'Reset password',
+      reset_requested: 'Asked for reset email', password_changed: 'Changed password', email_changed: 'Changed email',
+      password_check_failed: 'Wrong current password', logout_others: 'Logged out other devices', account_deleted: 'Deleted own account',
+      role_set: 'Role changed', admin_granted: 'Made admin', admin_revoked: 'Admin removed', reset_link_made: 'Reset link made',
+      user_deleted: 'Account deleted' };
+    var logBox = el('div', null, [btn('Show security log', function () {
+      logBox.innerHTML = '<p class="muted">Loading…</p>';
+      api('GET', 'admin.audit').then(function (j) {
+        logBox.innerHTML = '';
+        if (!j.events.length) { logBox.appendChild(el('p', { class: 'muted', text: 'Nothing logged yet.' })); return; }
+        logBox.appendChild(el('div', { class: 'table-wrap' }, [el('table', null, [
+          el('thead', null, [el('tr', null, ['When', 'Event', 'Account', 'By', 'IP', ''].map(function (h) { return el('th', { text: h }); }))]),
+          el('tbody', null, j.events.map(function (e) {
+            return el('tr', null, [el('td', { class: 'fine', text: new Date(e.at).toLocaleString() }), el('td', { text: EVENTS[e.event] || e.event }),
+              el('td', { text: e.user || '' }), el('td', { text: e.actor || '' }), el('td', { class: 'fine', text: e.ip }), el('td', { class: 'fine', text: e.detail })]);
+          }))])]));
+      }, function (e) { logBox.innerHTML = ''; logBox.appendChild(el('p', { class: 'muted', text: e.message })); });
+    })]);
     show([
       el('div', { class: 'list-head' }, [el('h1', { text: 'Manage accounts' })]),
       el('p', { class: 'muted', text: 'New accounts start as players. Refs can also open the Ref Screen and keep campaigns. Admins can do everything, including this page.' }),
@@ -418,7 +436,10 @@
         el('div', { class: 'table-wrap' }, [el('table', null, [
           el('thead', null, [el('tr', null, ['Account', 'Role', 'Admin', 'Saves', 'Last login', ''].map(function (h) { return el('th', { text: h }); }))]),
           body])])
-      ])
+      ]),
+      el('div', { class: 'card' }, [el('h2', { text: 'Security log' }),
+        el('p', { class: 'muted', text: 'Logins, failed logins, password and email changes, and admin actions from the last 180 days (newest first, up to 300).' }),
+        logBox])
     ]);
     search.blur();
     load();
