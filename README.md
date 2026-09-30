@@ -69,6 +69,8 @@ the browser's local storage.
 
 ```
 dist/Crows_Character_Generator.html   the finished single-file app (this is what you share)
+dist/index.html                       redirects the site root to the app (for GitHub Pages)
+.github/workflows/pages.yml           publishes dist/ to GitHub Pages
 src/index.html, app.css, app.js       the app (dev version loads the files below separately)
 src/play.js                           Play mode: vitals, dice, rests, usage dice, XP tracking
 src/game-data.js                      backgrounds, expertises, item cards, tables
@@ -79,6 +81,23 @@ build/build.py                        builds the template and inlines everything
 assets/                               the official playtest inventory sheet PDF
 vendor/pdf-lib.min.js                 pdf-lib 1.17.1 (MIT), inlined to build the PDF in the browser
 ```
+
+## Publishing on GitHub Pages
+
+The workflow in `.github/workflows/pages.yml` publishes the `dist/` folder whenever a push to `main`
+changes it. `dist/index.html` sends visitors on to the app, so the site's address opens it directly.
+
+One-time setup:
+
+1. Create a GitHub repository and push this project to it (`main` branch).
+2. In the repository, open **Settings > Pages** and set **Source** to **GitHub Actions**.
+3. Push a change under `dist/`, or run the workflow from the **Actions** tab. The site appears at
+   `https://<your-user>.github.io/<repo-name>/`.
+
+To update the site, rebuild (`python build/build.py`), commit `dist/`, and push.
+
+On a free GitHub plan, Pages only works for public repositories, so the whole project (including
+the official inventory sheet in `assets/`) becomes publicly visible.
 
 ## Rebuilding
 
