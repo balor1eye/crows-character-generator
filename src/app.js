@@ -845,11 +845,17 @@
     var P = window.PDFLib;
     return P.PDFDocument.load(b64ToBytes(CROWS_TEMPLATE_B64)).then(function (doc) {
       return doc.embedFont(P.StandardFonts.Helvetica).then(function (font) {
-        var form = doc.getForm(), pages = doc.getPages(), vals = fieldValues();
+        var form = doc.getForm(), pages = doc.getPages(), vals = fieldValues(), mx = maxUses(state.txp), uses = expertiseUses();
         CROWS_FIELDS.forEach(function (f) {
           var page = pages[f.page], ph = page.getHeight();
           var rect = { x: f.x, y: ph - f.y - f.h, width: f.w, height: f.h, borderWidth: 0, borderColor: undefined, backgroundColor: undefined };
           if (f.kind === 'check') {
+            // one spent-use box per use (capped at max uses); 1 box on unowned expertises a lore book can grant
+            var spent = /^Exp (.+) Spent (\d+)$/.exec(f.name);
+            if (spent) {
+              var n = uses[spent[1]] ? Math.min(uses[spent[1]], mx) : (CROWS.ITEMS['Lore Book (' + spent[1] + ')'] ? 1 : 0);
+              if (+spent[2] > n) return;
+            }
             var cb = form.createCheckBox(f.name);
             cb.addToPage(page, { x: rect.x, y: rect.y, width: rect.width, height: rect.height, borderWidth: 0.75, borderColor: P.rgb(0.12, 0.11, 0.12), backgroundColor: P.rgb(1, 1, 1) });
             return;
