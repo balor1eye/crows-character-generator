@@ -3,9 +3,12 @@
 A character creator for the MCDM **Crows** public playtest 2 (August–September 2026), built from the
 Rules, Characters, and Ref books and the playtest inventory cards.
 
+**Use it online: https://balor1eye.github.io/crows-character-generator/**
+
 ## Using it
 
-Open **`dist/Crows_Character_Generator.html`** in any modern browser (Chrome, Edge, Firefox, Safari)
+Open the link above in any browser, including on a phone. To use it offline, open
+**`dist/Crows_Character_Generator.html`** in any modern browser (Chrome, Edge, Firefox, Safari)
 on Windows, macOS, or Linux. It's one self-contained file: no installs, plugins, server, or internet
 connection needed. You can copy it anywhere (USB stick, cloud drive, email) and double-click it.
 
@@ -92,7 +95,8 @@ One-time setup:
 1. Create a GitHub repository and push this project to it (`main` branch).
 2. In the repository, open **Settings > Pages** and set **Source** to **GitHub Actions**.
 3. Push a change under `dist/`, or run the workflow from the **Actions** tab. The site appears at
-   `https://<your-user>.github.io/<repo-name>/`.
+   `https://<your-user>.github.io/<repo-name>/` (this project's is
+   https://balor1eye.github.io/crows-character-generator/).
 
 To update the site, rebuild (`python build/build.py`), commit `dist/`, and push.
 
