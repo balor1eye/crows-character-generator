@@ -12,13 +12,22 @@
   var MODE_KEY = 'crows-pt2-mode';
   var CONDITIONS = ['Blessed', 'Grabbed', 'Prone', 'Vulnerable', 'Weakened', 'Unconscious'];
   var DT_CONDITIONS = ['Blessed', 'Vulnerable', 'Weakened']; // end at the end of a dungeon turn
+  // Rules book, Conditions (condensed). Shown as tooltips on the condition buttons.
+  var CONDITION_RULES = {
+    Blessed: 'Edge on all tests, and your attacks deal extra damage equal to the characteristic used. Ends at the end of the dungeon turn.',
+    Grabbed: 'Speed 0, you can\'t flank, and attacks against you gain an edge. You move with your grabber. Ends if the grabber lets go, moves out of range, or is killed, prone, or unconscious, or with the Escape Grab maneuver.',
+    Prone: 'Speed halved, bane on your melee attacks, and you can\'t flank. Melee attacks against you gain an edge; ranged attacks against you take a bane. Stand up as a maneuver (speed 1+).',
+    Vulnerable: 'Each time you take damage, take an extra 1d6. Ends at the end of the dungeon turn.',
+    Weakened: 'Bane on all tests. Ends at the end of the dungeon turn.',
+    Unconscious: 'Prone, speed 0, no actions, maneuvers, or reactions. Automatic doom on Agility and Strength tests, double bane on Mind tests to notice your surroundings, and attacks against you are tier 3. Taking damage or a loud noise within 10 squares wakes you.'
+  };
   var LORE = ['Historical Lore', 'Magic Lore', 'Monster Lore', 'Nature Lore', 'Religious Lore'];
   var AMMO = { Shortbow: 'Quiver of 20 Arrows', Longbow: 'Quiver of 20 Arrows', Crossbow: 'Case of 20 Crossbow Bolts' };
   var MAGIC_SLOTS = ['Head', 'Neck', 'Waist', 'Arms', 'Finger', 'Feet'];
   var PET_FEED = { 'Riding Horse': 2 };
 
   // UI-only state (not saved with the character).
-  var ui = { eb: 0, mod: 0, dmg: '', pierce: false, first: '', heal: '', coins: '', tDesc: '', tGc: '', tPlayers: 4, xpAmt: '',
+  var ui = { condInfo: false, eb: 0, mod: 0, dmg: '', pierce: false, first: '', heal: '', coins: '', tDesc: '', tGc: '', tPlayers: 4, xpAmt: '',
     ration: '', activity: '', repair: '', study: '', tended: false, tendedKit: false, useKit: false, caretaker: false };
   var last = null; // most recent roll
 
@@ -465,7 +474,8 @@
           btn('−', function () { var n = parseInt(ui.coins, 10) || 0; if (n) { S().coins = Math.max(0, S().coins - n); ui.coins = ''; commit('Spent ' + fmt(n) + ' gc.'); } }, '', { 'aria-label': 'Spend coins' })])])
     ]);
     var conds = el('div', { class: 'conds' }, CONDITIONS.map(function (k) {
-      return el('button', { type: 'button', class: 'cond' + (p.conds[k] ? ' on' : ''), 'aria-pressed': String(!!p.conds[k]), text: k, onclick: function () {
+      return el('button', { type: 'button', class: 'cond' + (p.conds[k] ? ' on' : ''), 'aria-pressed': String(!!p.conds[k]), text: k,
+        title: k + ': ' + CONDITION_RULES[k] + (p.conds[k] ? ' (Click to remove.)' : ' (Click to apply.)'), onclick: function () {
         if (p.conds[k]) delete p.conds[k]; else p.conds[k] = true;
         commit((p.conds[k] ? 'Now ' : 'No longer ') + k.toLowerCase() + '.');
       } });
@@ -493,8 +503,20 @@
     var dead = w >= 10 ? el('div', { class: 'banner bad', text: 'All 10 backpack slots are wounded: your crow is dead. Make a new crow and roll on the Backgrounds table ' +
       (1 + C.esBonusCount(S().txp)) + ' time' + (C.esBonusCount(S().txp) ? 's' : '') + ' (1 + one per Expertise & Stamina bonus), choosing any result.' }) : null;
     card('play-vitals', 'Vitals', [dead, el('div', { class: 'vital-top' }, [stam, adBox]), small,
-      el('h3', { text: 'Conditions' }), conds, el('h3', { text: 'Damage & healing' }), dmgRow,
+      el('div', { class: 'cond-head' }, [el('h3', { text: 'Conditions' }),
+        el('button', { type: 'button', class: 'info-toggle', 'aria-expanded': String(ui.condInfo), 'aria-controls': 'cond-info',
+          text: ui.condInfo ? '\u24d8 Hide rules' : '\u24d8 What they do', onclick: function () { ui.condInfo = !ui.condInfo; C.render(); } })]),
+      conds, condInfo(), el('h3', { text: 'Damage & healing' }), dmgRow,
       el('h3', {}, ['Backpack wounds ', el('small', { text: '(each wound fills a slot; -1 speed per slot with both a wound and an item. Click to mark or heal.)' })]), grid]);
+  }
+
+  // Tap-friendly alternative to the condition tooltips (hover tooltips don't show on touch screens).
+  function condInfo() {
+    if (!ui.condInfo) return null;
+    var p = P();
+    return el('dl', { class: 'cond-info', id: 'cond-info' }, [].concat.apply([], CONDITIONS.map(function (k) {
+      return [el('dt', { class: p.conds[k] ? 'on' : null }, [k, p.conds[k] ? el('small', { text: ' (active)' }) : null]), el('dd', { text: CONDITION_RULES[k] })];
+    })));
   }
 
   function renderTime() {

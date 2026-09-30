@@ -319,3 +319,17 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
   body[data-mode="play"] .summary-inner { max-height: calc(100vh - 92px); overflow: auto; }
 }
 .play-main .field input.mini, .play-side .field input.mini { width: 5.5rem; }
+
+/* Condition rules toggle (touch-friendly alternative to hover tooltips) */
+.cond-head { display: flex; align-items: baseline; justify-content: space-between; gap: .6rem; }
+.info-toggle { background: none; border: 0; color: var(--accent); font: 600 .85rem var(--font); cursor: pointer; padding: .4rem .2rem; min-height: 36px; }
+.info-toggle:focus-visible { outline: 2px solid var(--sel); outline-offset: 1px; }
+.cond-info { display: grid; grid-template-columns: max-content minmax(0, 1fr); gap: .35rem .8rem; margin: .6rem 0 0; padding: .6rem .7rem; border: 1px solid var(--line); border-radius: 6px; background: var(--slot); font-size: .86rem; }
+.cond-info dt { font-weight: 700; }
+.cond-info dt.on { color: var(--accent); }
+.cond-info dt small { font-weight: 600; }
+.cond-info dd { margin: 0; }
+@media (max-width: 700px) {
+  .cond-info { grid-template-columns: 1fr; }
+  .cond-info dd { margin-bottom: .4rem; }
+}
