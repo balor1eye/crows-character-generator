@@ -416,7 +416,17 @@
     resetGear();
     rollCoins();
   }
-  function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ } }
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+    if (window.CrowsCloud) window.CrowsCloud.changed();
+  }
+  function startNew() { if (window.CrowsCloud) window.CrowsCloud.startNew(); }
+  /* The character as written to a save file (and to the player's account). */
+  function exportState() {
+    var data = clone(state);
+    data.inv = data.inv.map(function (c) { return liveProps(c, { key: c.key, qty: c.qty, area: c.area, idx: c.idx }); });
+    return data;
+  }
   function load() {
     try {
       var raw = localStorage.getItem(STORAGE_KEY);
@@ -1035,15 +1045,13 @@
     });
     $('tree-select').addEventListener('change', function () { renderTraits(); });
 
-    $('btn-random').addEventListener('click', function () { selectedId = null; randomCrow(); render(); toast('A new crow: ' + state.name + ', ' + bg().name + '.'); });
+    $('btn-random').addEventListener('click', function () { startNew(); selectedId = null; randomCrow(); render(); toast('A new crow: ' + state.name + ', ' + bg().name + '.'); });
     $('btn-new').addEventListener('click', function () {
       if (!confirm('Start a new character? Unsaved changes to this one will be lost.')) return;
-      selectedId = null; state = freshState(0); resetGear(); rollCoins(); render();
+      startNew(); selectedId = null; state = freshState(0); resetGear(); rollCoins(); render();
     });
     $('btn-save').addEventListener('click', function () {
-      var data = clone(state);
-      data.inv = data.inv.map(function (c) { return liveProps(c, { key: c.key, qty: c.qty, area: c.area, idx: c.idx }); });
-      download(JSON.stringify(data, null, 2), fileBase() + '_Crows_Character.json', 'application/json');
+      download(JSON.stringify(exportState(), null, 2), fileBase() + '_Crows_Character.json', 'application/json');
     });
     $('file-load').addEventListener('change', function () {
       var f = this.files && this.files[0]; var input = this;
@@ -1053,7 +1061,7 @@
         try {
           var s = JSON.parse(rd.result);
           if (!validState(s)) throw new Error('not a Crows character file');
-          selectedId = null; adopt(s); render(); toast('Loaded ' + (state.name || 'character') + '.');
+          startNew(); selectedId = null; adopt(s); render(); toast('Loaded ' + (state.name || 'character') + '.');
         } catch (e) { toast('Could not load that file: ' + e.message); }
         input.value = '';
       };
@@ -1083,6 +1091,19 @@
     var s = load();
     if (s) { adopt(s); } else { randomCrow(); }
     render();
+    if (window.CrowsCloud) window.CrowsCloud.attach({
+      kind: 'characters',
+      getData: exportState,
+      valid: validState,
+      apply: function (data) { selectedId = null; adopt(clone(data)); render(); },
+      fresh: function () { selectedId = null; randomCrow(); render(); },
+      name: function (c) { return c.name || 'Unnamed crow'; },
+      summary: function (c) {
+        var b = CROWS.BACKGROUNDS[c.bg];
+        return [b ? b.name : '', c.txp ? fmt(c.txp) + ' XP' : '', c.player ? 'played by ' + c.player : ''].filter(Boolean).join(' · ');
+      },
+      onReady: function (p) { if (window.CrowsPlay && (p.mode === 'play' || p.mode === 'build')) window.CrowsPlay.setMode(p.mode); }
+    });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

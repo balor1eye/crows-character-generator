@@ -11,3 +11,4 @@ Thumbs.db
 /docs/CROWS_PT2_RULES.md
 # Generated from the rules summary above by ref/build/build.py.
 /ref/src/rules-text.js
+/.ssh/

@@ -117,7 +117,12 @@
     });
     return s;
   }
-  function save() { try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ } }
+  function save() {
+    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+    if (window.CrowsCloud) window.CrowsCloud.changed();
+  }
+  function startNew() { if (window.CrowsCloud) window.CrowsCloud.startNew(); }
+  function isCampaign(s) { return !!(s && typeof s === 'object' && s.v === 1 && s.session && typeof s.session === 'object'); }
   function load() {
     try { var raw = localStorage.getItem(STORAGE_KEY); if (raw) { var s = JSON.parse(raw); if (s && s.v === 1) return withDefaults(freshState(), s); } } catch (e) { /* ignore */ }
     return null;
@@ -1392,7 +1397,7 @@
     $('btn-save').addEventListener('click', function () { download(JSON.stringify(state, null, 1), fileBase() + '_Crows_Campaign.json', 'application/json'); toast('Campaign saved to a file.'); });
     $('btn-new').addEventListener('click', function () {
       if (!confirm('Start a new campaign? Save the current one to a file first if you want to keep it.')) return;
-      state = freshState(); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render();
+      startNew(); state = freshState(); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render();
     });
     $('file-load').addEventListener('change', function () {
       var f = this.files && this.files[0], input = this;
@@ -1403,7 +1408,7 @@
           var s = JSON.parse(rd.result);
           if (s && s.v === 1 && typeof s.bg === 'number') throw new Error('that is a character file: import it in the Party tab');
           if (!s || s.v !== 1 || !s.session) throw new Error('not a Crows campaign file');
-          state = withDefaults(freshState(), s); ui.lastEnc = null; ui.dice = null; save(); render(); toast('Loaded ' + (state.name || state.village.name || 'campaign') + '.');
+          startNew(); state = withDefaults(freshState(), s); ui.lastEnc = null; ui.dice = null; save(); render(); toast('Loaded ' + (state.name || state.village.name || 'campaign') + '.');
         } catch (e) { toast('Could not load that file: ' + e.message); }
         input.value = '';
       };
@@ -1415,6 +1420,19 @@
     });
     render();
     setInterval(tick, 250);
+    if (window.CrowsCloud) window.CrowsCloud.attach({
+      kind: 'campaigns',
+      getData: function () { return state; },
+      valid: isCampaign,
+      apply: function (data) { state = withDefaults(freshState(), clone(data)); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render(); },
+      fresh: function () { state = freshState(); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render(); },
+      name: function (c) { return c.name || (c.village && c.village.name) || 'Untitled campaign'; },
+      summary: function (c) {
+        var crows = (c.party || []).length;
+        return ['Session ' + ((c.session && c.session.n) || 1), crows ? crows + (crows === 1 ? ' crow' : ' crows') : '',
+          c.village && c.village.name ? c.village.name : ''].filter(Boolean).join(' · ');
+      }
+    });
   }
 
   window.CrowsRef = { get state() { return state; }, rollTravelEncounter: rollTravelEncounter, endDT: endDT, test: test, importCharacter: function (s) { var r = importCharacter(s); save(); render(); return r; } };
