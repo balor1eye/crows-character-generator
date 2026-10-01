@@ -187,3 +187,38 @@ CREATE TABLE IF NOT EXISTS mfa_challenges (
   KEY k_user (user_id),
   CONSTRAINT fk_challenge_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A fight the Ref is running, as the players see it: the Ref Screen publishes the combat tracker's public
+-- side (round, initiative, enemies' names and how hurt they look, the crows, a short feed) whenever it changes.
+-- `version` is a millisecond timestamp, so the change signals of every crow in it only ever go up.
+CREATE TABLE IF NOT EXISTS combats (
+  campaign_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  data MEDIUMTEXT NOT NULL,
+  version BIGINT UNSIGNED NOT NULL,
+  updated_at DATETIME NOT NULL,
+  CONSTRAINT fk_combats_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The linked crows in that fight: their players can see it and act in it.
+CREATE TABLE IF NOT EXISTS combat_members (
+  campaign_id INT UNSIGNED NOT NULL,
+  character_id INT UNSIGNED NOT NULL,
+  PRIMARY KEY (campaign_id, character_id),
+  KEY k_character (character_id),
+  CONSTRAINT fk_cmember_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+  CONSTRAINT fk_cmember_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- What players did in a fight (an attack on a target, a declared action, done for the round), for the Ref
+-- Screen to pick up. `data` is the action as JSON. Only the newest few hundred per campaign are kept.
+CREATE TABLE IF NOT EXISTS combat_actions (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  campaign_id INT UNSIGNED NOT NULL,
+  character_id INT UNSIGNED NOT NULL,
+  data TEXT NOT NULL,
+  created_at DATETIME NOT NULL,
+  KEY k_campaign (campaign_id, id),
+  KEY k_character (character_id, created_at),
+  CONSTRAINT fk_caction_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+  CONSTRAINT fk_caction_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

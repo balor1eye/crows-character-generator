@@ -349,3 +349,38 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
   .cond-info { grid-template-columns: 1fr; }
   .cond-info dd { margin-bottom: .4rem; }
 }
+
+/* Live combat (combat.js): the fight the Ref is running, with targets */
+#play-combat[hidden], #cbt-target-bar[hidden] { display: none !important; }
+#play-combat { border-left: 4px solid var(--accent); }
+.cbt-head { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; }
+.cbt-head .vital { min-width: 4.5rem; text-align: center; }
+.cbt-list { display: flex; flex-direction: column; gap: .35rem; }
+.cbt-row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px; padding: .4rem .6rem; background: var(--slot); }
+.cbt-row.k-foe { border-left-color: var(--bad); }
+.cbt-row.k-pc { border-left-color: var(--ok); }
+.cbt-row.k-ally { border-left-color: var(--sel); }
+.cbt-row.on { box-shadow: inset 0 0 0 2px var(--accent); }
+.cbt-row.me { background: color-mix(in srgb, var(--ok) 10%, var(--slot)); }
+.cbt-row.dead { opacity: .55; }
+.cbt-row.dead .cbt-who b { text-decoration: line-through; }
+.cbt-who { flex: 1 1 160px; min-width: 0; }
+.cbt-tags { display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; }
+.chip.warn { background: var(--warn); color: #fff; }
+.chip.ok { background: var(--ok); color: #fff; }
+.hp-chip { border-radius: 999px; padding: .05rem .55rem; font-size: .78rem; font-weight: 700; border: 1px solid currentColor; }
+.hp-chip.ok { color: var(--ok); }
+.hp-chip.mid { color: var(--sel); }
+.hp-chip.warn { color: var(--warn); }
+.hp-chip.bad { color: var(--bad); }
+.cbt-feed { margin-top: .8rem; }
+.cbt-feed summary { cursor: pointer; font-weight: 600; }
+.cbt-feed ol { list-style: none; padding: 0; margin: .4rem 0 0; max-height: 220px; overflow: auto; font-size: .86rem; display: grid; gap: .2rem; }
+.cbt-feed .log-t { color: var(--muted); font-size: .75rem; margin-right: .45rem; }
+#cbt-act { margin-top: .8rem; border-top: 1px solid var(--line); padding-top: .7rem; display: grid; gap: .5rem; }
+#cbt-act .hint { margin: 0; }
+.cbt-say input { padding: .4rem .5rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); min-height: 36px; min-width: 0; }
+.cbt-target { margin: 0 0 .7rem; padding: .45rem .6rem; border: 1px solid var(--accent); border-radius: 6px; align-items: center; }
+.cbt-target .field { display: flex; align-items: center; gap: .45rem; margin: 0; }
+.cbt-sent { color: var(--ok); font-weight: 600; margin-top: .3rem; }
+.cbt-wait { align-items: center; margin-top: .4rem; gap: .4rem; }

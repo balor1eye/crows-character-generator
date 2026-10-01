@@ -217,6 +217,34 @@ def smoke():
     check("characters.campaigns answers", "campaigns" in p2.get("characters.campaigns"))
     check("decision emails were logged, not sent", any(m["to"] == accounts()["test_player2"]["email"] for m in mail(20)))
 
+    # live combat: the Ref shares a fight; the linked crow's player sees it and acts in it
+    mine = p1.get("combat.mine", id=ch["id"])
+    check("no fight for the crow yet", mine["combat"] is None and mine.get("watch"))
+    fight = {"active": True, "round": 1, "first": "crows", "feed": [], "list": [
+        {"id": "f1", "kind": "foe", "name": "Smoke Rat 1", "health": "unhurt"},
+        {"id": "c1", "kind": "pc", "name": "Smoke Kestrel", "link": acc["id"], "health": "unhurt"}]}
+    pub = ref.post("combat.publish", {"campaign": camp["id"], "combat": fight, "members": [acc["id"], acc2["id"] + 999999]})
+    check("Ref publishes a fight with one linked crow (unknown links ignored)", pub["members"] == 1 and "watch" in pub["actions"])
+    fails("players can't publish fights", 403, lambda: p1.post("combat.publish", {"campaign": camp["id"], "combat": fight}))
+    mine = p1.get("combat.mine", id=ch["id"])
+    check("the crow's player sees the fight", mine["combat"]["list"][0]["name"] == "Smoke Rat 1"
+          and mine["campaign"]["id"] == camp["id"] and mine["you"] == acc["id"])
+    check("an unchanged fight answers 'unchanged'", p1.get("combat.mine", id=ch["id"], known=mine["version"]).get("unchanged"))
+    fails("another player can't see the crow's fight", 404, lambda: p2.get("combat.mine", id=ch["id"]))
+    check("a linked crow that isn't in the fight sees none", p2.get("combat.mine", id=ch2["id"])["combat"] is None)
+    p1.post("combat.act", {"id": ch["id"], "campaign": camp["id"], "action": {
+        "type": "attack", "target": "f1", "targetName": "Smoke Rat 1", "label": "Attack with Dagger", "tier": 2, "damage": 4, "extra": "dropped"}})
+    fails("a crow not in the fight can't act in it", 409, lambda: p2.post("combat.act", {"id": ch2["id"], "campaign": camp["id"], "action": {"type": "done"}}))
+    fails("unknown kinds of action are refused", 400, lambda: p1.post("combat.act", {"id": ch["id"], "campaign": camp["id"], "action": {"type": "nuke"}}))
+    acts = ref.get("combat.actions", campaign=camp["id"], after=pub["actions"]["latest"])
+    a = acts["items"][-1] if acts["items"] else {}
+    check("Ref receives the attack with its crow, target, tier, and damage", a.get("link") == acc["id"] and a["action"]["target"] == "f1"
+          and a["action"]["tier"] == 2 and a["action"]["damage"] == 4 and "extra" not in a["action"] and acts["latest"] == a["id"])
+    fails("players can't read the actions", 403, lambda: p1.get("combat.actions", campaign=camp["id"]))
+    ref.post("combat.publish", {"campaign": camp["id"], "combat": None})
+    check("ending the fight takes it off the player's page", p1.get("combat.mine", id=ch["id"])["combat"] is None)
+    fails("acting after the fight is over", 409, lambda: p1.post("combat.act", {"id": ch["id"], "campaign": camp["id"], "action": {"type": "done"}}))
+
     # account
     prefs = p1.get("account.emailPrefs")
     check("email prefs readable", isinstance(prefs, dict) and prefs["ok"])

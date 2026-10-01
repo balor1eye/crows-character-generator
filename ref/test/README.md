@@ -70,3 +70,19 @@ The scenario finds things the way a person would: buttons by their label, inputs
 placeholder, and combat rows by creature name. If a button's wording changes, update the label in
 `combat_encounter.js`. Each `check(condition, 'what it means')` adds one line to the report. When adding steps,
 re-query elements after anything that re-renders (most clicks do), because the old nodes are replaced.
+
+## Live combat with a player (`run_live_combat_test.py`)
+
+Runs on the test instance only, in two headless Firefoxes: test_ref in the Ref Screen and test_player on the Play
+page. The player shares a new crow, the Ref adds it to a new campaign and starts a fight with two Blood Creature A.
+It checks that the fight shows on the Play page (foes' health words, not their Stamina), that an attack on the
+chosen target lands on that creature in the Ref Screen and comes back in the player's feed, that a described action
+and "done for this round" reach the Ref, that with automatic hits off a hit waits for Apply and Undo reverses it, and
+that ending the fight removes the Combat card. Everything it made is deleted afterwards (`--keep` leaves it).
+
+```bash
+python3 ref/test/run_live_combat_test.py            # after server/deploy.sh; --headed shows both browsers
+```
+
+Scripts sent over WebDriver run with their own globals, so a test that fixes the dice has to replace
+`window.Math.random` (the page's), not `Math.random`.

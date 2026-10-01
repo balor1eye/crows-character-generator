@@ -95,11 +95,13 @@
     var id = window.CrowsCloud && window.CrowsCloud.recordId;
     if (!id) return;
     window.CrowsCloud.campaign().then(function (name) { campaign = name ? { id: id, name: name } : null; applyMode(mode()); }, function () { /* no title change */ });
+    if (window.CrowsCombat) window.CrowsCombat.load();   // a fight the crow is in
   }
   /* A Ref accepted the open crow into `name` while the page was open. */
   function joined(name) {
     var id = window.CrowsCloud && window.CrowsCloud.recordId;
     if (id) { campaign = { id: id, name: name }; applyMode(mode()); }
+    if (window.CrowsCombat) window.CrowsCombat.load();
   }
   function gotoBuild(sectionId) {
     setMode('build');
@@ -227,13 +229,15 @@
   // opts: label, charName, charVal, kind ('test'|'attack'|'cast'|'miasma'), group (expertise group allowed), wtype, melee, dmg {t2,t3,brutal}, card
   function rollTest(opts) {
     if (last && last.chaosPending) log(last.label + ': kept tier 1. ' + chaosRoll(last));
+    if (window.CrowsCombat) window.CrowsCombat.superseded(last);   // a result still waiting goes to the Ref as it is
     var p = P(), ch = C.characteristics().values;
+    var vs = isAttack(opts) && window.CrowsCombat ? window.CrowsCombat.attackBonus() : null;   // +1 against a surprised target
     var extraE = p.conds.Blessed ? 1 : 0, extraB = p.conds.Weakened ? 1 : 0;
     if (isAttack(opts) && opts.melee && p.conds.Prone) extraB++;
     var net = netEdge(extraE, extraB);
     var a = d(10), b = d(10), nat = a + b;
     var bonus = net === 1 ? 2 : net === -1 ? -2 : 0;
-    var mod = (opts.charVal || 0) + (ui.mod || 0) + (opts.extraMod || 0) + bonus;
+    var mod = (opts.charVal || 0) + (ui.mod || 0) + (opts.extraMod || 0) + bonus + (vs ? vs.n : 0);
     var total = nat + mod;
     var crit = nat >= 19, doom = nat <= 3;
     if (p.conds.Unconscious && /Agility|Strength/.test(opts.charName || '')) doom = true;
@@ -244,9 +248,11 @@
       baseTier: tier, tier: tier, exp: null, extra: [], conds: [] };
     if (extraE) r.conds.push('blessed: edge');
     if (extraB) r.conds.push((p.conds.Weakened ? 'weakened' : 'prone') + ': bane');
+    if (vs) r.conds.push(vs.why);
     void ch;
     after(r);
     last = r;
+    if (window.CrowsCombat) window.CrowsCombat.rolled(r);   // in a live fight: to the Ref with the target, once final
     ui.eb = 0;
     log(describe(r));
     C.render();
@@ -328,6 +334,13 @@
     var o = r.opts;
     if (!o.dmg) return '';
     if (r.tier === 1) return 'Miss.' + (o.melee ? ' The target can counter.' : '');
+    var dm = damageOf(r);
+    return dm.n + ' damage' + (dm.parts.length ? ' (' + dm.parts.join(', ') + ')' : '') + '.';
+  }
+  /* A hit's damage: { n, parts: what changed it }, or null for a miss or a roll that deals none. */
+  function damageOf(r) {
+    var o = r.opts;
+    if (!o.dmg || r.tier === 1) return null;
     var n = tierDamage(o, r.tier), parts = [];
     if (parryBroken(o.card)) parts.push('-1: parry AD is 0');
     var bless = P().conds.Blessed ? o.charVal : 0;
@@ -335,7 +348,7 @@
     var lb = lightBonus(o);
     if (lb) { n += lb.dmg; parts.push('+' + lb.dmg + ' light (' + lb.from + ')'); }
     if (r.crit && o.dmg.brutal) { n *= 2; parts.push('brutal crit: doubled'); }
-    return Math.max(0, n) + ' damage' + (parts.length ? ' (' + parts.join(', ') + ')' : '') + '.';
+    return { n: Math.max(0, n), parts: parts };
   }
   function describe(r) {
     var s = r.label + ': ' + r.dice.join('+') + (r.mod ? ' ' + signed(r.mod) : '') + ' = ' + r.total + ' -> tier ' + r.tier;
@@ -704,6 +717,7 @@
     row('Unarmed / improvised', ua.summary, function () { rollTest(ua); }, 'Attack', false, null);
     var stowed = carried().filter(function (c) { return c.area !== 'hand' && (item(c.key).cat === 'spell' || item(c.key).cat === 'weapon'); });
     card('play-attacks', 'Attacks & spells', [
+      window.CrowsCombat ? window.CrowsCombat.targetBar() : null,
       el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee). A ranged attack against a creature adjacent to you takes a bane: set it before rolling. Light weapon and parry damage adjustments are included. A thrown weapon is out of your hand (no attacks, parry, or light-weapon bonus) until you recover it.' }),
       rows,
       stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Move items between slots in Build > Equipment.' }) : null
@@ -907,10 +921,12 @@
           r.exp = sel.value; r.tier = Math.min(3, r.tier + 1);
           var note = '';
           if (r.chaosPending) { r.chaosPending = false; note = ' No longer tier 1, so no chaos roll.'; r.extra.push('Improved out of tier 1: no chaos roll.'); }
+          if (window.CrowsCombat) window.CrowsCombat.updated(r);
           commit(r.label + ': spent ' + sel.value + ', now tier ' + r.tier + '.' + (damageText(r) ? ' ' + damageText(r) : '') + note);
         })]));
       }
-      if (r.chaosPending) res.appendChild(btn('Keep tier 1: make the chaos roll', function () { commit(r.label + ': kept tier 1. ' + chaosRoll(r)); }, 'btn-primary'));
+      if (r.chaosPending) res.appendChild(btn('Keep tier 1: make the chaos roll', function () { var t = chaosRoll(r); if (window.CrowsCombat) window.CrowsCombat.updated(r); commit(r.label + ': kept tier 1. ' + t); }, 'btn-primary'));
+      if (window.CrowsCombat) res.appendChild(window.CrowsCombat.rollNote(r) || document.createTextNode(''));
       // Ranged miss next to allies (Rules: Ranged Attacks).
       if (r.opts.ranged && r.opts.dmg && r.tier === 1 && !r.chaosPending) {
         if (r.doom) res.appendChild(el('div', { class: 'fine warnish', text: 'Ranged doom: if any ally is adjacent to the target, you hit one of them (the Ref picks at random) for ' + Math.max(0, tierDamage(r.opts, 3)) + ' damage (tier 3).' }));
@@ -928,6 +944,7 @@
     if (!$('play')) return;
     applyMode(mode());
     if (mode() !== 'play') return;
+    if (window.CrowsCombat) window.CrowsCombat.render();
     renderVitals(); renderTime(); renderAttacks(); renderExp(); renderItems(); renderAdvance(); renderGear(); renderLog(); renderRoller();
     var sb = $('play-sum'), p = P(), sp = speed();
     if (sb) sb.textContent = 'Stamina ' + C.curStamina() + '/' + C.staminaMax() + ' · Speed ' + sp.v + ' · Wounds ' + C.woundCount() + '/10' + (p.cruelty ? ' · Cruelty ' + p.cruelty : '') +
@@ -947,7 +964,9 @@
      * wounds: ordinary wounds +/- · cruelty: +/- · setCruelty: a new value · endDT: dungeon turn n ended ·
      * endConds: blessed, vulnerable, weakened end (with a rest) · dt: dungeon turn n ended (with a rest).
      */
-    refChange: refChange, refOps: refQueue };
+    refChange: refChange, refOps: refQueue,
+    /* For combat.js: a roll's damage, and whether its result is final (no expertise to spend, no chaos roll waiting). */
+    damageOf: damageOf, final: function (r) { return !r.chaosPending && !expOptions(r).length; } };
 
   function refChange(o) {
     var p = P(), msgs = [], n;

@@ -100,7 +100,7 @@
       session: { n: 1, title: '', date: today(), dt: 1, dtLen: 30, mode: 'timer', rooms: 0, roomsDone: 0, running: false, endAt: 0, remain: 30 * 60000,
         sound: true, autoNext: true, place: '', table: 'Blood Creatures', crowded: false, chaos: false, enAdj: 0, firstVisit: true, pending: null,
         rest: { active: false, where: 'dungeon', seclude: false, half: false, applyXP: true },
-        combat: { round: 0, list: [], encId: null, surprise: 'none' } },
+        combat: { round: 0, list: [], encId: null, surprise: 'none', first: null, feed: [], acts: [], auto: true, showSt: false } },
       log: [],
       travel: { day: 1, pace: 'Normal', speed: 5, road: false, water: 'none', weather: '', beacon: false, strong: false, hexAdj: 0, enAdj: 0, restEnAdj: 0,
         climate: 'Fall & Spring', habitat: 'Forest', nearby: 'Undead', lost: false, miasmaMod: 0, inMiasma: true },
@@ -120,7 +120,7 @@
   }
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
-    if (window.CrowsCloud) window.CrowsCloud.changed();
+    if (window.CrowsCloud) { window.CrowsCloud.changed(); liveChanged(); }
   }
   function startNew() { if (window.CrowsCloud) window.CrowsCloud.startNew(); }
   function isCampaign(s) { return !!(s && typeof s === 'object' && s.v === 1 && s.session && typeof s.session === 'object'); }
@@ -422,7 +422,7 @@
       c.list = c.list.filter(function (x) { return others.indexOf(x) < 0; });
       others = [];
     }
-    if (!others.length) c.round = 0;
+    if (!others.length) { c.round = 0; c.first = null; c.feed = []; c.acts = []; }
     c.encId = e.id; c.surprise = 'none'; ui.encEnd = null;
     if (!c.list.some(function (x) { return x.enc === e.id; })) e.creatures.forEach(function (cr) { addCombatant(cr.n, clamp(int(cr.k, 1), 1, 30), cr.side, e.id); });
     addParty();
@@ -439,7 +439,7 @@
     var c = S().combat;
     if (!confirm('Stop running ' + (e.name || 'this encounter') + '? Its creatures leave the combat tracker, and the encounter stays open.')) return;
     c.list = c.list.filter(function (x) { return x.enc !== e.id; });
-    if (!c.list.some(function (x) { return x.kind !== 'pc'; })) { c.list = []; c.round = 0; }
+    if (!c.list.some(function (x) { return x.kind !== 'pc'; })) clearCombat(c);
     c.encId = null; c.surprise = 'none'; ui.encEnd = null;
     log('', 'Stopped running ' + (e.name || 'the encounter') + ' (no result).');
     save(); render();
@@ -466,7 +466,7 @@
     e.outcome = label;
     if (resolve) { e.done = true; if (s.pending && s.pending.encId === e.id) s.pending = null; }
     log('enc', '**Encounter ends: ' + (e.name || 'untitled') + '.** ' + lines.join(' '));
-    c.list = []; c.round = 0; c.encId = null; c.surprise = 'none'; ui.encEnd = null;
+    clearCombat(c); ui.encEnd = null;
     save(); openEncounter(e.id); toast('The result is in the encounter\'s notes.');
   }
   /* A monster's "suspicious like or hate" check (Bestiary rules): 2d10 + the highest Mind among the monsters. */
@@ -642,9 +642,11 @@
     }
     if (c.kind === 'pc') syncPC(c, st0, w0);
     log('', '**' + c.name + '** takes ' + total + (piercing ? ' piercing' : '') + ' damage (' + (parts.join(', ') || 'no effect') + ')' + fate);
+    // Players see where a foe's damage went only when the Ref shows them foes' Stamina.
+    feed('**' + c.name + '** takes ' + total + (piercing ? ' piercing' : '') + ' damage' + (c.kind !== 'foe' || S().combat.showSt ? ' (' + (parts.join(', ') || 'no effect') + ')' : '') + (fate || '.'));
     save(); render();
   }
-  function heal(c, amount) { var st0 = c.st; c.st = Math.min(c.stMax, c.st + amount); if (c.st > 0 && c.kind !== 'pc' && !slotsOf(c)) c.dead = false; if (c.kind === 'pc') syncPC(c, st0, c.wounds); log('', c.name + ' regains ' + amount + ' Stamina (' + c.st + '/' + c.stMax + ').'); save(); render(); }
+  function heal(c, amount) { var st0 = c.st; c.st = Math.min(c.stMax, c.st + amount); if (c.st > 0 && c.kind !== 'pc' && !slotsOf(c)) c.dead = false; if (c.kind === 'pc') syncPC(c, st0, c.wounds); log('', c.name + ' regains ' + amount + ' Stamina (' + c.st + '/' + c.stMax + ').'); feed('**' + c.name + '** regains ' + amount + ' Stamina.'); save(); render(); }
   /* A crow's combat entry changed from (st0, w0): pass the change on to the party entry and its sheet. */
   function syncPC(c, st0, w0) {
     var p = state.party.filter(function (x) { return x.id === c.pcId; })[0];
@@ -663,7 +665,152 @@
     var extra = c.conds.Blessed && b ? ' (+' + Math.max(b.c[0], b.c[2]) + ' blessed)' : '';
     ui.dice = { label: c.name + ': ' + a[0], r: r, dmg: dmg + (r.tier > 1 ? extra : ''), note: (a[5] || '') + (why.length ? (a[5] ? '; ' : '') + 'auto: ' + why.join(', ') : '') };
     log('', '**' + c.name + '** ' + a[0] + ' (' + a[2] + '): ' + testLine(r) + ' → T' + r.tier + (r.tier === 1 ? ' miss' + (/^M/.test(a[2]) ? ' (target may counter)' : '') : ', ' + dmg + extra) + (r.crit ? '. Crit: extra action.' : ''));
+    feed('**' + c.name + '** ' + a[0] + ': tier ' + r.tier + (r.crit ? ' (crit)' : '') + (r.tier === 1 ? ', a miss.' : ', ' + dmg + extra + '.'));
     save(); render();
+  }
+
+  // ------------------------------------------------------------------ live combat with the players
+  /*
+   * On the accounts site the fight in the combat tracker is shared with the players of the linked crows in it.
+   * Their Play pages show the round, who acts first, the enemies (how hurt they look, or their Stamina and AD if the
+   * Ref shows them), the crows, and a feed of what happens. Players pick a target and attack or cast at it from their
+   * sheet, describe other actions, and say when they're done for the round. Those actions arrive here; hits are
+   * applied to the target at once unless the Ref turns that off, and can be undone. See "live combat" in server/app/api.php.
+   */
+  var live = { sent: null, cid: null, timer: null, busy: false, again: false, off: false, fetching: false };
+  /* A line for the players' combat feed (only while there's a fight). */
+  function feed(text) {
+    var c = S().combat;
+    if (!c.list.length) return;
+    (c.feed = c.feed || []).push({ t: Date.now(), s: text });
+    if (c.feed.length > 40) c.feed.splice(0, c.feed.length - 40);
+  }
+  function clearCombat(c) { c.list = []; c.round = 0; c.encId = null; c.surprise = 'none'; c.first = null; c.feed = []; c.acts = []; }
+  function pcOf(x) { return x && x.kind === 'pc' ? state.party.filter(function (p) { return p.id === x.pcId; })[0] || null : null; }
+  function healthWord(x) {
+    if (x.dead) return 'dead';
+    if (x.st <= 0) return 'down';
+    var f = x.st / (x.stMax || 1);
+    return f >= 1 ? (x.ad < x.adMax ? 'armor dented' : 'unhurt') : f > 0.5 ? 'hurt' : 'badly hurt';
+  }
+  /* The fight as the players see it, or null when there's none. */
+  function publicCombat() {
+    var c = S().combat, run = runningEnc();
+    if (!c.list.length) return null;
+    return { active: true, round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
+      list: c.list.map(function (x) {
+        var b = beast(x.cref), pc = x.kind === 'pc', o = { id: x.id, kind: x.kind, name: x.name, health: healthWord(x), dead: !!x.dead,
+          conds: Object.keys(x.conds || {}).filter(function (k) { return x.conds[k]; }), surprised: surprised(x) };
+        if (b && !pc) { o.type = b.t; o.size = SIZES[b.sz] || b.sz; }
+        if (pc || x.kind === 'ally' || c.showSt) { o.st = x.st; o.stMax = x.stMax; o.ad = x.ad; o.adMax = x.adMax; }
+        if (pc) { var p = pcOf(x); o.wounds = x.wounds; o.link = p && p.link || null; o.done = !!c.round && x.done === c.round; }
+        return o;
+      }),
+      feed: (c.feed || []).slice(-25) };
+  }
+  /* Called from save(): publish the fight soon after it changes. */
+  function liveChanged() {
+    if (live.off || !cloudOn() || !window.CrowsCloud.recordId) return;
+    clearTimeout(live.timer);
+    live.timer = setTimeout(publish, 250);
+  }
+  function publish() {
+    live.timer = null;
+    var cid = window.CrowsCloud.recordId;
+    if (!cid) return;
+    if (live.busy) { live.again = true; return; }
+    var pub = publicCombat(), json = JSON.stringify(pub);
+    if (cid === live.cid && json === live.sent) return;
+    var members = pub ? pub.list.filter(function (o) { return o.link; }).map(function (o) { return o.link; }) : [];
+    live.busy = true; live.again = false;
+    window.CrowsCloud.api('POST', 'combat.publish', '', { campaign: cid, combat: pub, members: members }).then(function (j) {
+      live.sent = json; live.cid = cid;
+      var c = S().combat;
+      if (typeof c.lastAct !== 'number') { c.lastAct = j.actions.latest; save(); }   // anything older belongs to an earlier fight
+      window.CrowsCloud.watch('cacts', j.actions.watch, c.lastAct, fetchActions);
+      if (j.actions.latest > c.lastAct) fetchActions();
+    }, function (e) {
+      if (e.noApi || e.status === 404 && /Unknown action/.test(e.message)) { live.off = true; return; }   // no server, or an older one
+      if (e.status === 404 || e.status === 403 || e.status === 401) return;   // the campaign is gone, or the login is
+      setTimeout(liveChanged, 5000);
+    }).then(function () { live.busy = false; if (live.again) liveChanged(); });
+  }
+  /* Bring in the actions players sent since the last one handled here. */
+  function fetchActions() {
+    var cid = window.CrowsCloud.recordId;
+    if (!cid || live.fetching) return;
+    live.fetching = true;
+    return window.CrowsCloud.api('GET', 'combat.actions', 'campaign=' + cid + '&after=' + (S().combat.lastAct || 0)).then(function (j) {
+      if (window.CrowsCloud.recordId !== cid) return;
+      var c = S().combat;
+      j.items.forEach(function (it) { if (it.id > (c.lastAct || 0)) { c.lastAct = it.id; takeAction(it); } });
+      if (j.items.length < 100) c.lastAct = Math.max(c.lastAct || 0, j.latest);
+      window.CrowsCloud.watch('cacts', j.watch, c.lastAct, fetchActions);
+      if (j.items.length) { save(); if (!window.CrowsCloud.typing) render(); }
+    }).then(function () { live.fetching = false; }, function () { live.fetching = false; });
+  }
+  function takeAction(it) {
+    var a = it.action || {}, c = S().combat;
+    var p = it.link ? state.party.filter(function (x) { return x.link === it.link; })[0] : null;
+    var me = p ? c.list.filter(function (x) { return x.kind === 'pc' && x.pcId === p.id; })[0] : null;
+    if (!me) return;   // not in this fight (any more)
+    var who = me.name;
+    if (a.type === 'done' || a.type === 'undone') {
+      me.done = a.type === 'done' ? c.round : 0;
+      feed('**' + who + '** ' + (a.type === 'done' ? 'is done for round ' + c.round + '.' : 'isn’t done yet.'));
+      return;
+    }
+    var tgt = c.list.filter(function (x) { return x.id === a.target; })[0] || null, tname = tgt ? tgt.name : a.targetName || '';
+    var act = { id: it.id, who: who, type: a.type, target: tgt ? tgt.id : null, tname: tname, round: c.round, applied: false, text: a.text || '' }, line;
+    if (a.type === 'attack') {
+      act.label = a.label; act.tier = a.tier; act.damage = a.damage; act.piercing = !!a.piercing;
+      line = '**' + who + '**: ' + (a.label || 'attack') + (tname ? ' → **' + tname + '**' : '') + ': tier ' + a.tier + (a.crit ? ' (crit)' : a.doom ? ' (doom)' : '') +
+        (a.damage ? ', ' + a.damage + (a.piercing ? ' piercing' : '') + ' damage.' : a.tier === 1 && !a.cast ? ', a miss.' : '.') + (a.text ? ' ' + a.text : '');
+    } else line = '**' + who + '**' + (tname ? ' → **' + tname + '**' : '') + ': ' + (a.text || 'acts.');
+    c.acts = (c.acts || []).concat([act]).slice(-30);
+    log('', line); feed(line);
+    if (a.type === 'attack' && a.damage > 0 && tgt && !tgt.dead && c.auto !== false) applyAct(act);
+  }
+  /* Deal a player's hit to its target (remembering the target as it was, for Undo). */
+  function applyAct(act) {
+    var tgt = S().combat.list.filter(function (x) { return x.id === act.target; })[0];
+    if (!tgt || act.applied) return;
+    act.before = { st: tgt.st, ad: tgt.ad, wounds: tgt.wounds, dead: !!tgt.dead };
+    act.applied = true;
+    damage(tgt, act.damage, act.piercing);
+  }
+  function undoAct(act) {
+    var tgt = S().combat.list.filter(function (x) { return x.id === act.target; })[0], b = act.before;
+    if (!tgt || !act.applied || !b) return;
+    var st0 = tgt.st, w0 = tgt.wounds;
+    tgt.st = b.st; tgt.ad = b.ad; tgt.wounds = b.wounds; tgt.dead = b.dead;
+    if (tgt.kind === 'pc') syncPC(tgt, st0, w0);
+    act.applied = false; delete act.before;
+    log('', 'Undid ' + act.who + '’s hit on ' + tgt.name + '.');
+    feed('The Ref undid **' + act.who + '**’s hit on **' + tgt.name + '**.');
+    save(); render();
+  }
+  /* Under the combat tracker: who sees the fight, the players' latest actions, and how hits are applied. */
+  function livePanel() {
+    if (!cloudOn()) return null;
+    var c = S().combat, crows = c.list.filter(function (x) { var p = pcOf(x); return p && p.link; }).length, acts = (c.acts || []).slice(-8).reverse();
+    return el('div', { class: 'live-box' }, [
+      el('div', { class: 'row center' }, [
+        el('b', { text: 'Players' }),
+        el('span', { class: 'fine grow', text: !c.list.length ? 'Players see the fight on their Play page once their linked crows are in the tracker.' :
+          crows ? plural(crows, 'linked crow') + ' in this fight: their players see it live and act from their Play page.' : 'No linked crows in this fight, so no player sees it. Link crows in the Party tab.' }),
+        chk(c, 'auto', 'Apply their hits automatically', { title: 'Off: each hit waits here until you apply it' }),
+        chk(c, 'showSt', 'Show foes’ Stamina and AD', { title: 'Off: players only see how hurt each foe looks' })]),
+      acts.length ? el('ul', { class: 'live-acts' }, acts.map(function (a) {
+        var tgt = c.list.filter(function (x) { return x.id === a.target; })[0];
+        return el('li', null, [
+          el('span', { class: 'log-t', text: a.round ? 'R' + a.round : '' }),
+          el('span', { class: 'grow' }, [rich('**' + a.who + '**' + (a.label ? ': ' + a.label : '') + (a.tname ? ' → ' + a.tname : '') + ' · ' +
+            (a.type === 'attack' ? 'tier ' + a.tier + (a.damage ? ', ' + a.damage + (a.piercing ? ' piercing' : '') + ' damage' : '') : a.text))]),
+          a.type === 'attack' && a.damage && tgt ? (a.applied ? btn('Undo', function () { undoAct(a); }, 'btn-small btn-ghost', 'Put ' + tgt.name + '’s Stamina, AD, and wounds back as they were')
+            : btn('Apply ' + a.damage, function () { applyAct(a); }, 'btn-small btn-primary', 'Deal the damage to ' + tgt.name)) : null]);
+      })) : null
+    ]);
   }
 
   // ------------------------------------------------------------------ rest & Miasma
@@ -946,7 +1093,8 @@
   function d100() { var a = d(10), b = d(10), v = (a % 10) * 10 + (b % 10); if (v === 0) v = 100; return { total: v, detail: 'd100 [' + (a % 10) + ', ' + (b % 10) + ']' }; }
   function rollInitiative() {
     var r = d(10), first = r >= 6;
-    var c = S().combat; c.round = (c.round || 0) + (c.round ? 0 : 1);
+    var c = S().combat; c.round = (c.round || 0) + (c.round ? 0 : 1); c.first = first ? 'crows' : 'foes';
+    feed('Initiative for round ' + c.round + ': **' + (first ? 'crows and allies first' : 'enemies first') + '**.');
     ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (first ? 'crows and allies act first' : 'enemies act first') };
     log('', 'Initiative for round ' + c.round + ': 1d10 = ' + r + ' → **' + (first ? 'crows and allies first' : 'enemies first') + '**.');
     save(); render();
@@ -1047,9 +1195,10 @@
     return [
       el('div', { class: 'round-box' }, [
         el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: 'Round' }), el('div', { class: 'val', text: String(c.round || '—') })]),
-        btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', function () { c.round = (c.round || 0) + 1; var r = d(10); ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (r >= 6 ? 'crows and allies act first' : 'enemies act first') };
+        btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', function () { c.round = (c.round || 0) + 1; var r = d(10); c.first = r >= 6 ? 'crows' : 'foes'; ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (r >= 6 ? 'crows and allies act first' : 'enemies act first') };
           var sur = c.round === 1 && c.surprise !== 'none' ? ' ' + (c.surprise === 'crows' ? 'The crows and their allies are' : 'The foes are') + ' surprised: no turn this round, and attacks against them get +1.' : '';
-          log('', '**Round ' + c.round + '.** Initiative 1d10 = ' + r + ' → ' + (r >= 6 ? 'crows and allies first.' : 'enemies first.') + sur); save(); render(); }, 'btn-primary'),
+          log('', '**Round ' + c.round + '.** Initiative 1d10 = ' + r + ' → ' + (r >= 6 ? 'crows and allies first.' : 'enemies first.') + sur);
+          feed('**Round ' + c.round + '.** ' + (r >= 6 ? 'Crows and allies act first.' : 'Enemies act first.') + sur); save(); render(); }, 'btn-primary'),
         btn('Add party', addPartyToCombat),
         btn('Clear dead', function () { c.list = c.list.filter(function (x) { return !x.dead; }); save(); render(); }, 'btn-ghost'),
         inRun ? null : btn('End combat', function () {
@@ -1057,13 +1206,14 @@
           if (runningEnc() && !confirm('End the fight without saving a result to ' + (runningEnc().name || 'the running encounter') + '? (It stays open.)')) return;
           log('', '**Combat ends** after ' + plural(c.round || 0, 'round') + '.' + (dead.length ? ' Fallen: ' + dead.join(', ') + '.' : ''));
           c.list.forEach(function (x) { if (x.kind === 'pc') syncPC(x); });
-          c.list = []; c.round = 0; c.encId = null; c.surprise = 'none'; save(); render();
+          clearCombat(c); save(); render();
         }, 'btn-ghost btn-danger')
       ]),
       el('div', { class: 'row', style: 'margin-top:.6rem' }, [field('Add creature', select, 'grow'), field('How many', count), field('Side', side),
         btn('Add', function () { addCombatant(select.value, int(count.value, 1), side.value); log('', 'Added ' + int(count.value, 1) + ' × ' + select.value + ' to combat.'); render(); })]),
       el('p', { class: 'fine', text: 'Monster attack buttons use the edge/bane set in the Dice panel plus the creature\'s own conditions (weakened, blessed, prone for melee). Damage goes through AD first (piercing skips it); vulnerable adds 1d6 automatically.' }),
-      el('div', { class: 'combat-list' }, c.list.length ? c.list.map(combatRow) : [el('p', { class: 'hint', text: 'No one in combat. Add creatures here, from the Bestiary, or from an encounter roll.' })])
+      el('div', { class: 'combat-list' }, c.list.length ? c.list.map(combatRow) : [el('p', { class: 'hint', text: 'No one in combat. Add creatures here, from the Bestiary, or from an encounter roll.' })]),
+      livePanel()
     ];
   }
   function combatRow(c) {
@@ -1077,13 +1227,14 @@
       el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'AD' }), btnPM('−', function () { c.ad = Math.max(0, c.ad - 1); save(); render(); }), el('b', { text: String(c.ad) }), el('span', { class: 'of', text: '/' + c.adMax }), btnPM('+', function () { c.ad = c.ad + 1; c.adMax = Math.max(c.adMax, c.ad); save(); render(); })]),
       slots ? el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Wounds' }), btnPM('−', function () { var w0 = c.wounds; c.wounds = Math.max(0, c.wounds - 1); if (c.kind === 'pc') syncPC(c, c.st, w0); save(); render(); }), el('b', { text: String(c.wounds) }), el('span', { class: 'of', text: '/' + slots })]) : null,
       surprised(c) ? el('span', { class: 'chip warn', title: 'No turn in round 1; attacks against them get +1', text: 'surprised' }) : null,
+      c.kind === 'pc' && S().combat.round && c.done === S().combat.round ? el('span', { class: 'chip ok', title: 'The player marked this crow done for the round', text: 'done' }) : null,
       el('button', { type: 'button', class: 'x', title: 'Remove', 'aria-label': 'Remove ' + c.name, text: '×', onclick: function () { S().combat.list = S().combat.list.filter(function (x) { return x !== c; }); save(); render(); } })
     ]);
     var mid = el('div', { class: 'cbt-mid' }, [amt,
       btn('Damage', function () { if (amount()) damage(c, amount(), false); }, 'btn-small'),
       btn('Piercing', function () { if (amount()) damage(c, amount(), true); }, 'btn-small'),
       btn('Heal', function () { if (amount()) heal(c, amount()); }, 'btn-small btn-ghost'),
-      c.dead ? btn('Revive', function () { c.dead = false; c.st = Math.max(1, c.st); save(); render(); }, 'btn-small btn-ghost') : btn('Mark dead', function () { c.dead = true; log('', c.name + ' is dead.'); save(); render(); }, 'btn-small btn-ghost'),
+      c.dead ? btn('Revive', function () { c.dead = false; c.st = Math.max(1, c.st); save(); render(); }, 'btn-small btn-ghost') : btn('Mark dead', function () { c.dead = true; log('', c.name + ' is dead.'); feed('**' + c.name + '** is dead.'); save(); render(); }, 'btn-small btn-ghost'),
       el('div', { class: 'conds' }, REF.CONDITIONS.map(function (k) {
         return el('button', { type: 'button', class: 'cond' + (c.conds[k[0]] ? ' on' : ''), title: k[1], 'aria-pressed': c.conds[k[0]] ? 'true' : 'false', text: k[0],
           onclick: function () { if (c.conds[k[0]]) delete c.conds[k[0]]; else c.conds[k[0]] = true; save(); render(); } });
@@ -2056,6 +2207,7 @@
       name: function (c) { return c.name || (c.village && c.village.name) || 'Untitled campaign'; },
       onReady: function () {
         loadInvites();   // join requests (and the badge) show whichever tab is open
+        liveChanged();   // share the fight in the tracker (if any) with the players
         // Refresh crows tied to players' sheets, then add one passed from the home page (#addlink=<token>).
         state.party.filter(function (p) { return p.link; }).forEach(function (p) { refreshLinked(p, true); });
         var tok = linkToken((/addlink=([0-9a-f]{64})/.exec(location.hash) || [])[1]);

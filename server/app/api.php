@@ -954,6 +954,137 @@ function a_notes_dismiss(): array {
     return [];
 }
 
+// ---------------------------------------------------------------- live combat
+/*
+ * A fight run from the Ref Screen, shared with the players of the linked crows in it. The Ref Screen publishes
+ * what the players may see (combat.publish) whenever the tracker changes: the round, who acts first, each
+ * combatant's name and how hurt it looks (exact numbers only if the Ref chooses), the crows, and a short feed.
+ * It names the crows in the fight by their access ids, and their players become its members.
+ *
+ * A member's Play page watches the change signal ('combatc', character id), fetches the fight with combat.mine
+ * when it changes, and sends what the crow does with combat.act: an attack or spell on a target with its roll
+ * and damage, an action described in words, or "done for this round". The Ref Screen watches ('cacts', campaign
+ * id), whose version is the newest action's id, reads new ones with combat.actions, and applies them.
+ */
+const COMBAT_MAX_BYTES = 200000;
+const ACTION_TYPES = ['attack', 'declare', 'done', 'undone'];
+
+function combat_campaign_id(): int {
+    $id = body()['campaign'] ?? ($_GET['campaign'] ?? 0);
+    if (!is_numeric($id) || (int)$id <= 0) fail('Missing campaign.');
+    return (int)$id;
+}
+function combat_watch(string $k, int $id): ?string { return with_watch(['version' => 0], $k, $id)['watch'] ?? null; }
+/** The version a change signal file holds now (0 if none). */
+function signal_version(string $k, int $id): int {
+    try { return (int)@file_get_contents(sync_dir() . '/' . sync_file($k, $id)); } catch (Throwable $e) { return 0; }
+}
+function actions_info(int $campaignId): array {
+    $latest = (int)q('SELECT COALESCE(MAX(id), 0) FROM combat_actions WHERE campaign_id = ?', [$campaignId])->fetchColumn();
+    return ['latest' => $latest, 'watch' => combat_watch('cacts', $campaignId)];
+}
+
+/** The Ref Screen: the fight as the players see it (combat null or {active: false} when there's none). */
+function a_combat_publish(): array {
+    $s = need_ref(REF_ONLY);
+    $cid = combat_campaign_id();
+    own_campaign($s, $cid);
+    $c = body_obj()->combat ?? null;
+    $active = is_object($c) && !empty($c->active);
+    $json = enc($active ? $c : ['active' => false]);
+    if (strlen($json) > COMBAT_MAX_BYTES) fail('The fight is too large to share.', 413);
+    $aids = array_values(array_unique(array_filter(array_map('intval', $active && is_array(body()['members'] ?? null) ? body()['members'] : []))));
+    $chars = [];
+    if ($aids) {
+        $in = implode(',', array_fill(0, count($aids), '?'));
+        $chars = array_map('intval', q("SELECT character_id FROM character_access WHERE ref_user_id = ? AND id IN ($in)", array_merge([$s['id']], $aids))->fetchAll(PDO::FETCH_COLUMN));
+    }
+    $old = array_map('intval', q('SELECT character_id FROM combat_members WHERE campaign_id = ?', [$cid])->fetchAll(PDO::FETCH_COLUMN));
+    $prev = (int)q('SELECT version FROM combats WHERE campaign_id = ?', [$cid])->fetchColumn();
+    $v = max($prev + 1, (int)floor(microtime(true) * 1000));
+    q('INSERT INTO combats (campaign_id, data, version, updated_at) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE data = VALUES(data), version = VALUES(version), updated_at = VALUES(updated_at)',
+      [$cid, $json, $v, now()]);
+    q('DELETE FROM combat_members WHERE campaign_id = ?', [$cid]);
+    foreach ($chars as $ch) q('INSERT IGNORE INTO combat_members (campaign_id, character_id) VALUES (?,?)', [$cid, $ch]);
+    foreach (array_unique(array_merge($old, $chars)) as $ch) signal('combatc', $ch, $v);
+    return ['version' => $v, 'members' => count($chars), 'actions' => actions_info($cid)];
+}
+
+/** The Ref Screen: actions players sent after `after` (oldest first), and where to watch for more. */
+function a_combat_actions(): array {
+    $s = need_ref(REF_ONLY);
+    $cid = combat_campaign_id();
+    own_campaign($s, $cid);
+    $after = max(0, (int)($_GET['after'] ?? 0));
+    $rows = q('SELECT x.id, x.character_id, x.data, x.created_at, a.id AS access_id FROM combat_actions x
+               LEFT JOIN character_access a ON a.character_id = x.character_id AND a.ref_user_id = ?
+               WHERE x.campaign_id = ? AND x.id > ? ORDER BY x.id LIMIT 100', [$s['id'], $cid, $after])->fetchAll();
+    return ['items' => array_map(function ($r) {
+        return ['id' => (int)$r['id'], 'link' => $r['access_id'] !== null ? (int)$r['access_id'] : null,
+                'at' => $r['created_at'] . 'Z', 'action' => json_decode($r['data'])];
+    }, $rows)] + actions_info($cid);
+}
+
+/** A member's fight: the newest one this crow is in whose Ref still has access to it. */
+function member_combat(int $characterId, int $campaignId = 0): ?array {
+    $sql = 'SELECT b.campaign_id, b.version, b.data, p.name, a.id AS access_id FROM combat_members m JOIN combats b ON b.campaign_id = m.campaign_id
+            JOIN campaigns p ON p.id = m.campaign_id JOIN character_access a ON a.character_id = m.character_id AND a.ref_user_id = p.user_id
+            WHERE m.character_id = ?' . ($campaignId ? ' AND m.campaign_id = ?' : '') . ' ORDER BY b.updated_at DESC LIMIT 1';
+    $r = q($sql, $campaignId ? [$characterId, $campaignId] : [$characterId])->fetch();
+    return $r ?: null;
+}
+
+/** The Play page: the fight the player's crow is in, if any, and the change signal to watch. */
+function a_combat_mine(): array {
+    $s = need_login();
+    $id = record_id();
+    own_character($s, $id);
+    $r = member_combat($id);
+    $v = max(signal_version('combatc', $id), $r ? (int)$r['version'] : 0);
+    $known = (int)($_GET['known'] ?? 0);
+    if ($known && $known === $v) return ['unchanged' => true, 'version' => $v];
+    return ['version' => $v, 'watch' => combat_watch('combatc', $id),
+            'campaign' => $r ? ['id' => (int)$r['campaign_id'], 'name' => $r['name'] !== '' ? $r['name'] : 'Untitled campaign'] : null,
+            'combat' => $r ? json_decode($r['data']) : null, 'you' => $r ? (int)$r['access_id'] : null];   // this crow's link in the fight
+}
+
+function clean_action($a): array {
+    if (!is_array($a)) fail('Missing action.');
+    $type = $a['type'] ?? '';
+    if (!in_array($type, ACTION_TYPES, true)) fail('Unknown kind of action.');
+    $txt = function (string $k, int $n) use ($a): string { $v = $a[$k] ?? ''; return is_string($v) ? clip($v, $n) : ''; };
+    $num = function (string $k, int $lo, int $hi) use ($a): int { $v = $a[$k] ?? 0; return is_numeric($v) ? max($lo, min($hi, (int)$v)) : $lo; };
+    $out = ['type' => $type, 'round' => $num('round', 0, 9999), 'text' => $txt('text', 400)];
+    if ($type === 'attack' || $type === 'declare') {
+        $out['target'] = $txt('target', 40);
+        $out['targetName'] = $txt('targetName', 80);
+    }
+    if ($type === 'attack') {
+        $out += ['label' => $txt('label', 120), 'tier' => $num('tier', 1, 3), 'crit' => !empty($a['crit']), 'doom' => !empty($a['doom']),
+                 'damage' => $num('damage', 0, 999), 'piercing' => !empty($a['piercing']), 'cast' => !empty($a['cast'])];
+    }
+    return $out;
+}
+
+/** The Play page: the player's crow does something in its fight. */
+function a_combat_act(): array {
+    $s = need_login();
+    $id = record_id();
+    own_character($s, $id);
+    $cid = combat_campaign_id();
+    $r = member_combat($id, $cid);
+    $c = $r ? json_decode($r['data']) : null;
+    if (!$r || !is_object($c) || empty($c->active)) fail('Your crow isn\'t in that fight any more.', 409);
+    if ((int)q('SELECT COUNT(*) FROM combat_actions WHERE character_id = ? AND created_at > ?', [$id, now(-10)])->fetchColumn() >= 15) {
+        fail('That\'s a lot of actions at once. Wait a few seconds.', 429);
+    }
+    q('INSERT INTO combat_actions (campaign_id, character_id, data, created_at) VALUES (?,?,?,?)', [$cid, $id, enc(clean_action(body()['action'] ?? null)), now()]);
+    $aid = (int)db()->lastInsertId();
+    q('DELETE FROM combat_actions WHERE campaign_id = ? AND (id < ? OR created_at < ?)', [$cid, $aid - 300, now(-2 * 86400)]);
+    signal('cacts', $cid, $aid);
+    return ['id' => $aid];
+}
+
 // ---------------------------------------------------------------- admin
 function a_admin_users(): array {
     need_admin();
@@ -1068,6 +1199,10 @@ const ACTIONS = [
     'join.accept' => ['POST', 'a_join_accept', true],
     'join.decline' => ['POST', 'a_join_decline', true],
     'characters.campaigns' => ['GET', 'a_characters_campaigns', false],
+    'combat.publish' => ['POST', 'a_combat_publish', true],
+    'combat.actions' => ['GET', 'a_combat_actions', false],
+    'combat.mine' => ['GET', 'a_combat_mine', false],
+    'combat.act' => ['POST', 'a_combat_act', true],
     'notes.list' => ['GET', 'a_notes_list', false],
     'notes.dismiss' => ['POST', 'a_notes_dismiss', true],
     'admin.users' => ['GET', 'a_admin_users', false],

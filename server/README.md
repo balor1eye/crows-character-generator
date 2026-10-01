@@ -109,6 +109,7 @@ python3 server/test_instance.py smoke         # end-to-end check of the API as t
 python3 server/test_instance.py call test_ref list kind=campaigns
 python3 server/test_instance.py mail          # what it would have emailed
 python3 ref/test/run_combat_test.py --test-instance   # a four-player fight in the Ref Screen (see ref/test/README.md)
+python3 ref/test/run_live_combat_test.py             # a live fight between the Ref Screen and a player's Play page
 ```
 
 `seed_test.php` (only staged for the test instance, and refusing to run unless config.php sets `test_instance`)
