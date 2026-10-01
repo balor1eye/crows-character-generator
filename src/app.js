@@ -1154,6 +1154,7 @@
         return [b ? b.name : '', c.txp ? fmt(c.txp) + ' XP' : '', c.player ? 'played by ' + c.player : ''].filter(Boolean).join(' · ');
       },
       onServer: function () { if (window.CrowsPlay) window.CrowsPlay.syncAddress(); },
+      onJoined: function (campaign) { if (window.CrowsPlay) window.CrowsPlay.joined(campaign); },
       onReady: function (p) {
         if (window.CrowsPlay && (p.mode === 'play' || p.mode === 'build')) window.CrowsPlay.setMode(p.mode);
         if (window.CrowsPlay) window.CrowsPlay.loadCampaign();

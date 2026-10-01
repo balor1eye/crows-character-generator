@@ -7053,7 +7053,7 @@ var CROWS_TRAIT_TREES = [
    * dismissed. New ones pop up within a second or two of being sent, through the ('notes', user) change signal.
    * Not in a Ref's view of someone else's sheet: that's the Ref's account, and their own pages show theirs.
    */
-  var notesBox = null, shownNotes = {};
+  var notesBox = null, shownNotes = {}, notesLoaded = false;
   function noteText(n) {
     var d = n.detail || {}, crow = d.character || 'your crow', camp = d.campaign || 'their campaign';
     if (n.kind === 'join_accepted') return d.ref + ' accepted ' + crow + ' into ' + camp + '.';
@@ -7064,6 +7064,10 @@ var CROWS_TRAIT_TREES = [
     var text = noteText(n);
     if (!text || shownNotes[n.id]) return;
     shownNotes[n.id] = true;
+    // Accepted just now (not a note left from before this page opened): the open crow is in that campaign.
+    if (notesLoaded && n.kind === 'join_accepted' && n.detail && rec && rec.id === n.detail.characterId && cfg.onJoined) {
+      cfg.onJoined(n.detail.campaign || 'Untitled campaign');
+    }
     injectStyles();
     if (!notesBox) { notesBox = document.createElement('div'); notesBox.className = 'cloud-notes'; notesBox.setAttribute('role', 'status'); document.body.appendChild(notesBox); }
     var box = document.createElement('div');
@@ -7082,6 +7086,7 @@ var CROWS_TRAIT_TREES = [
   function loadNotes() {
     return call('GET', 'notes.list').then(function (j) {
       j.items.slice(0, 5).reverse().forEach(showNote);
+      notesLoaded = true;
       Cloud.watch('notes', j.watch, j.latest, loadNotes);
     }, function () { /* no notifications here (older server): nothing to show */ });
   }
@@ -7345,6 +7350,7 @@ var CROWS_TRAIT_TREES = [
     /*
      * opts: kind ('characters' | 'campaigns'), getData(), apply(data), valid(data),
      *       name(data), summary(data), fresh() (make a brand-new thing for ?new=1), onReady(params), onServer() (the accounts server answered),
+     *       onJoined(campaign) (a Ref just accepted the open character into that campaign),
      *       onRemote(before) (a change made elsewhere was just brought in; `before` is what getData() gave just before)
      */
     attach: function (opts) {
@@ -8747,6 +8753,7 @@ var CROWS_TRAIT_TREES = [
         return [b ? b.name : '', c.txp ? fmt(c.txp) + ' XP' : '', c.player ? 'played by ' + c.player : ''].filter(Boolean).join(' · ');
       },
       onServer: function () { if (window.CrowsPlay) window.CrowsPlay.syncAddress(); },
+      onJoined: function (campaign) { if (window.CrowsPlay) window.CrowsPlay.joined(campaign); },
       onReady: function (p) {
         if (window.CrowsPlay && (p.mode === 'play' || p.mode === 'build')) window.CrowsPlay.setMode(p.mode);
         if (window.CrowsPlay) window.CrowsPlay.loadCampaign();
@@ -8865,6 +8872,11 @@ var CROWS_TRAIT_TREES = [
     var id = window.CrowsCloud && window.CrowsCloud.recordId;
     if (!id) return;
     window.CrowsCloud.campaign().then(function (name) { campaign = name ? { id: id, name: name } : null; applyMode(mode()); }, function () { /* no title change */ });
+  }
+  /* A Ref accepted the open crow into `name` while the page was open. */
+  function joined(name) {
+    var id = window.CrowsCloud && window.CrowsCloud.recordId;
+    if (id) { campaign = { id: id, name: name }; applyMode(mode()); }
   }
   function gotoBuild(sectionId) {
     setMode('build');
@@ -9702,7 +9714,7 @@ var CROWS_TRAIT_TREES = [
   $('tab-build').addEventListener('click', function () { setMode('build'); });
   $('tab-play').addEventListener('click', function () { setMode('play'); });
   applyMode(mode());
-  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress, loadCampaign: loadCampaign,
+  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress, loadCampaign: loadCampaign, joined: joined,
     /* Back to full Stamina, as the Full button does (the Ref Screen's "Everyone to full Stamina"). */
     fullStamina: function () { if (C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); commit('Back to full Stamina.'); } },
     /*

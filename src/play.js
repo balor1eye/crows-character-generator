@@ -95,6 +95,11 @@
     if (!id) return;
     window.CrowsCloud.campaign().then(function (name) { campaign = name ? { id: id, name: name } : null; applyMode(mode()); }, function () { /* no title change */ });
   }
+  /* A Ref accepted the open crow into `name` while the page was open. */
+  function joined(name) {
+    var id = window.CrowsCloud && window.CrowsCloud.recordId;
+    if (id) { campaign = { id: id, name: name }; applyMode(mode()); }
+  }
   function gotoBuild(sectionId) {
     setMode('build');
     var n = $(sectionId);
@@ -931,7 +936,7 @@
   $('tab-build').addEventListener('click', function () { setMode('build'); });
   $('tab-play').addEventListener('click', function () { setMode('play'); });
   applyMode(mode());
-  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress, loadCampaign: loadCampaign,
+  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress, loadCampaign: loadCampaign, joined: joined,
     /* Back to full Stamina, as the Full button does (the Ref Screen's "Everyone to full Stamina"). */
     fullStamina: function () { if (C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); commit('Back to full Stamina.'); } },
     /*

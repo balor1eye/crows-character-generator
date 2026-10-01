@@ -224,7 +224,7 @@
    * dismissed. New ones pop up within a second or two of being sent, through the ('notes', user) change signal.
    * Not in a Ref's view of someone else's sheet: that's the Ref's account, and their own pages show theirs.
    */
-  var notesBox = null, shownNotes = {};
+  var notesBox = null, shownNotes = {}, notesLoaded = false;
   function noteText(n) {
     var d = n.detail || {}, crow = d.character || 'your crow', camp = d.campaign || 'their campaign';
     if (n.kind === 'join_accepted') return d.ref + ' accepted ' + crow + ' into ' + camp + '.';
@@ -235,6 +235,10 @@
     var text = noteText(n);
     if (!text || shownNotes[n.id]) return;
     shownNotes[n.id] = true;
+    // Accepted just now (not a note left from before this page opened): the open crow is in that campaign.
+    if (notesLoaded && n.kind === 'join_accepted' && n.detail && rec && rec.id === n.detail.characterId && cfg.onJoined) {
+      cfg.onJoined(n.detail.campaign || 'Untitled campaign');
+    }
     injectStyles();
     if (!notesBox) { notesBox = document.createElement('div'); notesBox.className = 'cloud-notes'; notesBox.setAttribute('role', 'status'); document.body.appendChild(notesBox); }
     var box = document.createElement('div');
@@ -253,6 +257,7 @@
   function loadNotes() {
     return call('GET', 'notes.list').then(function (j) {
       j.items.slice(0, 5).reverse().forEach(showNote);
+      notesLoaded = true;
       Cloud.watch('notes', j.watch, j.latest, loadNotes);
     }, function () { /* no notifications here (older server): nothing to show */ });
   }
@@ -516,6 +521,7 @@
     /*
      * opts: kind ('characters' | 'campaigns'), getData(), apply(data), valid(data),
      *       name(data), summary(data), fresh() (make a brand-new thing for ?new=1), onReady(params), onServer() (the accounts server answered),
+     *       onJoined(campaign) (a Ref just accepted the open character into that campaign),
      *       onRemote(before) (a change made elsewhere was just brought in; `before` is what getData() gave just before)
      */
     attach: function (opts) {
