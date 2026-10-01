@@ -99,7 +99,8 @@
   function absorbers() {
     var ai = C.armorInfo(), out = [];
     if (ai.worn) out.push(ai.worn);
-    inHands().forEach(function (c) { if (C.adMax(c) > 0 && out.indexOf(c) < 0) out.push(c); });
+    // A thrown parry weapon isn't in hand to parry with.
+    inHands().forEach(function (c) { if (!c.thrown && C.adMax(c) > 0 && out.indexOf(c) < 0) out.push(c); });
     return out;
   }
   function speed() {
@@ -255,7 +256,9 @@
   // An empty hand counts as a light weapon that makes unarmed strikes (tier 2 = 1).
   function lightBonus(o) {
     if (o.kind !== 'attack' || !o.melee) return null;
-    var h = C.occupancy().hand, a = o.card || null, other;
+    // A hand whose weapon was thrown is empty until the weapon is recovered.
+    var h = C.occupancy().hand.map(function (id) { var c = id !== null ? C.cardById(id) : null; return c && c.thrown ? null : id; });
+    var a = o.card || null, other;
     if (a) {
       if (!isLightWeapon(a) || C.spanOf(a, 'hand') > 1) return null;
       other = a.idx === 0 ? 1 : 0;
@@ -649,7 +652,7 @@
     row('Unarmed / improvised', ua.summary, function () { rollTest(ua); }, 'Attack', false, null);
     var stowed = carried().filter(function (c) { return c.area !== 'hand' && (item(c.key).cat === 'spell' || item(c.key).cat === 'weapon'); });
     card('play-attacks', 'Attacks & spells', [
-      el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee). A ranged attack against a creature adjacent to you takes a bane: set it before rolling. Light weapon and parry damage adjustments are included.' }),
+      el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee). A ranged attack against a creature adjacent to you takes a bane: set it before rolling. Light weapon and parry damage adjustments are included. A thrown weapon is out of your hand (no attacks, parry, or light-weapon bonus) until you recover it.' }),
       rows,
       stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Move items between slots in Build > Equipment.' }) : null
     ]);

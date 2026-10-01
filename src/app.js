@@ -803,7 +803,7 @@
       g.appendChild(el('div', {}, [el('b', { text: String(p[1]) }), el('span', { text: p[0] })]));
     });
     body.appendChild(g);
-    var inHands = state.inv.filter(function (c) { return c.area === 'hand'; }).map(function (c) { return c.key; });
+    var inHands = state.inv.filter(function (c) { return c.area === 'hand'; }).map(function (c) { return c.key + (c.thrown ? ' (thrown)' : ''); });
     body.appendChild(el('div', { class: 'fine', text: 'Hands: ' + (inHands.join(', ') || 'empty') + ' · ' + fmt(state.coins) + ' gc' }));
     var cl = $('checklist'); cl.innerHTML = '';
     checklist().forEach(function (c) { cl.appendChild(el('div', { class: c[0], text: c[1] })); });
