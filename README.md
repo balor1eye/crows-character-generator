@@ -113,6 +113,7 @@ src/play.js                           Play mode: vitals, dice, rests, usage dice
 src/cloud.js                          account autosave, live sync, and merging for both apps (inactive without the accounts server)
 src/refview.js                        the Ref's limited view of a player's shared character
 server/                               the accounts site: PHP API, portal pages, deploy script
+ref/test/                             browser test of a full four-player combat encounter (see ref/test/README.md)
 src/game-data.js                      backgrounds, expertises, item cards, tables
 src/traits-data.js                    all 23 trait trees + their connection lines (extracted from the book)
 src/template-data.js                  generated: base64 PDF template + field positions
@@ -133,6 +134,14 @@ python build/build.py
 
 This works the same on Windows, macOS, and Linux. `src/index.html` can also be opened directly for
 development after a build has produced `src/template-data.js`.
+
+After changing the Ref Screen, rebuild it and run the combat encounter test (needs Firefox and geckodriver; see
+`ref/test/README.md`):
+
+```
+python ref/build/build.py
+python3 ref/test/run_combat_test.py
+```
 
 ## Notes
 

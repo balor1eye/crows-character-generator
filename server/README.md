@@ -64,6 +64,7 @@ Changes go to the test instance first and reach production only by promoting it:
 python build/build.py && python ref/build/build.py
 server/deploy.sh                    # 1. the test instance, https://joshuaramsey.com/crows-test/
 python3 server/test_instance.py smoke   # 2. end-to-end check there
+python3 ref/test/run_combat_test.py --test-instance   #    and a full combat encounter in the Ref Screen there
 server/promote.sh --dry-run         # 3. what production would get
 server/promote.sh                   # 4. copy the test instance to production
 ```
@@ -107,6 +108,7 @@ python3 server/test_instance.py reseed        # new passwords and authenticator 
 python3 server/test_instance.py smoke         # end-to-end check of the API as the test accounts
 python3 server/test_instance.py call test_ref list kind=campaigns
 python3 server/test_instance.py mail          # what it would have emailed
+python3 ref/test/run_combat_test.py --test-instance   # a four-player fight in the Ref Screen (see ref/test/README.md)
 ```
 
 `seed_test.php` (only staged for the test instance, and refusing to run unless config.php sets `test_instance`)
