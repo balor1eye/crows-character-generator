@@ -7324,9 +7324,22 @@ var CROWS_TRAIT_TREES = [
     get owner() { return owner; },
     /* The id of the open record in the account, once it has one. */
     get recordId() { return rec && !linkId ? rec.id : null; },
-    /* True in a Ref's view of a player's shared character (?link=). Known before attach() runs. */
     /* True once the accounts server has answered (logged in or not). */
     get server() { return server; },
+    /*
+     * The name of the campaign the open character is currently playing in (in a Ref's party, active or sitting
+     * out), or null. Resolves null when there's no open record in the account.
+     */
+    campaign: function () {
+      var id = Cloud.recordId;
+      if (!user || !id || cfg.kind !== 'characters') return Promise.resolve(null);
+      return call('GET', 'characters.campaigns').then(function (j) {
+        var mine = ((j.campaigns || {})[id] || []).filter(function (c) { return c.campaign && (c.state === 'active' || c.state === 'away'); });
+        var cur = mine.filter(function (c) { return c.state === 'active'; })[0] || mine[0];
+        return cur ? cur.campaign : null;
+      });
+    },
+    /* True in a Ref's view of a player's shared character (?link=). Known before attach() runs. */
     get linked() { return /^https?:$/.test(location.protocol) && !!parseInt(params().link, 10); },
 
     /*
@@ -8736,6 +8749,7 @@ var CROWS_TRAIT_TREES = [
       onServer: function () { if (window.CrowsPlay) window.CrowsPlay.syncAddress(); },
       onReady: function (p) {
         if (window.CrowsPlay && (p.mode === 'play' || p.mode === 'build')) window.CrowsPlay.setMode(p.mode);
+        if (window.CrowsPlay) window.CrowsPlay.loadCampaign();
         if (window.CrowsRefView) window.CrowsRefView.ready(state.name, window.CrowsCloud.owner);
       },
       onRemote: function (before) {
@@ -8831,7 +8845,7 @@ var CROWS_TRAIT_TREES = [
     $('tab-build').setAttribute('aria-pressed', String(m === 'build'));
     $('tab-play').setAttribute('aria-pressed', String(m === 'play'));
     var what = m === 'play' ? 'Play' : 'Character Generator';
-    document.title = 'The Nest · ' + what;
+    document.title = 'The Nest · ' + what + (m === 'play' && campaignName() ? ' · ' + campaignName() : '');
     var sub = document.querySelector('.brand-sub');
     if (sub) sub.textContent = 'Crows Playtest 2 · ' + what;
     syncAddress();
@@ -8843,6 +8857,14 @@ var CROWS_TRAIT_TREES = [
     var search = location.search.replace(/([?&])mode=[^&]*&?/, '$1').replace(/[?&]$/, '');
     if (location.pathname === dir + page && search === location.search) return;
     try { history.replaceState(history.state, '', dir + page + search + location.hash); } catch (e) { /* ignore */ }
+  }
+  /* The campaign the open crow is playing in, if any (from the accounts server), for Play's title. */
+  var campaign = null;   // { id: record id, name }
+  function campaignName() { return campaign && window.CrowsCloud && campaign.id === window.CrowsCloud.recordId ? campaign.name : null; }
+  function loadCampaign() {
+    var id = window.CrowsCloud && window.CrowsCloud.recordId;
+    if (!id) return;
+    window.CrowsCloud.campaign().then(function (name) { campaign = name ? { id: id, name: name } : null; applyMode(mode()); }, function () { /* no title change */ });
   }
   function gotoBuild(sectionId) {
     setMode('build');
@@ -9680,7 +9702,7 @@ var CROWS_TRAIT_TREES = [
   $('tab-build').addEventListener('click', function () { setMode('build'); });
   $('tab-play').addEventListener('click', function () { setMode('play'); });
   applyMode(mode());
-  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress,
+  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress, loadCampaign: loadCampaign,
     /* Back to full Stamina, as the Full button does (the Ref Screen's "Everyone to full Stamina"). */
     fullStamina: function () { if (C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); commit('Back to full Stamina.'); } },
     /*

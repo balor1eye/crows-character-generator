@@ -1156,6 +1156,7 @@
       onServer: function () { if (window.CrowsPlay) window.CrowsPlay.syncAddress(); },
       onReady: function (p) {
         if (window.CrowsPlay && (p.mode === 'play' || p.mode === 'build')) window.CrowsPlay.setMode(p.mode);
+        if (window.CrowsPlay) window.CrowsPlay.loadCampaign();
         if (window.CrowsRefView) window.CrowsRefView.ready(state.name, window.CrowsCloud.owner);
       },
       onRemote: function (before) {

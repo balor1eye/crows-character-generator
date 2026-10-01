@@ -74,7 +74,7 @@
     $('tab-build').setAttribute('aria-pressed', String(m === 'build'));
     $('tab-play').setAttribute('aria-pressed', String(m === 'play'));
     var what = m === 'play' ? 'Play' : 'Character Generator';
-    document.title = 'The Nest · ' + what;
+    document.title = 'The Nest · ' + what + (m === 'play' && campaignName() ? ' · ' + campaignName() : '');
     var sub = document.querySelector('.brand-sub');
     if (sub) sub.textContent = 'Crows Playtest 2 · ' + what;
     syncAddress();
@@ -86,6 +86,14 @@
     var search = location.search.replace(/([?&])mode=[^&]*&?/, '$1').replace(/[?&]$/, '');
     if (location.pathname === dir + page && search === location.search) return;
     try { history.replaceState(history.state, '', dir + page + search + location.hash); } catch (e) { /* ignore */ }
+  }
+  /* The campaign the open crow is playing in, if any (from the accounts server), for Play's title. */
+  var campaign = null;   // { id: record id, name }
+  function campaignName() { return campaign && window.CrowsCloud && campaign.id === window.CrowsCloud.recordId ? campaign.name : null; }
+  function loadCampaign() {
+    var id = window.CrowsCloud && window.CrowsCloud.recordId;
+    if (!id) return;
+    window.CrowsCloud.campaign().then(function (name) { campaign = name ? { id: id, name: name } : null; applyMode(mode()); }, function () { /* no title change */ });
   }
   function gotoBuild(sectionId) {
     setMode('build');
@@ -923,7 +931,7 @@
   $('tab-build').addEventListener('click', function () { setMode('build'); });
   $('tab-play').addEventListener('click', function () { setMode('play'); });
   applyMode(mode());
-  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress,
+  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress, loadCampaign: loadCampaign,
     /* Back to full Stamina, as the Full button does (the Ref Screen's "Everyone to full Stamina"). */
     fullStamina: function () { if (C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); commit('Back to full Stamina.'); } },
     /*

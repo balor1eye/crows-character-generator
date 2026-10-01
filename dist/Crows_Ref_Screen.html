@@ -1456,9 +1456,22 @@ REF.QUICK = [
     get owner() { return owner; },
     /* The id of the open record in the account, once it has one. */
     get recordId() { return rec && !linkId ? rec.id : null; },
-    /* True in a Ref's view of a player's shared character (?link=). Known before attach() runs. */
     /* True once the accounts server has answered (logged in or not). */
     get server() { return server; },
+    /*
+     * The name of the campaign the open character is currently playing in (in a Ref's party, active or sitting
+     * out), or null. Resolves null when there's no open record in the account.
+     */
+    campaign: function () {
+      var id = Cloud.recordId;
+      if (!user || !id || cfg.kind !== 'characters') return Promise.resolve(null);
+      return call('GET', 'characters.campaigns').then(function (j) {
+        var mine = ((j.campaigns || {})[id] || []).filter(function (c) { return c.campaign && (c.state === 'active' || c.state === 'away'); });
+        var cur = mine.filter(function (c) { return c.state === 'active'; })[0] || mine[0];
+        return cur ? cur.campaign : null;
+      });
+    },
+    /* True in a Ref's view of a player's shared character (?link=). Known before attach() runs. */
     get linked() { return /^https?:$/.test(location.protocol) && !!parseInt(params().link, 10); },
 
     /*
