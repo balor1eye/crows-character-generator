@@ -68,6 +68,9 @@ expertise uses, wounds, and magic item slots.
 **Save file / Load file** stores the character (including play state) as a small `.json` file. The page also autosaves to
 the browser's local storage.
 
+**Theme**: the ◐ button in the header switches between Auto (follows your device), Light, and Dark. The
+choice is remembered and shared by the Character Generator, the Ref Screen, and the accounts site.
+
 ## Ref Screen (for the Ref)
 
 A separate, self-contained app for running sessions and keeping the campaign between them:

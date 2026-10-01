@@ -12,6 +12,7 @@ cp "$ROOT"/server/app/*.php "$ROOT"/server/app/schema.sql "$OUT/crows-app/"
 rm -f "$OUT/crows-app/config.php"
 cp "$ROOT/dist/Crows_Ref_Screen.html" "$OUT/crows-app/"
 cp -r "$ROOT/server/public/." "$OUT/public_html/crows/"
+cp "$ROOT/src/theme.js" "$OUT/public_html/crows/"   # shared with the apps, which inline it
 cp "$ROOT/dist/Crows_Character_Generator.html" "$OUT/public_html/crows/"
 python3 "$ROOT/server/csp.py" "$OUT/public_html/crows" "$OUT/crows-app"
 echo "staged $OUT"

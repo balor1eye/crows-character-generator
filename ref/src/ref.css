@@ -18,13 +18,23 @@
   --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
   --serif: Georgia, "Times New Roman", Times, serif;
 }
+/* Dark: follows the device unless the theme toggle (theme.js) sets data-theme on <html>. */
+:root { color-scheme: light dark; }
+:root[data-theme="light"] { color-scheme: light; }
 @media (prefers-color-scheme: dark) {
-  :root {
+  :root:not([data-theme="light"]) {
     --paper: #161415; --card: #211e1f; --ink: #ece6dc; --muted: #a79f94; --line: #3a3536;
     --accent: #c2412f; --soft: #2c2829; --slot: #1b191a; --slot-hover: #2b2627;
     --ok: #6fbf7c; --warn: #e0a84a; --bad: #ff7b6e; --sel: #d9a441;
     --shadow: 0 1px 2px rgba(0,0,0,.4);
   }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #161415; --card: #211e1f; --ink: #ece6dc; --muted: #a79f94; --line: #3a3536;
+  --accent: #c2412f; --soft: #2c2829; --slot: #1b191a; --slot-hover: #2b2627;
+  --ok: #6fbf7c; --warn: #e0a84a; --bad: #ff7b6e; --sel: #d9a441;
+  --shadow: 0 1px 2px rgba(0,0,0,.4);
 }
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
@@ -199,7 +209,7 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .st-head { display: flex; align-items: center; gap: .45rem; min-width: 0; }
 .row > .st-head { flex: 1; }
 .st-head b { font: bold 1.05rem var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-frame { width: 100%; height: 320px; border: 0; display: block; background: transparent; color-scheme: normal; }
+.st-frame { width: 100%; height: 320px; border: 0; display: block; background: transparent; }
 .st-stam { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
 .st-stam .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
 .st-stam b { font: bold 1.5rem var(--serif); }
