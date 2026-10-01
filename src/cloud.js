@@ -175,14 +175,22 @@
     var nav = actions(); if (!nav) return;
     injectStyles();
     var home = link(user ? '⌂ Home' : 'Log in', user ? './#home' : './#login', 'btn btn-ghost cloud-home');
-    home.title = user ? 'Back to your characters' + (cfg.kind === 'campaigns' ? ' and campaigns' : '') : 'Log in to save to your account';
+    home.title = user ? 'Back to the home page' : 'Log in to save to your account';
     nav.insertBefore(home, nav.firstChild);
     if (!user) return;
+    var after = home;
+    if (cfg.kind === 'characters' && !linkId) {
+      // Back to the character list (leaving an unsaved new character still asks first: see beforeunload).
+      var mine = link('My characters', './#characters', 'btn btn-ghost cloud-home');
+      mine.title = 'Back to your saved characters';
+      nav.insertBefore(mine, home.nextSibling);
+      after = mine;
+    }
     chip = document.createElement('span');
     chip.className = 'cloud-chip';
     chip.setAttribute('role', 'status');
     chip.innerHTML = '<span class="dot"></span><span class="txt"></span>';
-    nav.insertBefore(chip, home.nextSibling);
+    nav.insertBefore(chip, after.nextSibling);
     status('loading', 'Loading…');
   }
   function status(s, text, title) {
