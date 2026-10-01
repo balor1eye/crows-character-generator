@@ -9105,20 +9105,25 @@ var CROWS_TRAIT_TREES = [
   }
 
   // ------------------------------------------------------------------ rest, dungeon turn, XP
-  function endDT() {
-    var p = P(), msgs = [];
-    p.dt++;
-    var ended = DT_CONDITIONS.filter(function (k) { return p.conds[k]; });
-    ended.forEach(function (k) { delete p.conds[k]; });
-    if (ended.length) msgs.push(ended.join(', ') + ' ended.');
+  /* The end of dungeon turn n, as the Ref Screen's "End DT" sends it (refChange endDT); players can't end one here. */
+  function endDT(n) {
+    var p = P(), msgs = [], ended = endDTConditions();
+    p.dt = n;
+    if (ended) msgs.push(ended);
     inHands().forEach(function (c) { var u = udInfo(c.key); if (u && u.dt && udNow(c) > 0) msgs.push(rollUD(c, 'end of DT')); });
     var over = overloadedSlots();
     if (over.length) {
-      var n = d(6), placed = addWounds(n, 'w');
-      msgs.push('Two magic items in one slot (' + over.join(', ') + '): chaos deals 1d6 = ' + n + ' wound' + (n === 1 ? '' : 's') + (placed < n ? ' (' + placed + ' fit)' : '') + '.');
+      var w = d(6), placed = addWounds(w, 'w');
+      msgs.push('Two magic items in one slot (' + over.join(', ') + '): chaos deals 1d6 = ' + w + ' wound' + (w === 1 ? '' : 's') + (placed < w ? ' (' + placed + ' fit)' : '') + '.');
       if (C.woundCount() >= 10) msgs.push('All 10 backpack slots are wounded: your crow is dead.');
     }
-    commit('End of dungeon turn ' + p.dt + '. ' + (msgs.join(' ') || 'Nothing in hand burns down.') + ' The Ref makes an encounter check.');
+    return 'End of dungeon turn ' + n + '. ' + (msgs.join(' ') || 'Nothing in hand burns down.');
+  }
+  /* Blessed, vulnerable, and weakened end (the end of a DT, or halfway through a rest). */
+  function endDTConditions() {
+    var p = P(), ended = DT_CONDITIONS.filter(function (k) { return p.conds[k]; });
+    ended.forEach(function (k) { delete p.conds[k]; });
+    return ended.length ? ended.join(', ') + ' ended.' : '';
   }
   // Rules: more than one magic item equipped in the same slot -> can't rest; 1d6 wounds at the end of each DT.
   function overloadedSlots() { var m = P().magicMulti || {}; return MAGIC_SLOTS.filter(function (k) { return m[k]; }); }
@@ -9356,9 +9361,7 @@ var CROWS_TRAIT_TREES = [
     card('play-time', 'Dungeon turns & rest', [
       el('div', { class: 'row wrap dt-row' }, [
         el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: 'Dungeon turn' }), el('div', { class: 'val' }, [el('b', { text: String(p.dt + 1) })])]),
-        btn('End dungeon turn', endDT, 'btn-primary'),
-        btn('Reset count', function () { p.dt = 0; commit('Dungeon turn count reset.'); }, 'btn-ghost'),
-        el('p', { class: 'fine grow', text: 'Ending a DT rolls the usage dice of lights in your hands, ends blessed, vulnerable, and weakened, and deals 1d6 wounds if two magic items share a slot. 30 real minutes each; greed bonus +30/20/10% in DT 1/2/3.' })
+        el('p', { class: 'fine grow', text: 'The Ref ends each DT from the Ref Screen. Ending a DT rolls the usage dice of lights in your hands, ends blessed, vulnerable, and weakened, and deals 1d6 wounds if two magic items share a slot. 30 real minutes each; greed bonus +30/20/10% in DT 1/2/3.' })
       ]),
       el('h3', { text: 'Rest' }), restBox
     ]);
@@ -9663,12 +9666,16 @@ var CROWS_TRAIT_TREES = [
      * A change the Ref Screen made to this crow (combat, rests, Miasma, XP), applied as changes rather than
      * overwritten values, so it adds to whatever the player did meanwhile. Any of:
      * xp (+ desc, gc, n): pending XP · apply: pending XP into TXP · full: full Stamina · st: Stamina +/- ·
-     * wounds: ordinary wounds +/- · cruelty: +/- · setCruelty: a new value.
+     * wounds: ordinary wounds +/- · cruelty: +/- · setCruelty: a new value · endDT: dungeon turn n ended ·
+     * endConds: blessed, vulnerable, weakened end (with a rest) · dt: dungeon turn n ended (with a rest).
      */
     refChange: refChange, refOps: refQueue };
 
   function refChange(o) {
     var p = P(), msgs = [], n;
+    if (o.endDT) msgs.push(endDT(o.endDT));
+    if (o.endConds && (n = endDTConditions())) msgs.push('Resting: ' + n);
+    if (o.dt && P().dt !== o.dt) { P().dt = o.dt; msgs.push('Dungeon turn ' + o.dt + ' ended with the rest.'); }
     if (o.xp) {
       p.pendingXP = Math.max(0, p.pendingXP + o.xp);
       p.xpLog.unshift({ t: Date.now(), desc: o.desc || 'Treasure', gc: o.gc | 0, n: o.n | 0 || 1, xp: o.xp });

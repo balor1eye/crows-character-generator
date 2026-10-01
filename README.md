@@ -44,8 +44,8 @@ What it does:
 - **Village**: set Prosperity in Build > Village; the Caretaker connection heals 3 wounds at 6+.
   Surgical kits add a wound healed to Tend Wounds, and ticking "2+ items here" on a magic item slot
   blocks resting and deals 1d6 wounds at the end of each dungeon turn.
-- **Dungeon turns & rest**: ending a DT rolls usage dice of lights in hand and ends blessed/vulnerable/
-  weakened. **Rest** eats a ration (or gives a starvation wound), restores Stamina, heals wounds
+- **Dungeon turns & rest**: the Ref ends each DT from the Ref Screen; on a linked crow's sheet that rolls
+  usage dice of lights in hand and ends blessed/vulnerable/weakened. **Rest** eats a ration (or gives a starvation wound), restores Stamina, heals wounds
   (hearty ration, Tend Wounds, Caretaker), restores expertise uses outside the Miasma, recharges
   spellbooks, handles repair armor and lore book study, feeds pets, and applies pending XP.
 - **Expertise uses**, **carried items** (usage dice, refuelling, ammo, healing potions, using up
@@ -80,7 +80,7 @@ Load campaign** writes a `.json` file).
 
 - **Session**: the shared dungeon-turn timer (60/30/20 minutes or every 1d6 rooms), Encounter Number with
   crowded/chaos adjustments, greed bonus, End DT (ends DT conditions, rolls the encounter check and the monster
-  table, tracks signalled encounters), a combat tracker (initiative, Stamina/AD/wounds, conditions, one-click
+  table, tracks signalled encounters, and ends the DT on each linked crow's sheet; rests do the same), a combat tracker (initiative, Stamina/AD/wounds, conditions, one-click
   monster attacks, X/Rest uses), the rest procedure, and the session log.
 - **Travel**: hexes and EN from pace, speed, roads, water, and weather; travel encounters with every sub-table;
   the secret lost-direction roll; Miasma RRs and effects for each crow; the travel roles.

@@ -2006,6 +2006,7 @@ REF.QUICK = [
     log('dt', '**End of DT ' + s.dt + '**' + (place ? ' at ' + place.name : '') + '. Roll usage dice (lights, spells, backlashes, DT items); DT effects end.');
     s.combat.list.forEach(function (c) { REF.END_OF_DT_CONDITIONS.forEach(function (k) { if (c.conds[k]) { delete c.conds[k]; cleared.push(c.name + ' ' + k.toLowerCase()); } }); });
     if (cleared.length) log('', 'Conditions ended: ' + cleared.join(', ') + '.');
+    activePCs().forEach(function (p) { sheetOp(p, { endDT: s.dt }); });   // linked crows: lights, conditions, overloaded slots on their sheets
     if (s.pending) log('enc', '**Reminder:** the encounter signalled during DT ' + s.pending.dt + ' was due this DT (' + s.pending.text + ').');
     var res = encounterCheck('End of DT ' + s.dt, dungeonEN(), s.table === 'none' ? null : s.table);
     ui.lastEnc = res;
@@ -2101,6 +2102,7 @@ REF.QUICK = [
     var s = S(), cleared = [];
     s.rest.half = true;
     s.combat.list.forEach(function (c) { REF.END_OF_DT_CONDITIONS.forEach(function (k) { if (c.conds[k]) { delete c.conds[k]; cleared.push(c.name + ' ' + k.toLowerCase()); } }); });
+    activePCs().forEach(function (p) { sheetOp(p, { endConds: true }); });   // and on linked crows' sheets
     log('', 'Rest halfway: effects lasting to the end of the DT, and DT-rolled usage-dice effects, end.' + (cleared.length ? ' Ended: ' + cleared.join(', ') + '.' : ''));
     save(); render();
   }
@@ -2109,7 +2111,7 @@ REF.QUICK = [
     activePCs().forEach(function (p) {
       var xp = s.rest.applyXP && p.pending;
       if (xp) applied.push((p.name || 'Crow') + ' +' + fmt(p.pending));
-      sheetOp(p, { full: true, wounds: p.wounds > 0 ? -1 : 0, apply: !!xp });
+      sheetOp(p, { full: true, wounds: p.wounds > 0 ? -1 : 0, apply: !!xp, endConds: true, dt: s.dt });   // the rest used up DT s.dt
     });
     s.combat.list.forEach(function (c) { c.used = {}; if (c.kind === 'pc') { var p = state.party.filter(function (x) { return x.id === c.pcId; })[0]; if (p) { c.st = p.st; c.wounds = p.wounds; } } });
     log('dt', '**Rest complete.** Crows regain all Stamina, heal 1 wound, and regain expertise uses' + (s.rest.where === 'outdoors' && state.travel.inMiasma ? ' (NOT in the Miasma: no expertise uses; roll Miasma RRs)' : '') +
@@ -2257,7 +2259,7 @@ REF.QUICK = [
     if (cloudOn()) window.CrowsCloud.api('POST', 'link.remove', '', { id: id }).then(function () { if (!quietly) toast('Unlinked. The crow stays in the party as a copy.'); }, function () { /* already gone */ });
   }
   /*
-   * The Ref changing a crow's sheet numbers (XP, Stamina, wounds, cruelty; see CrowsPlay.refChange): the party
+   * The Ref changing a crow's sheet numbers (XP, Stamina, wounds, cruelty, the end of a DT or a rest; see CrowsPlay.refChange): the party
    * entry changes at once, and a linked crow's change goes onto the player's sheet through its Party status frame.
    * If that frame isn't loaded yet, the change waits in p.owed and is delivered as soon as the frame reports in;
    * until then it's replayed over each refresh from the sheet, so it doesn't flicker away.
