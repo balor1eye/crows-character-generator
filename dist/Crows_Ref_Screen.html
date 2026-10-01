@@ -269,6 +269,17 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .enc-body h4 { margin: .2rem 0 0; }
 .enc-body textarea { width: 100%; }
 .enc-cre { display: flex; flex-direction: column; gap: .3rem; }
+.card.run { border-top: 4px solid var(--bad); }
+.card[hidden] { display: none; }
+.run-text { white-space: pre-line; margin: .4rem 0; padding: .5rem .7rem; border-left: 3px solid var(--line); background: var(--slot); border-radius: 4px; }
+.run-setup { margin: .4rem 0; }
+.run-cues { display: flex; flex-direction: column; gap: .3rem; margin: .4rem 0; }
+.cue { border-left: 4px solid var(--sel); background: var(--slot); padding: .35rem .6rem; border-radius: 4px; font-size: .9rem; }
+.cue.warn { border-left-color: var(--warn); font-weight: 600; }
+.cue.ok { border-left-color: var(--ok); font-weight: 600; }
+.run-end { border-top: 1px solid var(--line); margin-top: .8rem; padding-top: .6rem; }
+.run-end h4 { margin: 0 0 .3rem; }
+.run-note { margin: 0 0 .6rem; }
 .li-row textarea { min-height: 2.2rem; font-size: .88rem; padding: .3rem .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 
 /* Village */
@@ -444,6 +455,7 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
       <section class="card" id="sec-quick"></section>
     </div>
     <div class="page" id="page-encounters">
+      <section class="card run" id="sec-enc-run" hidden></section>
       <section class="card" id="sec-enc-new"></section>
       <section class="card" id="sec-enc-list"></section>
     </div>
@@ -1630,9 +1642,10 @@ REF.QUICK = [
   var STORAGE_KEY = 'crows-pt2-ref-campaign';
   var TAB_KEY = 'crows-pt2-ref-tab';
   var TABS = [['session', 'Session'], ['encounters', 'Encounters'], ['travel', 'Travel'], ['village', 'Village'], ['party', 'Party'], ['world', 'World'], ['bestiary', 'Bestiary'], ['tables', 'Tables'], ['rules', 'Rules']];
+  var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge' };
   var EB_LABELS = [[-2, 'DB'], [-1, 'Bane'], [0, '—'], [1, 'Edge'], [2, 'DE']];
   var state, tab, uid = 1;
-  var ui = { dice: null, tables: {}, beastQ: '', beastType: '', rulesQ: '', lastEnc: null, travelEnc: null, alarmFired: false, encSrc: '', encDraft: null, encFilter: 'open', encOpen: {}, encFocus: null };
+  var ui = { dice: null, tables: {}, beastQ: '', beastType: '', rulesQ: '', lastEnc: null, travelEnc: null, alarmFired: false, encSrc: '', encDraft: null, encFilter: 'open', encOpen: {}, encFocus: null, encEnd: null };
 
   // ------------------------------------------------------------------ helpers
   function $(id) { return document.getElementById(id); }
@@ -1720,7 +1733,7 @@ REF.QUICK = [
       session: { n: 1, title: '', date: today(), dt: 1, dtLen: 30, mode: 'timer', rooms: 0, roomsDone: 0, running: false, endAt: 0, remain: 30 * 60000,
         sound: true, autoNext: true, place: '', table: 'Blood Creatures', crowded: false, chaos: false, enAdj: 0, firstVisit: true, pending: null,
         rest: { active: false, where: 'dungeon', seclude: false, half: false, applyXP: true },
-        combat: { round: 0, list: [] } },
+        combat: { round: 0, list: [], encId: null, surprise: 'none' } },
       log: [],
       travel: { day: 1, pace: 'Normal', speed: 5, road: false, water: 'none', weather: '', beacon: false, strong: false, hexAdj: 0, enAdj: 0, restEnAdj: 0,
         climate: 'Fall & Spring', habitat: 'Forest', nearby: 'Undead', lost: false, miasmaMod: 0, inMiasma: true },
@@ -1956,7 +1969,7 @@ REF.QUICK = [
     }
     if (res.travel) kids.push(travelResultBox(res.travel));
     if (res.hit && !res.enc && !res.travel) kids.push(el('div', { class: 'muted', text: 'No table picked: choose creatures from the Bestiary.' }));
-    if (res.encId && findEncounter(res.encId)) kids.push(el('div', null, [encLink(res.encId, 'Open in Encounters')]));
+    if (res.encId && findEncounter(res.encId)) kids.push(el('div', { class: 'row center' }, [runEncBtn(findEncounter(res.encId)), encLink(res.encId, 'Open in Encounters')]));
     else if (res.enc || res.travel) kids.push(btn('Save to Encounters', function () {
       var e = newEncounter({ name: encName(res.reason, res), src: res.table || 'Travel', roll: res.reason, text: res.enc ? res.table + ' (d' + res.enc.die + ' = ' + res.enc.roll + '): ' + res.enc.text : res.travel.summary.replace(/\*\*/g, ''),
         adds: res.enc ? res.enc.adds : res.travel.adds });
@@ -2017,15 +2030,87 @@ REF.QUICK = [
     if (n) { n.scrollIntoView({ block: 'start' }); if (editName) { var i = n.querySelector('input'); if (i) i.select(); } }
     clearTimeout(openEncounter._t); openEncounter._t = setTimeout(function () { ui.encFocus = null; }, 2000);
   }
-  function encCombatBtn(e) {
+  function encCombatBtn(e, cls) {
     return btn('Add to combat', function () {
       if (!e.creatures.length) { toast('This encounter has no creatures yet.'); return; }
       e.creatures.forEach(function (c) { addCombatant(c.n, clamp(int(c.k, 1), 1, 30), c.side); });
       log('', 'Encounter **' + (e.name || 'untitled') + '** joins combat: ' + encSummary(e) + '.');
       toast('Added to the combat tracker.');
       setTab('session');
-    }, 'btn-small btn-primary');
+    }, cls || 'btn-small btn-primary', 'Only add its creatures to the combat tracker in the Session tab');
   }
+
+  /*
+   * Running an encounter: its creatures (and the active crows) go into the combat tracker, tagged with the
+   * encounter's id, and the Encounters tab shows the fight. Ending it writes the result into the encounter's notes.
+   */
+  var ENC_OUTCOMES = [['won', 'The crows won'], ['foesFled', 'The foes fled or surrendered'], ['fled', 'The crows fled'], ['avoided', 'Talked, traded, or sneaked past'], ['other', 'Something else']];
+  function runningEnc() { var id = S().combat.encId; return id ? findEncounter(id) : null; }
+  function runEncounter(e) {
+    var s = S(), c = s.combat, cur = runningEnc();
+    if (cur === e) { setTab('encounters'); return; }
+    if (cur && !confirm((cur.name || 'Another encounter') + ' is still running. Switch to ' + (e.name || 'this one') + '? Creatures already in the tracker stay there.')) return;
+    var others = c.list.filter(function (x) { return x.kind !== 'pc' && x.enc !== e.id; });
+    if (others.length && confirm('The combat tracker still has ' + plural(others.length, 'creature') + ' in it. Remove them before this encounter starts?\n\nCancel keeps them in the fight.')) {
+      c.list = c.list.filter(function (x) { return others.indexOf(x) < 0; });
+      others = [];
+    }
+    if (!others.length) c.round = 0;
+    c.encId = e.id; c.surprise = 'none'; ui.encEnd = null;
+    if (!c.list.some(function (x) { return x.enc === e.id; })) e.creatures.forEach(function (cr) { addCombatant(cr.n, clamp(int(cr.k, 1), 1, 30), cr.side, e.id); });
+    addParty();
+    if (s.pending && s.pending.encId === e.id) s.pending = null;
+    log('enc', '**Encounter begins: ' + (e.name || 'untitled') + '**' + (e.where ? ' at ' + e.where : '') + (e.creatures.length ? ' (' + encSummary(e) + ')' : '') + '.');
+    save(); setTab('encounters');
+  }
+  function runEncBtn(e, cls) {
+    return runningEnc() === e ? btn('Go to the fight', function () { setTab('encounters'); }, 'btn-small ' + (cls || ''))
+      : btn('Run encounter', function () { runEncounter(e); }, 'btn-small ' + (cls || 'btn-primary'), 'Put its creatures and the party in the combat tracker and run it here');
+  }
+  /* Stop running without a result: its creatures leave the tracker; the encounter stays open. */
+  function cancelRun(e) {
+    var c = S().combat;
+    if (!confirm('Stop running ' + (e.name || 'this encounter') + '? Its creatures leave the combat tracker, and the encounter stays open.')) return;
+    c.list = c.list.filter(function (x) { return x.enc !== e.id; });
+    if (!c.list.some(function (x) { return x.kind !== 'pc'; })) { c.list = []; c.round = 0; }
+    c.encId = null; c.surprise = 'none'; ui.encEnd = null;
+    log('', 'Stopped running ' + (e.name || 'the encounter') + ' (no result).');
+    save(); render();
+  }
+  function tally(list) {
+    var n = {}; list.forEach(function (x) { var k = x.cref || x.name; n[k] = (n[k] || 0) + 1; });
+    return Object.keys(n).map(function (k) { return n[k] + ' × ' + k; }).join(', ');
+  }
+  function endEncounter(e, outcome, resolve) {
+    var s = S(), c = s.combat, label = ENC_OUTCOMES.filter(function (o) { return o[0] === outcome; })[0][1];
+    var them = c.list.filter(function (x) { return x.kind !== 'pc'; }), fallen = them.filter(function (x) { return x.dead; }),
+      standing = them.filter(function (x) { return !x.dead && x.kind === 'foe'; }), allies = them.filter(function (x) { return !x.dead && x.kind === 'ally'; });
+    var crows = c.list.filter(function (x) { return x.kind === 'pc'; }).map(function (x) { return x.name + ' ' + x.st + '/' + x.stMax + (x.wounds ? ', ' + plural(x.wounds, 'wound') : ''); });
+    var corpses = {};
+    fallen.forEach(function (x) { var b = beast(x.cref), sz = b && SIZES[b.sz]; if (sz) corpses[sz] = (corpses[sz] || 0) + 1; });
+    var harvest = Object.keys(corpses).map(function (sz) { return corpses[sz] + ' ' + sz + ' (' + REF.HARVEST[sz] + ' parts each)'; });
+    var lines = ['Session ' + s.n + ', DT ' + s.dt + ': ' + label + (c.round ? ' after ' + plural(c.round, 'round') : '') + '.'];
+    if (fallen.length) lines.push('Fallen: ' + tally(fallen) + '.');
+    if (standing.length) lines.push('Foes still standing: ' + tally(standing) + '.');
+    if (allies.length) lines.push('Allies: ' + tally(allies) + '.');
+    if (crows.length) lines.push('Crows: ' + crows.join('; ') + '.');
+    if (harvest.length) lines.push('Corpses to harvest: ' + harvest.join(', ') + '.');
+    e.notes = (e.notes ? e.notes.replace(/\s+$/, '') + '\n\n' : '') + lines.join('\n');
+    e.outcome = label;
+    if (resolve) { e.done = true; if (s.pending && s.pending.encId === e.id) s.pending = null; }
+    log('enc', '**Encounter ends: ' + (e.name || 'untitled') + '.** ' + lines.join(' '));
+    c.list = []; c.round = 0; c.encId = null; c.surprise = 'none'; ui.encEnd = null;
+    save(); openEncounter(e.id); toast('The result is in the encounter\'s notes.');
+  }
+  /* A monster's "suspicious like or hate" check (Bestiary rules): 2d10 + the highest Mind among the monsters. */
+  function likeHateCheck(foes) {
+    var m = Math.max.apply(null, foes.map(function (x) { return beast(x.cref).c[1]; }));
+    var r = test(m, 0), what = ['approach unsuspecting', 'investigate the oddities first', 'withdraw nearby and prepare an ambush or gather allies'][r.tier - 1];
+    ui.dice = { label: 'Like/hate check (M ' + signed(m) + ')', r: r, dmg: 'They ' + what + '.' };
+    log('', 'Like/hate check 2d10 ' + signed(m) + ': ' + testLine(r) + ' → T' + r.tier + ': they ' + what + '.');
+    render();
+  }
+
   function beastSelect(value, onchange) {
     var groups = {};
     REF.BESTIARY.forEach(function (b) { (groups[b.t] = groups[b.t] || []).push(b.n); });
@@ -2140,24 +2225,36 @@ REF.QUICK = [
   }
 
   // ------------------------------------------------------------------ combat
-  function addCombatant(name, count, side) {
+  /* Creatures added while an encounter is running (from anywhere) join that encounter. */
+  function addCombatant(name, count, side, encId) {
     var b = beast(name), list = S().combat.list;
+    if (encId === undefined) encId = S().combat.encId || null;
     for (var i = 0; i < (count || 1); i++) {
       var same = list.filter(function (c) { return c.cref === name; }).length;
       list.push({ id: nid(), kind: side === 'ally' ? 'ally' : 'foe', cref: name, name: name + ' ' + (same + 1), st: b ? b.st : 10, stMax: b ? b.st : 10,
-        ad: b ? b.ad : 0, adMax: b ? b.ad : 0, wounds: 0, conds: {}, used: {}, dead: false, note: '' });
+        ad: b ? b.ad : 0, adMax: b ? b.ad : 0, wounds: 0, conds: {}, used: {}, dead: false, note: '', enc: encId });
     }
     save();
   }
   function addPartyToCombat() {
+    var added = addParty();
+    save(); render();
+    toast(added ? 'Added ' + plural(added, 'crow') + '.' : 'No active crows to add (see the Party tab).');
+  }
+  /* Put the active crows not yet in combat into the tracker; returns how many were added. */
+  function addParty() {
     var list = S().combat.list, added = 0;
     activePCs().forEach(function (p) {
       if (list.some(function (c) { return c.pcId === p.id; })) return;
       list.push({ id: nid(), kind: 'pc', pcId: p.id, cref: '', name: p.name || 'Crow', st: p.st, stMax: p.stMax, ad: p.ad || 0, adMax: p.ad || 0, wounds: p.wounds || 0, conds: {}, used: {}, dead: false, note: '' });
       added++;
     });
-    save(); render();
-    toast(added ? 'Added ' + plural(added, 'crow') + '.' : 'No active crows to add (see the Party tab).');
+    return added;
+  }
+  /* Round 1 of a fight that began with surprise: the surprised side takes no turn, and attacks against it get +1. */
+  function surprised(c) {
+    var cb = S().combat;
+    return cb.round === 1 && (cb.surprise === 'crows' ? c.kind !== 'foe' : cb.surprise === 'foes' && c.kind === 'foe');
   }
   function slotsOf(c) { var b = beast(c.cref); return c.kind === 'pc' ? 10 : b && (b.t === 'Human' || b.t === 'Animal') ? b.sl : 0; }
   function damage(c, amount, piercing) {
@@ -2192,8 +2289,9 @@ REF.QUICK = [
     if (c.conds.Weakened) { banes++; why.push('weakened'); }
     if (c.conds.Blessed) { edges++; why.push('blessed'); }
     if (c.conds.Prone && /^M/.test(a[2])) { banes++; why.push('prone'); }
-    var crit = /crits on 18-20/.test(a[5] || '') ? 18 : 19;
-    var r = test(a[1], netEdges(edges, banes), crit);
+    var crit = /crits on 18-20/.test(a[5] || '') ? 18 : 19, bonus = 0, cb = S().combat;
+    if (cb.round === 1 && (cb.surprise === 'crows' && c.kind === 'foe' || cb.surprise === 'foes' && c.kind === 'ally')) { bonus = 1; why.push('+1 vs surprised'); }
+    var r = test(a[1] + bonus, netEdges(edges, banes), crit);
     var dmg = r.tier === 1 ? 'miss' : (r.tier === 2 ? a[3] : a[4]) + ' damage';
     var extra = c.conds.Blessed && b ? ' (+' + Math.max(b.c[0], b.c[2]) + ' blessed)' : '';
     ui.dice = { label: c.name + ': ' + a[0], r: r, dmg: dmg + (r.tier > 1 ? extra : ''), note: (a[5] || '') + (why.length ? (a[5] ? '; ' : '') + 'auto: ' + why.join(', ') : '') };
@@ -2412,6 +2510,7 @@ REF.QUICK = [
     TABS.forEach(function (t) {
       var badge = null;
       if (t[0] === 'session' && (S().pending || S().combat.list.some(function (c) { return !c.dead && c.kind === 'foe'; }))) badge = el('span', { class: 'badge', text: S().pending ? '!' : '⚔' });
+      if (t[0] === 'encounters' && runningEnc()) badge = el('span', { class: 'badge', text: '⚔', title: 'An encounter is running' });
       if (t[0] === 'party' && inv.requests.length && inv.id === (window.CrowsCloud && window.CrowsCloud.recordId)) badge = el('span', { class: 'badge', text: String(inv.requests.length), title: 'Join requests waiting' });
       bar.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': tab === t[0] ? 'true' : 'false', onclick: function () { setTab(t[0]); } }, [t[1], badge]));
     });
@@ -2548,7 +2647,7 @@ REF.QUICK = [
         }, 'btn-ghost')
       ]),
       s.pending ? el('div', { class: 'pending' }, [el('b', { text: 'Encounter signalled during DT ' + s.pending.dt + ': ' }), pendingText(s.pending), '. It arrives any time this DT.',
-        el('div', { class: 'row' }, [pendingEnc() ? encCombatBtn(pendingEnc()) : addToCombatBtn(s.pending.adds), btn('It happened / cancel', function () { s.pending = null; save(); render(); }, 'btn-small btn-ghost')])]) : null,
+        el('div', { class: 'row' }, [pendingEnc() ? runEncBtn(pendingEnc()) : addToCombatBtn(s.pending.adds), btn('It happened / cancel', function () { s.pending = null; save(); render(); }, 'btn-small btn-ghost')])]) : null,
       ui.lastEnc ? encounterResultBox(ui.lastEnc, function () { ui.lastEnc = null; render(); }) : null,
       more('End of each DT (checklist)', [el('ol', null, [
         el('li', { text: 'Roll usage dice for lights and anything tagged DT; spell and backlash durations in UD.' }),
@@ -2566,31 +2665,39 @@ REF.QUICK = [
   }
 
   function renderCombat() {
+    var c = S().combat, living = c.list.filter(function (x) { return !x.dead && x.kind === 'foe'; }), run = runningEnc();
+    card('sec-combat', el('h2', null, ['Combat', el('small', { text: living.length ? plural(living.length, 'foe') + ' standing' : 'tracker' })]), [
+      run ? el('div', { class: 'pending run-note' }, [el('b', { text: 'Running encounter: ' }), encLink(run.id, run.name || 'untitled'), '. End it from the Encounters tab to save the result.']) : null
+    ].concat(combatUI(false)));
+  }
+  /* The combat tracker's controls and list, for the Session tab and for a running encounter (inRun). */
+  function combatUI(inRun) {
     var s = S(), c = s.combat, addSel = { name: ui.addName || 'Blood Creature A', n: ui.addN || 1, side: ui.addSide || 'foe' };
     var select = beastSelect(addSel.name, function (v) { ui.addName = v; });
     var count = el('input', { type: 'number', class: 'tiny', min: 1, max: 30, value: addSel.n, 'aria-label': 'How many', onchange: function () { ui.addN = clamp(int(this.value, 1), 1, 30); } });
     var side = el('select', { class: 'in mini', 'aria-label': 'Side', onchange: function () { ui.addSide = this.value; } }, [el('option', { value: 'foe', text: 'Foe' }), el('option', { value: 'ally', text: 'Ally' })]);
     side.value = addSel.side;
-    var living = c.list.filter(function (x) { return !x.dead && x.kind === 'foe'; });
-    card('sec-combat', el('h2', null, ['Combat', el('small', { text: living.length ? plural(living.length, 'foe') + ' standing' : 'tracker' })]), [
+    return [
       el('div', { class: 'round-box' }, [
         el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: 'Round' }), el('div', { class: 'val', text: String(c.round || '—') })]),
         btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', function () { c.round = (c.round || 0) + 1; var r = d(10); ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (r >= 6 ? 'crows and allies act first' : 'enemies act first') };
-          log('', '**Round ' + c.round + '.** Initiative 1d10 = ' + r + ' → ' + (r >= 6 ? 'crows and allies first.' : 'enemies first.')); save(); render(); }, 'btn-primary'),
+          var sur = c.round === 1 && c.surprise !== 'none' ? ' ' + (c.surprise === 'crows' ? 'The crows and their allies are' : 'The foes are') + ' surprised: no turn this round, and attacks against them get +1.' : '';
+          log('', '**Round ' + c.round + '.** Initiative 1d10 = ' + r + ' → ' + (r >= 6 ? 'crows and allies first.' : 'enemies first.') + sur); save(); render(); }, 'btn-primary'),
         btn('Add party', addPartyToCombat),
         btn('Clear dead', function () { c.list = c.list.filter(function (x) { return !x.dead; }); save(); render(); }, 'btn-ghost'),
-        btn('End combat', function () {
+        inRun ? null : btn('End combat', function () {
           var dead = c.list.filter(function (x) { return x.dead; }).map(function (x) { return x.name; });
+          if (runningEnc() && !confirm('End the fight without saving a result to ' + (runningEnc().name || 'the running encounter') + '? (It stays open.)')) return;
           log('', '**Combat ends** after ' + plural(c.round || 0, 'round') + '.' + (dead.length ? ' Fallen: ' + dead.join(', ') + '.' : ''));
           c.list.forEach(function (x) { if (x.kind === 'pc') syncPC(x); });
-          c.list = []; c.round = 0; save(); render();
+          c.list = []; c.round = 0; c.encId = null; c.surprise = 'none'; save(); render();
         }, 'btn-ghost btn-danger')
       ]),
       el('div', { class: 'row', style: 'margin-top:.6rem' }, [field('Add creature', select, 'grow'), field('How many', count), field('Side', side),
         btn('Add', function () { addCombatant(select.value, int(count.value, 1), side.value); log('', 'Added ' + int(count.value, 1) + ' × ' + select.value + ' to combat.'); render(); })]),
       el('p', { class: 'fine', text: 'Monster attack buttons use the edge/bane set in the Dice panel plus the creature\'s own conditions (weakened, blessed, prone for melee). Damage goes through AD first (piercing skips it); vulnerable adds 1d6 automatically.' }),
       el('div', { class: 'combat-list' }, c.list.length ? c.list.map(combatRow) : [el('p', { class: 'hint', text: 'No one in combat. Add creatures here, from the Bestiary, or from an encounter roll.' })])
-    ]);
+    ];
   }
   function combatRow(c) {
     var b = beast(c.cref), amt = el('input', { type: 'number', class: 'tiny', min: 0, max: 200, value: '', placeholder: 'dmg', 'aria-label': 'Amount' });
@@ -2602,6 +2709,7 @@ REF.QUICK = [
       el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Stam' }), btnPM('−', function () { var s0 = c.st; c.st = Math.max(0, c.st - 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); }), el('b', { text: String(c.st) }), el('span', { class: 'of', text: '/' + c.stMax }), btnPM('+', function () { var s0 = c.st; c.st = Math.min(c.stMax, c.st + 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); })]),
       el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'AD' }), btnPM('−', function () { c.ad = Math.max(0, c.ad - 1); save(); render(); }), el('b', { text: String(c.ad) }), el('span', { class: 'of', text: '/' + c.adMax }), btnPM('+', function () { c.ad = c.ad + 1; c.adMax = Math.max(c.adMax, c.ad); save(); render(); })]),
       slots ? el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Wounds' }), btnPM('−', function () { var w0 = c.wounds; c.wounds = Math.max(0, c.wounds - 1); if (c.kind === 'pc') syncPC(c, c.st, w0); save(); render(); }), el('b', { text: String(c.wounds) }), el('span', { class: 'of', text: '/' + slots })]) : null,
+      surprised(c) ? el('span', { class: 'chip warn', title: 'No turn in round 1; attacks against them get +1', text: 'surprised' }) : null,
       el('button', { type: 'button', class: 'x', title: 'Remove', 'aria-label': 'Remove ' + c.name, text: '×', onclick: function () { S().combat.list = S().combat.list.filter(function (x) { return x !== c; }); save(); render(); } })
     ]);
     var mid = el('div', { class: 'cbt-mid' }, [amt,
@@ -2697,6 +2805,7 @@ REF.QUICK = [
     return { name: src === 'Travelers' ? 'Travelers' : src === 'Merchant' ? 'Merchant caravan' : 'Miasma-touched humans', roll: src, lines: r.lines, adds: r.adds };
   }
   function renderEncounters() {
+    renderEncRun();
     if (!ui.encSrc) ui.encSrc = REF.DUNGEON_TABLES[S().table] ? S().table : 'Travel';
     var dr = ui.encDraft;
     function srcLabel() { return ENC_SOURCES.filter(function (o) { return o[0] === ui.encSrc; })[0][1]; }
@@ -2736,6 +2845,63 @@ REF.QUICK = [
         : el('p', { class: 'hint', text: state.encounters.length ? 'No ' + (ui.encFilter === 'done' ? 'resolved' : 'open') + ' encounters.' : 'No saved encounters yet. Roll or create one above, or make an encounter check in the Session tab.' })
     ]);
   }
+  /* The running encounter: what's going on, surprise, morale cues, the combat tracker, creature notes, and the wrap-up. */
+  function renderEncRun() {
+    var e = runningEnc(), box = $('sec-enc-run');
+    box.hidden = !e;
+    if (!e) { box.innerHTML = ''; return; }
+    var c = S().combat, them = c.list.filter(function (x) { return x.kind === 'foe'; }), up = them.filter(function (x) { return !x.dead && x.st > 0; });
+    var cues = [], kinds = {};
+    them.forEach(function (x) { var b = beast(x.cref); if (b) kinds[b.t] = true; });
+    var humans = them.filter(function (x) { var b = beast(x.cref); return b && b.t === 'Human'; }), humansDown = humans.filter(function (x) { return x.dead || x.st <= 0; }).length;
+    if (them.length && !up.length) cues.push(['ok', 'Every foe is down. End the encounter below.']);
+    else {
+      if (humans.length > 1 && humansDown * 2 >= humans.length && humansDown < humans.length) cues.push(['warn', 'Half the human foes are down: the group flees (Ref\'s call).']);
+      if (humans.length === 1 && humansDown === 1) cues.push(['warn', 'The lone human is at 0 Stamina: they flee.']);
+      them.forEach(function (x) { var b = beast(x.cref); if (b && b.t === 'Animal' && !x.dead && x.st <= 0) cues.push(['warn', x.name + ' is at 0 Stamina: animals flee.']); });
+      if (them.length > 2 && up.length * 2 <= them.length && (kinds['Blood Creature'] || kinds.Undead)) cues.push(['', 'Half the monsters are down: monsters flee losing fights (weak ones stay with the pack).']);
+    }
+    var monsters = them.filter(function (x) { var b = beast(x.cref); return b && /Blood Creature|Undead|Unique/.test(b.t); });
+    var types = Object.keys(kinds), beasts = [];
+    them.concat(c.list.filter(function (x) { return x.kind === 'ally'; })).forEach(function (x) { var b = beast(x.cref); if (b && beasts.indexOf(b) < 0) beasts.push(b); });
+    var end = ui.encEnd || (ui.encEnd = { outcome: 'won', resolve: true });
+
+    card('sec-enc-run', el('h2', null, ['Running: ' + (e.name || 'untitled'), el('small', { text: c.round ? 'round ' + c.round : 'not started' })]), [
+      el('div', { class: 'fine', text: [e.where, e.src, e.roll].filter(Boolean).join(' · ') }),
+      e.text ? el('div', { class: 'run-text', text: e.text }) : null,
+      c.round ? null : el('div', { class: 'row center run-setup' }, [
+        el('span', { class: 'fine', text: 'Surprise:' }),
+        el('div', { class: 'seg', role: 'group', 'aria-label': 'Surprise' }, [['none', 'No one'], ['crows', 'Crows surprised'], ['foes', 'Foes surprised']].map(function (o) {
+          return el('button', { type: 'button', class: c.surprise === o[0] ? 'on' : '', 'aria-pressed': c.surprise === o[0] ? 'true' : 'false', text: o[1], onclick: function () { c.surprise = o[0]; save(); render(); } });
+        })),
+        monsters.length ? btn('Like/hate check (2d10+M)', function () { likeHateCheck(monsters); }, 'btn-small btn-ghost', 'When a like or hate is in an odd or dangerous place: T1 they approach unsuspecting, T2 they investigate it first, T3 they withdraw and set an ambush or gather allies') : null,
+        el('span', { class: 'fine', text: 'A surprised side takes no turn in round 1, and attacks against it get +1.' })]),
+      cues.length ? el('div', { class: 'run-cues' }, cues.map(function (q) { return el('div', { class: 'cue ' + q[0], text: q[1] }); })) : null,
+      el('div', { class: 'row center', style: 'margin:.4rem 0' }, [
+        el('span', { class: 'fine', text: them.length ? up.length + ' of ' + plural(them.length, 'foe') + ' standing' : 'No foes in the tracker.' }),
+        el('span', { class: 'spacer' }),
+        btn('Encounter check (loud noise, EN ' + dungeonEN() + ')', function () {
+          var s = S(), res = encounterCheck('Loud noise during ' + (e.name || 'the encounter'), dungeonEN(), s.table === 'none' ? null : s.table);
+          ui.lastEnc = res; if (res.hit && !res.immediate) s.pending = pendingFrom(res);
+          if (res.hit) toast(res.immediate ? 'More creatures arrive now: see the Session tab.' : 'Something else is coming: see the Session tab.');
+          save(); render();
+        }, 'btn-small btn-ghost', 'Encounters can happen even mid-combat')])
+    ].concat(combatUI(true), [
+      beasts.length ? more('Creature notes (likes, hates, how they fight)', types.map(function (t) { return REF.TYPE_NOTES[t] ? el('p', null, [el('b', { text: t + 's: ' }), REF.TYPE_NOTES[t]]) : null; })
+        .concat([el('div', { class: 'beast-list' }, beasts.map(beastCard))])) : null,
+      field('Ref notes', area(e, 'notes', { rows: 2, placeholder: 'Tactics, loot, how it went…' })),
+      el('div', { class: 'run-end' }, [
+        el('h4', { text: 'End the encounter' }),
+        el('div', { class: 'row center' }, [
+          field('How it ended', sel(end, 'outcome', ENC_OUTCOMES, { re: false })),
+          chk(end, 'resolve', 'Mark it resolved', { re: false }),
+          el('span', { class: 'spacer' }),
+          btn('End encounter', function () { endEncounter(e, end.outcome, end.resolve); }, 'btn-primary', 'Write the result into the encounter\'s notes and clear the combat tracker'),
+          btn('Award treasure XP', function () { ui.award = { gc: 0, greed: greedBonus(), players: activePCs().length || 1, what: e.name || '' }; setTab('party'); setTimeout(function () { $('sec-xp').scrollIntoView(); }, 0); }, 'btn-ghost', 'Open the Experience card in the Party tab for this encounter\'s treasure'),
+          btn('Stop without a result', function () { cancelRun(e); }, 'btn-ghost btn-danger')]),
+        el('p', { class: 'fine', text: 'Ending writes the outcome, the rounds, who fell, who\'s still standing, the crows\' Stamina and wounds, and the corpses to harvest into the notes, then clears the tracker.' })])
+    ]));
+  }
   function encCard(e) {
     var s = S(), due = !!(s.pending && s.pending.encId === e.id);
     var creatures = e.creatures.map(function (c) {
@@ -2748,9 +2914,12 @@ REF.QUICK = [
       ontoggle: function () { ui.encOpen[e.id] = this.open; } }, [
       el('summary', null, [
         el('span', { class: 'enc-name', text: e.name || 'Untitled encounter' }),
+        runningEnc() === e ? el('span', { class: 'chip warn', text: 'running' }) : null,
         due ? el('span', { class: 'chip accent', text: 'due this DT' }) : null,
-        e.done ? el('span', { class: 'chip ok', text: 'resolved' }) : null,
+        e.done ? el('span', { class: 'chip ok', text: 'resolved' + (e.outcome ? ': ' + e.outcome.toLowerCase() : '') }) : null,
         el('span', { class: 'enc-sum', text: [encSummary(e), e.where, 'session ' + e.session + (e.dt ? ', DT ' + e.dt : '')].filter(Boolean).join(' · ') })]),
+      runningEnc() === e ? el('div', { class: 'enc-body' }, [el('p', { class: 'fine' }, ['Running now: its notes and creatures are in the card at the top of this tab. ',
+        el('a', { href: '#sec-enc-run', class: 'enc-link', onclick: function (ev) { ev.preventDefault(); $('sec-enc-run').scrollIntoView({ block: 'start' }); }, text: 'Go to the fight' })])]) :
       el('div', { class: 'enc-body' }, [
         el('div', { class: 'li-row' }, [inp(e, 'name', { placeholder: 'Name', 'aria-label': 'Encounter name' }, { re: true }), inp(e, 'where', { placeholder: 'Where (place, hex, room)', 'aria-label': 'Where' }, { re: true })]),
         el('div', { class: 'fine', text: e.src + ' · ' + (e.roll || 'made ' + e.made) }),
@@ -2759,7 +2928,7 @@ REF.QUICK = [
         creatures.length ? el('div', { class: 'enc-cre' }, creatures) : el('p', { class: 'fine', text: 'No creatures yet.' }),
         el('div', { class: 'row' }, [btn('Add creature', function () { e.creatures.push({ n: ui.addName || 'Blood Creature A', k: 1, side: 'foe' }); save(); render(); }, 'btn-small btn-ghost')]),
         field('Ref notes', area(e, 'notes', { rows: 2, placeholder: 'Tactics, loot, how it went…' })),
-        el('div', { class: 'row' }, [encCombatBtn(e),
+        el('div', { class: 'row' }, [runEncBtn(e), encCombatBtn(e, 'btn-small btn-ghost'),
           due || e.done ? null : btn('Make it due this DT', function () {
             s.pending = { dt: s.dt, text: encSummary(e) || e.name, adds: e.creatures.map(function (c) { return [c.n, c.k, null]; }), encId: e.id };
             log('enc', 'Encounter due this DT: **' + (e.name || 'untitled') + '**.'); save(); render(); toast('Shown in the Dungeon Turn block.');
@@ -2768,12 +2937,14 @@ REF.QUICK = [
             e.done = !e.done; if (e.done && due) s.pending = null; save(); render();
           }, 'btn-small btn-ghost'),
           btn('Duplicate', function () {
-            var c = clone(e); c.id = nid(); c.name = (e.name || 'Encounter') + ' (copy)'; c.done = false; c.made = today() + ' ' + nowStamp();
+            var c = clone(e); c.id = nid(); c.name = (e.name || 'Encounter') + ' (copy)'; c.done = false; delete c.outcome; c.made = today() + ' ' + nowStamp();
             state.encounters.splice(state.encounters.indexOf(e), 0, c); ui.encOpen[c.id] = true; save(); render();
           }, 'btn-small btn-ghost'),
           btn('Delete', function () {
             if (!confirm('Delete ' + (e.name || 'this encounter') + '?')) return;
-            state.encounters = state.encounters.filter(function (x) { return x !== e; }); if (due) s.pending.encId = null; save(); render();
+            state.encounters = state.encounters.filter(function (x) { return x !== e; }); if (due) s.pending.encId = null;
+            if (s.combat.encId === e.id) { s.combat.encId = null; s.combat.surprise = 'none'; }
+            save(); render();
           }, 'btn-small btn-ghost btn-danger')])
       ])
     ]);
@@ -3326,7 +3497,7 @@ REF.QUICK = [
     var n = { k: 1 };
     return el('div', { class: 'beast t-' + b.t.split(' ')[0] }, [
       el('div', { class: 'b-head' }, [el('span', { class: 'b-name', text: b.n }), el('span', { class: 'chip', text: b.t + ' · P' + b.p })]),
-      el('div', { class: 'b-stats', text: ({ T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge' })[b.sz] + ' · Stamina ' + b.st + (b.ad ? ' · AD ' + b.ad : '') + ' · Speed ' + b.spd + (b.sl ? ' · ' + b.sl + ' slots' : '') + (b.rx > 1 ? ' · ' + b.rx + ' reactions' : '') }),
+      el('div', { class: 'b-stats', text: SIZES[b.sz] + ' · Stamina ' + b.st + (b.ad ? ' · AD ' + b.ad : '') + ' · Speed ' + b.spd + (b.sl ? ' · ' + b.sl + ' slots' : '') + (b.rx > 1 ? ' · ' + b.rx + ' reactions' : '') }),
       el('div', { class: 'b-stats', text: 'A ' + signed(b.c[0]) + ' · M ' + signed(b.c[1]) + ' · S ' + signed(b.c[2]) }),
       el('ul', { class: 'b-atk' }, b.atk.map(function (a) { return el('li', null, [el('b', { text: a[0] + ' (' + signed(a[1]) + ') ' }), a[2] + ': ' + a[3] + ' / ' + a[4] + ' dam' + (a[5] ? '; ' + a[5] : '')]); })),
       b.uses.length ? el('div', { class: 'fine', text: b.uses.map(function (u) { return u[0] + ' ' + u[1] + '/' + u[2]; }).join(' · ') }) : null,

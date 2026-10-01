@@ -262,6 +262,17 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .enc-body h4 { margin: .2rem 0 0; }
 .enc-body textarea { width: 100%; }
 .enc-cre { display: flex; flex-direction: column; gap: .3rem; }
+.card.run { border-top: 4px solid var(--bad); }
+.card[hidden] { display: none; }
+.run-text { white-space: pre-line; margin: .4rem 0; padding: .5rem .7rem; border-left: 3px solid var(--line); background: var(--slot); border-radius: 4px; }
+.run-setup { margin: .4rem 0; }
+.run-cues { display: flex; flex-direction: column; gap: .3rem; margin: .4rem 0; }
+.cue { border-left: 4px solid var(--sel); background: var(--slot); padding: .35rem .6rem; border-radius: 4px; font-size: .9rem; }
+.cue.warn { border-left-color: var(--warn); font-weight: 600; }
+.cue.ok { border-left-color: var(--ok); font-weight: 600; }
+.run-end { border-top: 1px solid var(--line); margin-top: .8rem; padding-top: .6rem; }
+.run-end h4 { margin: 0 0 .3rem; }
+.run-note { margin: 0 0 .6rem; }
 .li-row textarea { min-height: 2.2rem; font-size: .88rem; padding: .3rem .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
 
 /* Village */
