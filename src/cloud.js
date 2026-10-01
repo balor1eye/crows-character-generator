@@ -8,8 +8,8 @@
  *
  * URL parameters: ?id=<n> opens that saved record, ?new=1 starts a new one; with neither, the record
  * last open in this browser is reopened (or the current local state is saved as a new one).
- * ?link=<n> is the Ref's view of a character a player shared: only conditions, equipment, and notes
- * are sent back, and the server applies just those.
+ * ?link=<n> is the Ref's view of a character a player shared: only the Play mode vitals (Stamina, wounds,
+ * conditions, cruelty, coins, and their log), equipment, and notes are sent back, and the server applies just those.
  *
  * Several windows (or a player and their Ref) can have the same character open. Each checks about once a
  * second for a newer version (a tiny static file the server rewrites on every save, see signal() in
@@ -30,8 +30,11 @@
   var SLOW_POLL = 60000;       // ...and as a safety net when there is
   var TYPING = 1500;           // hold off bringing in changes for this long after a keystroke in a text field
   // What a Ref may change on a shared character (must match SHARED_FIELDS in server/app/api.php).
+  // Both sides add to the log, so it's combined rather than compared (union).
   var LINK_FIELDS = [{ name: 'inv', path: ['inv'], label: 'equipment' }, { name: 'notes', path: ['notes'], label: 'notes' },
-    { name: 'conds', path: ['play', 'conds'], label: 'conditions' }];
+    { name: 'coins', path: ['coins'], label: 'coins' }, { name: 'conds', path: ['play', 'conds'], label: 'conditions' },
+    { name: 'stamina', path: ['play', 'stamina'], label: 'Stamina' }, { name: 'cruelty', path: ['play', 'cruelty'], label: 'cruelty' },
+    { name: 'wounds', path: ['play', 'wounds'], label: 'wounds' }, { name: 'log', path: ['play', 'log'], label: 'log', union: true }];
 
   var cfg = null;              // attach() options
   var user = null, csrf = null;
@@ -95,7 +98,7 @@
 
   /*
    * Three-way merge of plain JSON: whichever side changed a value since `b` wins; objects merge key by key,
-   * arrays and other values are taken whole. Returns { value, clashes: [paths changed on both sides] }.
+   * the play log combines both sides' new entries, and other arrays and values are taken whole. Returns { value, clashes: [paths changed on both sides] }.
    */
   function merge3(b, l, r, path, clashes) {
     clashes = clashes || [];
@@ -103,6 +106,7 @@
     var value;
     if (same(l, r) || same(r, b)) value = copy(l);
     else if (same(l, b)) value = copy(r);
+    else if (path.join('.') === 'play.log' && Array.isArray(l) && Array.isArray(r)) value = unionLog(b, l, r);   // both add to the log
     else if (isObj(l) && isObj(r)) {
       value = {};
       var bb = isObj(b) ? b : {};
@@ -119,12 +123,22 @@
     for (var i = 0; i < p.length - 1; i++) { if (!isObj(o[p[i]])) o[p[i]] = {}; o = o[p[i]]; }
     o[p[p.length - 1]] = copy(v);
   }
+  /* The player's log plus the entries added here since `b`, newest first (as server/app/api.php merge_log does). */
+  function unionLog(b, l, r) {
+    function key(e) { return e && e.t + '|' + e.m; }
+    var out = (Array.isArray(r) ? r : []).slice(), seen = {};
+    out.concat(Array.isArray(b) ? b : []).forEach(function (e) { seen[key(e)] = true; });
+    (Array.isArray(l) ? l : []).forEach(function (e) { if (!seen[key(e)]) { out.push(e); seen[key(e)] = true; } });
+    out.sort(function (x, y) { return (y.t || 0) - (x.t || 0); });
+    return out.slice(0, 200);
+  }
   /* In the Ref's view only the shared fields are theirs; everything else always follows the player. */
   function mergeLinked(b, l, r) {
     var value = copy(r), clashes = [];
     LINK_FIELDS.forEach(function (f) {
       var bv = getPath(b, f.path), lv = getPath(l, f.path), rv = getPath(r, f.path);
       if (same(lv, bv) || same(lv, rv)) return;              // the Ref didn't change it: take the player's
+      if (f.union) { setPath(value, f.path, unionLog(bv, lv, rv)); return; }
       if (!same(rv, bv)) clashes.push(f.label);              // both changed it
       setPath(value, f.path, lv);
     });
@@ -165,7 +179,7 @@
     if (!chip) return;
     chip.setAttribute('data-s', s);
     chip.querySelector('.txt').textContent = (linkId && owner ? owner + '’s crow · ' : '') + text;
-    chip.title = title || (linkId ? 'Ref view: you can change conditions, equipment, and notes' : user ? 'Account: ' + user.username : '');
+    chip.title = title || (linkId ? 'Ref view: you can change the vitals, equipment, and notes' : user ? 'Account: ' + user.username : '');
   }
   function closeBar() { if (bar) { bar.remove(); bar = null; } }
   function showBar(msg, buttons) {

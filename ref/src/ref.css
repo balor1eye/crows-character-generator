@@ -184,6 +184,20 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .round-box .stat { min-width: 70px; }
 
 /* Party */
+.st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(370px, 1fr)); gap: .7rem; align-items: start; }
+.st-tile { border: 1px solid var(--line); border-top: 4px solid var(--accent); border-radius: 6px; padding: .5rem .7rem; background: var(--card); display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+.st-tile.local { border-top-color: var(--ink); background: var(--slot); }
+.st-head { display: flex; align-items: center; gap: .45rem; min-width: 0; }
+.row > .st-head { flex: 1; }
+.st-head b { font: bold 1.05rem var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-frame { width: 100%; height: 320px; border: 0; display: block; background: transparent; color-scheme: normal; }
+.st-stam { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
+.st-stam .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+.st-stam b { font: bold 1.5rem var(--serif); }
+.st-stam .meter { flex: 1 0 100%; }
+.st-nums { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; font-size: .85rem; }
+.st-nums > span { display: inline-flex; align-items: center; gap: .25rem; }
+.st-nums .bad b { color: var(--bad); }
 .pc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: .7rem; }
 .pc-card { border: 1px solid var(--line); border-top: 4px solid var(--ink); border-radius: 6px; padding: .6rem .7rem; background: var(--slot); display: flex; flex-direction: column; gap: .4rem; }
 .pc-card.dead { border-top-color: var(--bad); opacity: .75; }
@@ -278,7 +292,7 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
   .masthead { position: static; }
   .clock { font-size: 2.6rem; }
   .pc-card .grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .table-grid, .beast-list, .pc-list { grid-template-columns: 1fr; }
+  .table-grid, .beast-list, .pc-list, .st-grid { grid-template-columns: 1fr; }
   .kv { grid-template-columns: 1fr; }
 }
 @media print {

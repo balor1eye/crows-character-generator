@@ -35,14 +35,18 @@
   function P() { return S().play; }
   function log(msg) {
     var l = P().log;
+    if (window.CrowsRefView) msg = 'Ref: ' + msg;   // the Ref changing a player's sheet
     l.unshift({ t: Date.now(), m: msg });
     if (l.length > 200) l.length = 200;
   }
   function commit(msg) { if (msg) log(msg); C.render(); }
 
   // ------------------------------------------------------------------ mode switch
-  function mode() { try { return localStorage.getItem(MODE_KEY) === 'play' ? 'play' : 'build'; } catch (e) { return 'build'; } }
+  // The Ref Screen's condensed status view is always Play mode, without changing this browser's choice.
+  var FORCED = window.CrowsRefView && window.CrowsRefView.status ? 'play' : null;
+  function mode() { if (FORCED) return FORCED; try { return localStorage.getItem(MODE_KEY) === 'play' ? 'play' : 'build'; } catch (e) { return 'build'; } }
   function setMode(m) {
+    if (FORCED) return;
     try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* storage unavailable */ }
     applyMode(m);
     C.render();
@@ -488,7 +492,8 @@
     }));
     var firstSel = el('select', { 'aria-label': 'Damage hits first', onchange: function () { ui.first = this.value; } },
       abs.filter(function (c) { return C.adNow(c) > 0; }).map(function (c) { return el('option', { value: String(c.id), text: c.key + ' first' }); }));
-    if (!firstSel.options.length) firstSel = null; else if (ui.first) firstSel.value = ui.first; else ui.first = firstSel.value;
+    if (!firstSel.options.length) firstSel = null;
+    else { if (ui.first) firstSel.value = ui.first; if (firstSel.selectedIndex < 0 || !ui.first) { firstSel.selectedIndex = 0; ui.first = firstSel.value; } }   // that item may be gone (or reloaded)
     var dmgRow = el('div', { class: 'row wrap dmg-row' }, [
       el('label', { class: 'field' }, ['Damage', num(ui.dmg, function (v) { ui.dmg = v; }, { min: 0, class: 'mini', onkeydown: function (e) { if (e.key === 'Enter') takeDamage(); } })]),
       el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.pierce, onchange: function () { ui.pierce = this.checked; } }), ' Piercing']),
@@ -885,5 +890,7 @@
   $('tab-build').addEventListener('click', function () { setMode('build'); });
   $('tab-play').addEventListener('click', function () { setMode('play'); });
   applyMode(mode());
-  window.CrowsPlay = { render: render, setMode: setMode };
+  window.CrowsPlay = { render: render, setMode: setMode,
+    /* Back to full Stamina, as the Full button does (the Ref Screen's "Everyone to full Stamina"). */
+    fullStamina: function () { if (C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); commit('Back to full Stamina.'); } } };
 })();

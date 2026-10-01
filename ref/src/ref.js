@@ -618,8 +618,9 @@
   // ------------------------------------------------------------------ crows linked to a player's account
   /*
    * A player can share a character with a link (from their character list). Added here, the crow stays tied
-   * to the player's sheet: "Open sheet" shows the whole thing, where the Ref can change conditions, equipment,
-   * and notes, and the party entry refreshes from the sheet about a second after the player changes it.
+   * to the player's sheet: Party status shows its live vitals, "Open sheet" shows the whole thing, where the Ref
+   * can change the vitals, equipment, and notes, and the party entry refreshes from the sheet about a second
+   * after the player changes it.
    * Needs the Ref to be logged in on the hosted site.
    */
   function cloudOn() { return !!(window.CrowsCloud && window.CrowsCloud.active); }
@@ -1142,7 +1143,86 @@
   }
 
   // ------------------------------------------------------------------ Party tab
+  // ------------------------------------------------------------------ Party status
+  /*
+   * A condensed, live view of every crow in play. A crow linked to a player's sheet shows that sheet's own Vitals
+   * card (the generator at &view=status in a frame), so its buttons work exactly as they do for the player, with
+   * the whole character behind them (armor soaking damage, wounds filling backpack slots, the log), and save to
+   * the player's sheet within a second. Frames are kept, not rebuilt, across renders (reloading one would lose
+   * a second or two and anything half-typed), and they're laid out with CSS order instead of being moved.
+   * Crows added by hand or from a file get simple buttons for the numbers kept here.
+   */
+  var statusFrames = {};   // link id -> { tile, frame, head }
+  function statusPCs() { return state.party.filter(function (p) { return p.status === 'active' || p.status === 'away'; }); }
+  function statusHead(p) {
+    return el('div', { class: 'st-head' }, [el('b', { class: 'grow', text: p.name || 'Unnamed crow' }),
+      p.status === 'away' ? el('span', { class: 'chip', text: 'sitting out' }) : null,
+      p.owner ? el('span', { class: 'fine', text: p.owner }) : null]);
+  }
+  function localTile(p) {
+    function bump(k, n, lo, hi) { p[k] = Math.max(lo, Math.min(hi, (p[k] || 0) + n)); save(); render(); }
+    function pm(k, lo, hi, what) { return [btn('\u2212', function () { bump(k, -1, lo, hi); }, 'btn-small', 'Lower ' + what), btn('+', function () { bump(k, 1, lo, hi); }, 'btn-small', 'Raise ' + what)]; }
+    var max = p.stMax || 0, st = Math.min(p.st || 0, max);
+    return el('div', { class: 'st-tile' }, [statusHead(p),
+      el('div', { class: 'st-stam' }, [el('span', { class: 'lbl', text: 'Stamina' }), el('b', { text: st + ' / ' + max }),
+        el('div', { class: 'meter' }, [el('span', { style: 'width:' + (max ? Math.round(st / max * 100) : 0) + '%' })])]),
+      el('div', { class: 'row center' }, [btn('\u22125', function () { bump('st', -5, 0, max); }, 'btn-small'), btn('\u22121', function () { bump('st', -1, 0, max); }, 'btn-small'),
+        btn('+1', function () { bump('st', 1, 0, max); }, 'btn-small'), btn('+5', function () { bump('st', 5, 0, max); }, 'btn-small'),
+        btn('Full', function () { p.st = max; save(); render(); }, 'btn-small btn-ghost')]),
+      el('div', { class: 'st-nums' }, [
+        el('span', { class: p.wounds >= 7 ? 'bad' : null }, ['Wounds ', el('b', { text: (p.wounds || 0) + '/10' })].concat(pm('wounds', 0, 10, 'wounds'))),
+        el('span', null, ['AD ', el('b', { text: String(p.ad || 0) })].concat(pm('ad', 0, 99, 'AD'))),
+        el('span', null, ['Cruelty ', el('b', { text: String(p.cruelty || 0) })].concat(pm('cruelty', 0, 20, 'cruelty')))]),
+      el('div', { class: 'fine', text: 'Kept on this screen only. Link the player\u2019s sheet to see and change everything live.' })]);
+  }
+  function renderStatus() {
+    var box = $('sec-status'), live = cloudOn();
+    if (!box.firstChild) {
+      box.appendChild(el('h2', null, ['Party status', el('small', { text: 'live from the players\u2019 sheets' })]));
+      box.appendChild(el('p', { class: 'hint', text: 'Each linked crow shows its own sheet\u2019s vitals: the buttons work just as they do for the player and save to their sheet at once, ' +
+        'and their changes show up here within a second. Damage goes through worn armor and parry weapons first, as on the sheet.' }));
+      box.appendChild(el('div', { class: 'st-grid', id: 'st-grid' }));
+      box.appendChild(el('p', { class: 'hint', id: 'st-empty', text: 'No crows in play. Add some below.' }));
+    }
+    var grid = $('st-grid'), pcs = statusPCs(), keep = {};
+    $('st-empty').style.display = pcs.length ? 'none' : '';
+    Array.prototype.forEach.call(grid.querySelectorAll('.st-tile.local'), function (n) { n.remove(); });
+    pcs.forEach(function (p, i) {
+      if (p.link && live) {
+        keep[p.link] = true;
+        var f = statusFrames[p.link];
+        if (!f) {
+          f = statusFrames[p.link] = { head: el('div'), frame: el('iframe', { class: 'st-frame', title: 'Vitals of ' + (p.name || 'a linked crow'),
+            src: 'Crows_Character_Generator.html?link=' + encodeURIComponent(p.link) + '&view=status' }) };
+          f.tile = el('div', { class: 'st-tile linked' }, [f.head, f.frame]);
+          grid.appendChild(f.tile);
+        }
+        f.head.replaceWith(f.head = el('div', { class: 'row center' }, [statusHead(p), btn('Open sheet', function () { openSheet(p); }, 'btn-small btn-ghost', 'See the whole sheet')]));
+        f.tile.style.order = i;
+      } else {
+        var t = localTile(p); t.className += ' local'; t.style.order = i;
+        grid.appendChild(t);
+      }
+    });
+    Object.keys(statusFrames).forEach(function (id) { if (!keep[id]) { statusFrames[id].tile.remove(); delete statusFrames[id]; } });
+  }
+  /* Run something in each linked crow's sheet frame (once it has loaded). */
+  function eachSheet(fn) {
+    Object.keys(statusFrames).forEach(function (id) {
+      try { var w = statusFrames[id].frame.contentWindow; if (w && w.CrowsPlay) fn(w); } catch (e) { /* not loaded yet */ }
+    });
+  }
+  // A frame reports its height whenever it changes; size it to fit, so there's no inner scrollbar.
+  window.addEventListener('message', function (e) {
+    if (e.origin !== location.origin || !e.data || !e.data.crowsStatus) return;
+    Object.keys(statusFrames).forEach(function (id) {
+      var fr = statusFrames[id].frame;
+      if (fr.contentWindow === e.source) fr.style.height = Math.max(60, Math.min(4000, +e.data.h || 0)) + 'px';
+    });
+  });
+
   function renderParty() {
+    renderStatus();
     var fileIn = el('input', { type: 'file', accept: '.json,application/json', multiple: true, onchange: function () {
       var files = Array.prototype.slice.call(this.files || []), input = this, done = [];
       if (!files.length) return;
@@ -1158,14 +1238,18 @@
     } });
     card('sec-party', el('h2', null, ['The Crows', el('small', { text: plural(activePCs().length, 'active crow') })]), [
       el('p', { class: 'hint', text: 'Keep the party\'s key numbers at hand. Import the .json save files from the Crows Character Generator (Save file), or add crows by hand. Importing a crow with the same name updates it.' +
-        (cloudOn() ? ' Players can also send you a link to their character: added that way, the crow stays tied to their sheet, which you can open to change conditions, equipment, and notes.' : '') }),
+        (cloudOn() ? ' Players can also send you a link to their character: added that way, the crow stays tied to their sheet. Its vitals show live under Party status, and you can open the sheet to change equipment and notes too.' : '') }),
       cloudOn() ? el('div', { class: 'row', style: 'margin-bottom:.5rem' }, [
         (ui.linkIn = el('input', { type: 'url', class: 'in grow', placeholder: 'Paste a player\u2019s character link', 'aria-label': 'Character link', value: ui.linkText || '',
           oninput: function () { ui.linkText = this.value; }, onkeydown: function (e) { if (e.key === 'Enter') { addFromLink(this.value); ui.linkText = ''; } } })),
         btn('Add from link', function () { addFromLink(ui.linkIn.value); ui.linkText = ''; }, 'btn-primary', 'The crow stays tied to the player\u2019s sheet')]) : null,
       el('div', { class: 'row', style: 'margin-bottom:.7rem' }, [btn('Add crow', function () { state.party.push(newPC()); save(); render(); }, 'btn-primary'),
         el('label', { class: 'btn file-btn' }, ['Import character files', fileIn]),
-        btn('Everyone to full Stamina', function () { activePCs().forEach(function (p) { p.st = p.stMax; }); save(); render(); }, 'btn-ghost')]),
+        btn('Everyone to full Stamina', function () {
+          activePCs().forEach(function (p) { p.st = p.stMax; });
+          eachSheet(function (w) { w.CrowsPlay.fullStamina(); });   // linked crows: on their sheets
+          save(); render();
+        }, 'btn-ghost')]),
       state.party.length ? el('div', { class: 'pc-list' }, state.party.map(pcCard)) : el('p', { class: 'hint', text: 'No crows yet.' })
     ]);
 
@@ -1221,10 +1305,12 @@
     ]);
   }
   function pcCard(p) {
+    // A linked crow's sheet fields are refreshed from the player's sheet, so they're shown but not edited here.
+    function ro(a) { a = a || {}; if (p.link) { a.disabled = true; a.title = 'From the player\u2019s sheet'; } return a; }
     var benefit = REF.CONNECTION_BENEFITS.filter(function (b) { return b[0] === p.benefit; })[0];
     var es = esBonusCount(p.txp || 0), cb = charBonusCount(p.txp || 0);
     return el('div', { class: 'pc-card ' + (p.status !== 'active' ? p.status : '') }, [
-      el('div', { class: 'row center' }, [el('div', { class: 'grow' }, [inp(p, 'name', { placeholder: 'Crow name', 'aria-label': 'Name', class: 'in pc-name' })]),
+      el('div', { class: 'row center' }, [el('div', { class: 'grow' }, [inp(p, 'name', ro({ placeholder: 'Crow name', 'aria-label': 'Name', class: 'in pc-name' }))]),
         sel(p, 'status', [['active', 'Active'], ['dead', 'Dead'], ['retired', 'Retired'], ['lost', 'Lost to the Miasma'], ['away', 'Sitting out']], { class: 'in mini', label: 'Status' }),
         el('button', { type: 'button', class: 'x', text: '×', 'aria-label': 'Delete crow', onclick: function () {
           if (!confirm('Delete ' + (p.name || 'this crow') + ' from the party?')) return;
@@ -1233,16 +1319,16 @@
         } })]),
       p.link ? el('div', { class: 'row center pc-link' }, [
         el('span', { class: 'fine grow', text: 'Linked to ' + (p.owner ? p.owner + '\u2019s' : 'the player\u2019s') + ' sheet' }),
-        cloudOn() ? btn('Open sheet', function () { openSheet(p); }, 'btn-small btn-primary', 'See the whole sheet; change conditions, equipment, and notes') : null,
+        cloudOn() ? btn('Open sheet', function () { openSheet(p); }, 'btn-small btn-primary', 'See the whole sheet; change the vitals, equipment, and notes') : null,
         cloudOn() ? btn('Update from sheet', function () { refreshLinked(p); }, 'btn-small', 'Refresh name, characteristics, Stamina, wounds, and XP from the sheet') : null,
         cloudOn() ? btn('Unlink', function () { if (confirm('Unlink ' + (p.name || 'this crow') + ' from the player\u2019s sheet? You keep this copy, but lose access to the sheet.')) unlinkPC(p); }, 'btn-small btn-ghost') : null
       ]) : null,
-      el('div', { class: 'grid2' }, [field('Player', inp(p, 'player')), field('Background', inp(p, 'bg', { list: 'bg-list' }))]),
+      el('div', { class: 'grid2' }, [field('Player', inp(p, 'player', ro())), field('Background', inp(p, 'bg', ro({ list: 'bg-list' })))]),
       el('div', { class: 'grid3' }, [
-        field('Agility', inp(p, 'A', { type: 'number', min: -5, max: 5 })), field('Mind', inp(p, 'M', { type: 'number', min: -5, max: 5 }, { re: true })), field('Strength', inp(p, 'S', { type: 'number', min: -5, max: 5 })),
-        field('Stamina', inp(p, 'st', { type: 'number', min: 0, max: 999 })), field('Max Stamina', inp(p, 'stMax', { type: 'number', min: 1, max: 999 })), field('AD (worn)', inp(p, 'ad', { type: 'number', min: 0, max: 99 })),
-        field('Wounds', inp(p, 'wounds', { type: 'number', min: 0, max: 10 })), field('Cruelty', inp(p, 'cruelty', { type: 'number', min: 0, max: 20 }, { re: true })), field('Pending XP', inp(p, 'pending', { type: 'number', min: 0, max: 9999999 })),
-        field('Total XP', inp(p, 'txp', { type: 'number', min: 0, max: 9999999 }, { re: true }), 'span2')
+        field('Agility', inp(p, 'A', ro({ type: 'number', min: -5, max: 5 }))), field('Mind', inp(p, 'M', ro({ type: 'number', min: -5, max: 5 }), { re: true })), field('Strength', inp(p, 'S', ro({ type: 'number', min: -5, max: 5 }))),
+        field('Stamina', inp(p, 'st', ro({ type: 'number', min: 0, max: 999 }))), field('Max Stamina', inp(p, 'stMax', ro({ type: 'number', min: 1, max: 999 }))), field('AD (worn)', inp(p, 'ad', { type: 'number', min: 0, max: 99 })),
+        field('Wounds', inp(p, 'wounds', ro({ type: 'number', min: 0, max: 10 }))), field('Cruelty', inp(p, 'cruelty', ro({ type: 'number', min: 0, max: 20 }), { re: true })), field('Pending XP', inp(p, 'pending', { type: 'number', min: 0, max: 9999999 })),
+        field('Total XP', inp(p, 'txp', ro({ type: 'number', min: 0, max: 9999999 }), { re: true }), 'span2')
       ]),
       el('div', { class: 'pc-sum', text: plural(es, 'E&S bonus') + ', ' + plural(cb, 'characteristic bonus') + ' · next E&S bonus at ' + fmt(nextES(p.txp || 0)) + ' TXP' + ((p.txp || 0) >= 60000 ? ' · may retire' : '') }),
       p.miasma && p.miasma.length ? el('div', { class: 'pc-sum', text: 'Miasma: ' + p.miasma.map(function (k) { return lookup(REF.MIASMA_EFFECTS, k)[2].split(':')[0]; }).join(', ') }) : null,

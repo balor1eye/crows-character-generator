@@ -1115,7 +1115,7 @@
       onRemote: function () {
         // Changes now arrive within a second or two, so say so once in a while rather than every time.
         var t = Date.now();
-        if (t - lastRemote > 30000) toast(refView ? 'Updated with the player\u2019s latest changes.' : 'Updated with changes made on another device or by your Ref.');
+        if (t - lastRemote > 30000 && !(window.CrowsRefView && window.CrowsRefView.status)) toast(refView ? 'Updated with the player\u2019s latest changes.' : 'Updated with changes made on another device or by your Ref.');
         lastRemote = t;
         if (window.CrowsRefView) window.CrowsRefView.ready(state.name, window.CrowsCloud.owner);
       }

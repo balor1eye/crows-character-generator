@@ -6776,8 +6776,8 @@ var CROWS_TRAIT_TREES = [
  *
  * URL parameters: ?id=<n> opens that saved record, ?new=1 starts a new one; with neither, the record
  * last open in this browser is reopened (or the current local state is saved as a new one).
- * ?link=<n> is the Ref's view of a character a player shared: only conditions, equipment, and notes
- * are sent back, and the server applies just those.
+ * ?link=<n> is the Ref's view of a character a player shared: only the Play mode vitals (Stamina, wounds,
+ * conditions, cruelty, coins, and their log), equipment, and notes are sent back, and the server applies just those.
  *
  * Several windows (or a player and their Ref) can have the same character open. Each checks about once a
  * second for a newer version (a tiny static file the server rewrites on every save, see signal() in
@@ -6798,8 +6798,11 @@ var CROWS_TRAIT_TREES = [
   var SLOW_POLL = 60000;       // ...and as a safety net when there is
   var TYPING = 1500;           // hold off bringing in changes for this long after a keystroke in a text field
   // What a Ref may change on a shared character (must match SHARED_FIELDS in server/app/api.php).
+  // Both sides add to the log, so it's combined rather than compared (union).
   var LINK_FIELDS = [{ name: 'inv', path: ['inv'], label: 'equipment' }, { name: 'notes', path: ['notes'], label: 'notes' },
-    { name: 'conds', path: ['play', 'conds'], label: 'conditions' }];
+    { name: 'coins', path: ['coins'], label: 'coins' }, { name: 'conds', path: ['play', 'conds'], label: 'conditions' },
+    { name: 'stamina', path: ['play', 'stamina'], label: 'Stamina' }, { name: 'cruelty', path: ['play', 'cruelty'], label: 'cruelty' },
+    { name: 'wounds', path: ['play', 'wounds'], label: 'wounds' }, { name: 'log', path: ['play', 'log'], label: 'log', union: true }];
 
   var cfg = null;              // attach() options
   var user = null, csrf = null;
@@ -6863,7 +6866,7 @@ var CROWS_TRAIT_TREES = [
 
   /*
    * Three-way merge of plain JSON: whichever side changed a value since `b` wins; objects merge key by key,
-   * arrays and other values are taken whole. Returns { value, clashes: [paths changed on both sides] }.
+   * the play log combines both sides' new entries, and other arrays and values are taken whole. Returns { value, clashes: [paths changed on both sides] }.
    */
   function merge3(b, l, r, path, clashes) {
     clashes = clashes || [];
@@ -6871,6 +6874,7 @@ var CROWS_TRAIT_TREES = [
     var value;
     if (same(l, r) || same(r, b)) value = copy(l);
     else if (same(l, b)) value = copy(r);
+    else if (path.join('.') === 'play.log' && Array.isArray(l) && Array.isArray(r)) value = unionLog(b, l, r);   // both add to the log
     else if (isObj(l) && isObj(r)) {
       value = {};
       var bb = isObj(b) ? b : {};
@@ -6887,12 +6891,22 @@ var CROWS_TRAIT_TREES = [
     for (var i = 0; i < p.length - 1; i++) { if (!isObj(o[p[i]])) o[p[i]] = {}; o = o[p[i]]; }
     o[p[p.length - 1]] = copy(v);
   }
+  /* The player's log plus the entries added here since `b`, newest first (as server/app/api.php merge_log does). */
+  function unionLog(b, l, r) {
+    function key(e) { return e && e.t + '|' + e.m; }
+    var out = (Array.isArray(r) ? r : []).slice(), seen = {};
+    out.concat(Array.isArray(b) ? b : []).forEach(function (e) { seen[key(e)] = true; });
+    (Array.isArray(l) ? l : []).forEach(function (e) { if (!seen[key(e)]) { out.push(e); seen[key(e)] = true; } });
+    out.sort(function (x, y) { return (y.t || 0) - (x.t || 0); });
+    return out.slice(0, 200);
+  }
   /* In the Ref's view only the shared fields are theirs; everything else always follows the player. */
   function mergeLinked(b, l, r) {
     var value = copy(r), clashes = [];
     LINK_FIELDS.forEach(function (f) {
       var bv = getPath(b, f.path), lv = getPath(l, f.path), rv = getPath(r, f.path);
       if (same(lv, bv) || same(lv, rv)) return;              // the Ref didn't change it: take the player's
+      if (f.union) { setPath(value, f.path, unionLog(bv, lv, rv)); return; }
       if (!same(rv, bv)) clashes.push(f.label);              // both changed it
       setPath(value, f.path, lv);
     });
@@ -6933,7 +6947,7 @@ var CROWS_TRAIT_TREES = [
     if (!chip) return;
     chip.setAttribute('data-s', s);
     chip.querySelector('.txt').textContent = (linkId && owner ? owner + '’s crow · ' : '') + text;
-    chip.title = title || (linkId ? 'Ref view: you can change conditions, equipment, and notes' : user ? 'Account: ' + user.username : '');
+    chip.title = title || (linkId ? 'Ref view: you can change the vitals, equipment, and notes' : user ? 'Account: ' + user.username : '');
   }
   function closeBar() { if (bar) { bar.remove(); bar = null; } }
   function showBar(msg, buttons) {
@@ -7270,27 +7284,56 @@ var CROWS_TRAIT_TREES = [
 /*
  * Ref view of a player's shared character (Crows_Character_Generator.html?link=<n>, opened from the Ref Screen).
  *
- * The whole sheet is shown, Build and Play, but only conditions, equipment, and notes can be changed: every
- * other control is disabled and clicks/keys/drags on it are stopped before the app sees them. The server
- * enforces the same rule (it applies only those three fields from a Ref), so this is about a clear UI, not trust.
+ * The whole sheet is shown, Build and Play, but only the Play mode vitals (Stamina, AD, wounds, conditions,
+ * cruelty, coins), equipment, and notes can be changed: every other control is disabled and clicks/keys/drags
+ * on it are stopped before the app sees them. The server enforces the same rule (it applies only those fields
+ * from a Ref), so this is about a clear UI, not trust.
  * The Ref's own character in this browser is left alone (app.js skips its local autosave here).
+ *
+ * &view=status is the condensed form the Ref Screen's Party tab embeds for each linked crow: just the Vitals
+ * card, with the sheet's own buttons working on the whole character, live. It tells the Ref Screen its height.
  */
 (function () {
   'use strict';
   if (!window.CrowsCloud || !window.CrowsCloud.linked) return;
 
   // What a Ref can use. Everything else in the page body is read-only.
-  var EDITABLE = '#inventory, #tray, #card-detail, .add-item, #btn-arrange, #in-notes, #play-vitals .conds, #ref-banner';
+  var EDITABLE = '#inventory, #tray, #card-detail, .add-item, #btn-arrange, #in-notes, #play-vitals, #ref-banner';
   var ALWAYS_OK = 'summary, details > summary, a[href]';   // expanding sections and following links is just reading
   var BLOCKED_EVENTS = ['click', 'dblclick', 'mousedown', 'pointerdown', 'touchstart', 'keydown', 'input', 'change', 'dragstart', 'drop', 'dragover'];
 
+  var STATUS = /[?&]view=status(&|$)/.test(location.search);
   document.body.classList.add('ref-view', 'ref-loading');
+  if (STATUS) document.body.classList.add('ref-status');
 
   var css = 'body.ref-view #btn-random,body.ref-view #btn-new,body.ref-view .actions .file-btn{display:none}' +
     'body.ref-loading .layout{visibility:hidden}' +
     '.ref-banner{max-width:1320px;margin:12px auto 0;padding:.6rem 16px}' +
     '.ref-banner p{margin:0;padding:.6rem .8rem;border-left:4px solid var(--sel);background:var(--card);border-radius:6px;font-size:.92rem}' +
-    'body.ref-view .ref-locked{cursor:not-allowed}';
+    'body.ref-view .ref-locked{cursor:not-allowed}' +
+    // The condensed status view: only the Vitals card, without its title, headings, or rules text.
+    'html:has(body.ref-status){background:transparent}' +
+    'body.ref-status{margin:0;padding:0;background:transparent;min-height:0}' +
+    '.st-hide{display:none!important}' +
+    '.st-path{display:block!important;margin:0!important;padding:0!important;max-width:none!important;border:0!important;background:transparent!important;box-shadow:none!important}' +
+    'body.ref-loading #play-vitals{visibility:hidden}' +
+    'body.ref-status #play-vitals{display:block;margin:0;padding:.2rem 0 .1rem;border:0;box-shadow:none;background:transparent}' +
+    'body.ref-status #play-vitals>h2,body.ref-status #play-vitals h3,body.ref-status .info-toggle,body.ref-status #cond-info{display:none}' +
+    'body.ref-status #play-vitals .conds,body.ref-status #play-vitals .dmg-row{margin:.45rem 0 0}' +
+    'body.ref-status .vital-top{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:.4rem}' +
+    'body.ref-status .vital-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:.4rem;margin-top:.4rem}' +
+    'body.ref-status .vital{padding:.3rem .4rem}body.ref-status .vital .lbl{font-size:.6rem}' +
+    'body.ref-status .vital .val b{font-size:1.15rem}body.ref-status .vital.big .val b{font-size:1.6rem}' +
+    'body.ref-status .vital .fine{font-size:.65rem}body.ref-status .meter{margin:.2rem 0}' +
+    'body.ref-status .pm-row{gap:3px;flex-wrap:wrap}body.ref-status .pm-row .btn{padding:.1rem .4rem;min-height:26px}' +
+    'body.ref-status .pm-row input{width:3.2rem;min-width:0}' +
+    'body.ref-status .conds .cond{min-height:26px;padding:.1rem .5rem}' +
+    'body.ref-status .dmg-row{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .45rem}' +
+    'body.ref-status .dmg-row .field{display:inline-flex;flex-direction:row;align-items:center;gap:.3rem;margin:0}' +
+    'body.ref-status .dmg-row input[type=number]{width:3.6rem}body.ref-status .dmg-row .spacer{display:none}' +
+    'body.ref-status .wound-grid{grid-template-columns:repeat(10,minmax(0,1fr));gap:3px;margin-top:.45rem}' +
+    'body.ref-status .wslot{min-height:0;padding:1px 3px}body.ref-status .wslot .it{font-size:.6rem}body.ref-status .wslot .wk{font-size:.55rem}' +
+    'body.ref-status .toast{bottom:4px}';
   var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
 
   function inMain(n) { return n && n.closest && n.closest('.layout'); }
@@ -7320,9 +7363,31 @@ var CROWS_TRAIT_TREES = [
   new MutationObserver(function () { if (!pending) { pending = true; requestAnimationFrame(lock); } })
     .observe(document.body, { childList: true, subtree: true });
 
+  if (STATUS) {
+    // Hide everything but the Vitals card (left in place, so the sheet's own styles still apply to it),
+    // and keep the Ref Screen told of its height.
+    var vit = document.getElementById('play-vitals');
+    for (var n = vit; n.parentNode !== document.body; n = n.parentNode) {
+      n.parentNode.classList.add('st-path');
+      Array.prototype.forEach.call(n.parentNode.children, function (sib) { if (sib !== n) sib.classList.add('st-hide'); });
+    }
+    Array.prototype.forEach.call(document.body.children, function (sib) { if (sib !== n && sib.id !== 'toast' && sib.tagName !== 'SCRIPT') sib.classList.add('st-hide'); });
+    document.body.classList.add('st-path');
+    var sent = 0;
+    var tell = function () {
+      var h = Math.ceil(vit.getBoundingClientRect().height) + 2;
+      if (h !== sent && window.parent !== window) { sent = h; window.parent.postMessage({ crowsStatus: true, h: h }, location.origin); }
+    };
+    if (window.ResizeObserver) new ResizeObserver(tell).observe(vit);
+    window.addEventListener('load', tell);
+  }
+
   window.CrowsRefView = {
+    /* True in the condensed view embedded in the Ref Screen (&view=status). */
+    status: STATUS,
     /* The character is loaded: show it with a banner saying what the Ref can do. */
     ready: function (name, owner) {
+      if (STATUS) { document.body.classList.remove('ref-loading'); return; }
       var b = document.getElementById('ref-banner');
       if (!b) {
         b = document.createElement('div'); b.id = 'ref-banner'; b.className = 'ref-banner';
@@ -7331,8 +7396,8 @@ var CROWS_TRAIT_TREES = [
       }
       b.innerHTML = '';
       var p = document.createElement('p');
-      p.textContent = 'Ref view of ' + (name || 'this crow') + (owner ? ', played by ' + owner : '') + '. You can change conditions (Play tab), ' +
-        'equipment, and notes; the rest of the sheet is read-only. Changes save to the player’s character, and theirs show up here within a second or two.';
+      p.textContent = 'Ref view of ' + (name || 'this crow') + (owner ? ', played by ' + owner : '') + '. You can change the vitals (Play tab: Stamina, AD, wounds, ' +
+        'conditions, cruelty, coins), equipment, and notes; the rest of the sheet is read-only. Changes save to the player’s character, and theirs show up here within a second or two.';
       b.appendChild(p);
       document.body.classList.remove('ref-loading');
       lock();
@@ -8459,7 +8524,7 @@ var CROWS_TRAIT_TREES = [
       onRemote: function () {
         // Changes now arrive within a second or two, so say so once in a while rather than every time.
         var t = Date.now();
-        if (t - lastRemote > 30000) toast(refView ? 'Updated with the player\u2019s latest changes.' : 'Updated with changes made on another device or by your Ref.');
+        if (t - lastRemote > 30000 && !(window.CrowsRefView && window.CrowsRefView.status)) toast(refView ? 'Updated with the player\u2019s latest changes.' : 'Updated with changes made on another device or by your Ref.');
         lastRemote = t;
         if (window.CrowsRefView) window.CrowsRefView.ready(state.name, window.CrowsCloud.owner);
       }
@@ -8507,14 +8572,18 @@ var CROWS_TRAIT_TREES = [
   function P() { return S().play; }
   function log(msg) {
     var l = P().log;
+    if (window.CrowsRefView) msg = 'Ref: ' + msg;   // the Ref changing a player's sheet
     l.unshift({ t: Date.now(), m: msg });
     if (l.length > 200) l.length = 200;
   }
   function commit(msg) { if (msg) log(msg); C.render(); }
 
   // ------------------------------------------------------------------ mode switch
-  function mode() { try { return localStorage.getItem(MODE_KEY) === 'play' ? 'play' : 'build'; } catch (e) { return 'build'; } }
+  // The Ref Screen's condensed status view is always Play mode, without changing this browser's choice.
+  var FORCED = window.CrowsRefView && window.CrowsRefView.status ? 'play' : null;
+  function mode() { if (FORCED) return FORCED; try { return localStorage.getItem(MODE_KEY) === 'play' ? 'play' : 'build'; } catch (e) { return 'build'; } }
   function setMode(m) {
+    if (FORCED) return;
     try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* storage unavailable */ }
     applyMode(m);
     C.render();
@@ -8960,7 +9029,8 @@ var CROWS_TRAIT_TREES = [
     }));
     var firstSel = el('select', { 'aria-label': 'Damage hits first', onchange: function () { ui.first = this.value; } },
       abs.filter(function (c) { return C.adNow(c) > 0; }).map(function (c) { return el('option', { value: String(c.id), text: c.key + ' first' }); }));
-    if (!firstSel.options.length) firstSel = null; else if (ui.first) firstSel.value = ui.first; else ui.first = firstSel.value;
+    if (!firstSel.options.length) firstSel = null;
+    else { if (ui.first) firstSel.value = ui.first; if (firstSel.selectedIndex < 0 || !ui.first) { firstSel.selectedIndex = 0; ui.first = firstSel.value; } }   // that item may be gone (or reloaded)
     var dmgRow = el('div', { class: 'row wrap dmg-row' }, [
       el('label', { class: 'field' }, ['Damage', num(ui.dmg, function (v) { ui.dmg = v; }, { min: 0, class: 'mini', onkeydown: function (e) { if (e.key === 'Enter') takeDamage(); } })]),
       el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.pierce, onchange: function () { ui.pierce = this.checked; } }), ' Piercing']),
@@ -9357,7 +9427,9 @@ var CROWS_TRAIT_TREES = [
   $('tab-build').addEventListener('click', function () { setMode('build'); });
   $('tab-play').addEventListener('click', function () { setMode('play'); });
   applyMode(mode());
-  window.CrowsPlay = { render: render, setMode: setMode };
+  window.CrowsPlay = { render: render, setMode: setMode,
+    /* Back to full Stamina, as the Full button does (the Ref Screen's "Everyone to full Stamina"). */
+    fullStamina: function () { if (C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); commit('Back to full Stamina.'); } } };
 })();
 
 </script>

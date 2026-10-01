@@ -14,8 +14,10 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
 - **Refs** do the same with campaigns in the Ref Screen. `ref.php` only serves the Ref Screen to Refs and admins.
 - **Sharing with a Ref:** a player opens **Share** on a character and sends the link to their Ref. The Ref opens
   it (or pastes it into the Ref Screen's Party tab) to add the crow to a campaign. The crow stays tied to the
-  player's sheet: **Open sheet** shows the whole character, where the Ref can change only conditions,
-  equipment, and notes. The server applies just those fields, and only if they haven't changed underneath.
+  player's sheet. The Party tab's **Party status** shows each linked crow's live Play mode vitals, using the
+  sheet's own buttons (Stamina, AD, damage and healing, wounds, conditions, cruelty, coins), and **Open sheet**
+  shows the whole character. Either way the Ref can change only those vitals, equipment, and notes. The server
+  applies just those fields, and only if they haven't changed underneath (log entries from both sides are combined).
   The player sees which Refs have access and can remove any of them, or turn the link off or replace it.
 - **Admins** mark accounts as players or Refs, make other admins, make one-time password reset links (useful
   if email doesn't arrive), and delete accounts.

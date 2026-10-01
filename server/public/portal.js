@@ -322,7 +322,7 @@
       var box = input('text', 'share', { value: link, readonly: true, 'aria-label': 'Character link' });
       linkBox.innerHTML = '';
       linkBox.appendChild(el('div', { class: 'msg ok' }, [
-        'Send this link to your Ref. They can add ' + (it.name || 'this crow') + ' to a campaign, see the sheet, and change its conditions, equipment, and notes. Keep it private: any Ref who has it can do the same.',
+        'Send this link to your Ref. They can add ' + (it.name || 'this crow') + ' to a campaign, see the sheet, and change its vitals (Stamina, wounds, conditions…), equipment, and notes. Keep it private: any Ref who has it can do the same.',
         el('div', { class: 'copy' }, [box, btn('Copy', function () {
           box.select();
           (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(function () { toast('Link copied.'); }, function () { document.execCommand('copy'); toast('Link copied.'); });
@@ -372,7 +372,7 @@
       box.appendChild(el('p', { class: 'muted', text: [c.summary, 'played by ' + c.owner].filter(Boolean).join(' · ') }));
       if (c.own) box.appendChild(el('div', { class: 'msg warn', text: 'This is your own character.' }));
       if (c.accessId) box.appendChild(el('div', { class: 'msg ok', text: 'You already have access to this crow. Adding it to another campaign is fine too.' }));
-      box.appendChild(el('p', { text: 'Add it to which campaign? You\u2019ll be able to open the sheet and change its conditions, equipment, and notes.' }));
+      box.appendChild(el('p', { text: 'Add it to which campaign? You\u2019ll see its vitals live, and can change them, its equipment, and its notes.' }));
       box.appendChild(el('ul', { class: 'rows' }, camps.map(function (cp) {
         return el('li', null, [el('div', null, [el('div', { class: 'name', text: cp.name || 'Untitled' }), el('div', { class: 'meta', text: cp.summary || '' })]),
           a('Add to this campaign', REF + '?id=' + cp.id + '#addlink=' + token, 'btn btn-small btn-primary')]);

@@ -410,10 +410,14 @@ function a_delete(): array {
 /*
  * A player makes a link for one of their characters and sends it to their Ref. A Ref who opens it adds the
  * character to a campaign, which creates a character_access row. With it the Ref can read the whole
- * character and change only its conditions, equipment, and notes (link.save merges just those fields).
- * The player sees who has access and can remove it; deleting the character removes it too.
+ * character and change only what a Ref runs at the table: the Play mode vitals (Stamina, wounds, conditions,
+ * cruelty, coins, and the log those buttons write to), equipment (which carries armor damage), and notes.
+ * link.save merges just those fields. The player sees who has access and can remove it; deleting the
+ * character removes it too.
  */
-const SHARED_FIELDS = ['inv', 'notes', 'conds'];
+// Field name => path in the character (must match LINK_FIELDS in src/cloud.js).
+const SHARED_FIELDS = ['inv' => ['inv'], 'notes' => ['notes'], 'coins' => ['coins'], 'conds' => ['play', 'conds'],
+    'stamina' => ['play', 'stamina'], 'cruelty' => ['play', 'cruelty'], 'wounds' => ['play', 'wounds'], 'log' => ['play', 'log']];
 
 function own_character(array $s, int $id): array {
     $r = q('SELECT id, name FROM characters WHERE id = ? AND user_id = ?', [$id, $s['id']])->fetch();
@@ -548,17 +552,51 @@ function clean_conds($c): object {
     }
     return $out;
 }
+function clean_int($v, int $min, int $max, string $what): int {
+    if (!is_int($v) && !(is_float($v) && floor($v) == $v)) fail("Bad $what.");
+    return max($min, min($max, (int)$v));
+}
+function clean_wounds($w): object {
+    if (!is_object($w)) fail('Bad wounds.');
+    $out = new stdClass();
+    foreach (get_object_vars($w) as $k => $v) {
+        if (!preg_match('/^[0-9]$/', (string)$k) || ($v !== 'w' && $v !== 's')) fail('Bad wound.');
+        $out->{(string)$k} = $v;
+    }
+    return $out;
+}
+function clean_log($l): array {
+    if (!is_array($l) || count($l) > 200) fail('Bad log.');
+    $out = [];
+    foreach ($l as $e) {
+        if (!is_object($e) || !is_string($e->m ?? null) || mb_strlen($e->m) > 1000) fail('Bad log entry.');
+        $out[] = (object)['t' => clean_int($e->t ?? 0, 0, PHP_INT_MAX, 'log time'), 'm' => $e->m];
+    }
+    return $out;
+}
+/** The current log plus the entries the Ref added since $base (both sides add entries, so they're combined, not compared). */
+function merge_log($cur, array $mine, $base): array {
+    $key = function ($e) { return is_object($e) && is_scalar($e->t ?? null) && is_string($e->m ?? null) ? $e->t . '|' . $e->m : null; };
+    $cur = is_array($cur) ? $cur : [];
+    $seen = [];
+    foreach (array_merge($cur, is_array($base) ? $base : []) as $e) if ($key($e) !== null) $seen[$key($e)] = true;
+    foreach ($mine as $e) if (!isset($seen[$key($e)])) { $cur[] = $e; $seen[$key($e)] = true; }
+    usort($cur, function ($a, $b) { return ($b->t ?? 0) <=> ($a->t ?? 0); });
+    return array_slice($cur, 0, 200);
+}
 function field_get(object $d, string $f) {
-    if ($f === 'conds') return isset($d->play) && is_object($d->play) ? ($d->play->conds ?? new stdClass()) : new stdClass();
-    return $d->$f ?? null;
+    foreach (SHARED_FIELDS[$f] as $k) { if (!is_object($d) || !isset($d->$k)) return null; $d = $d->$k; }
+    return $d;
 }
 function field_set(object $d, string $f, $v): void {
-    if ($f === 'conds') { if (!isset($d->play) || !is_object($d->play)) $d->play = new stdClass(); $d->play->conds = $v; }
-    else $d->$f = $v;
+    $path = SHARED_FIELDS[$f];
+    $last = array_pop($path);
+    foreach ($path as $k) { if (!isset($d->$k) || !is_object($d->$k)) $d->$k = new stdClass(); $d = $d->$k; }
+    $d->$last = $v;
 }
 
 /**
- * The Ref's save: only conditions, equipment, and notes, each applied only if the character still has the
+ * The Ref's save: only the shared fields, each applied only if the character still has the
  * value the Ref started from. So the player's own changes (Stamina, rests, anything else) are never
  * overwritten, and if both changed the same thing the Ref is told instead of silently winning.
  */
@@ -577,13 +615,21 @@ function a_link_save(): array {
         if (!is_object($data)) fail('That character could not be read.', 500);
         $changed = [];
         foreach (get_object_vars($b->fields) as $f => $v) {
-            if (!in_array($f, SHARED_FIELDS, true)) fail('A Ref can only change conditions, equipment, and notes.', 403);
-            if (!property_exists($b->base, $f) || canon(field_get($data, $f)) !== canon($b->base->$f)) {
+            if (!isset(SHARED_FIELDS[$f])) fail('A Ref can only change the vitals, equipment, and notes.', 403);
+            if (!property_exists($b->base, $f)) fail('Nothing to save.');
+            if ($f !== 'log' && canon(field_get($data, $f)) !== canon($b->base->$f)) {
                 fail('The player changed this character at the same time.', 409, ['item' => linked_out($r, true)]);
             }
-            if ($f === 'inv') $v = clean_inv($v);
-            elseif ($f === 'conds') $v = clean_conds($v);
-            elseif (!is_string($v) || mb_strlen($v) > 5000) fail('Notes are too long.');
+            switch ($f) {
+                case 'inv': $v = clean_inv($v); break;
+                case 'conds': $v = clean_conds($v); break;
+                case 'notes': if (!is_string($v) || mb_strlen($v) > 5000) fail('Notes are too long.'); break;
+                case 'coins': $v = clean_int($v, 0, 999999999, 'coins'); break;
+                case 'stamina': $v = $v === null ? null : clean_int($v, 0, 9999, 'Stamina'); break;
+                case 'cruelty': $v = clean_int($v, 0, 999, 'cruelty'); break;
+                case 'wounds': $v = clean_wounds($v); break;
+                case 'log': $v = merge_log(field_get($data, 'log'), clean_log($v), $b->base->log); break;
+            }
             field_set($data, $f, $v);
             $changed[] = $f;
         }
