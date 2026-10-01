@@ -58,13 +58,61 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
 
 ## Deploying
 
+Changes go to the test instance first and reach production only by promoting it:
+
 ```
 python build/build.py && python ref/build/build.py
-server/deploy.sh
+server/deploy.sh                    # 1. the test instance, https://joshuaramsey.com/crows-test/
+python3 server/test_instance.py smoke   # 2. end-to-end check there
+server/promote.sh --dry-run         # 3. what production would get
+server/promote.sh                   # 4. copy the test instance to production
 ```
 
 `deploy.sh` stages everything under `build/out/site/`, rsyncs it over SSH (the key must be loaded in your
-ssh-agent), and runs `install.php`. `server/stage.sh <dir>` makes the same layout for local testing.
+ssh-agent), runs `install.php`, and records the commit in the app folder's `DEPLOYED.txt`. `server/stage.sh <dir>`
+makes the same layout for local testing. `deploy.sh --production` deploys straight to production, skipping the test
+instance; it's for emergencies.
+
+Both instances run byte-identical files. The entry points find their app folder from their own folder name
+(`public_html/crows` → `~/crows-app`, `public_html/crows-test` → `~/crows-test-app`), and the one `.htaccess` adds
+the noindex header only under `/crows-test/`. So `promote.sh` copies the files server-side rather than rebuilding,
+and production gets exactly what was tested. It:
+
+1. shows what each instance runs (`DEPLOYED.txt`) and runs the smoke test (`--skip-smoke` to skip it),
+2. asks for confirmation (`--yes` to skip),
+3. backs up production's code to `~/crows-backups/<UTC time>/` (the last 10 are kept),
+4. copies `~/crows-test-app` → `~/crows-app` and `public_html/crows-test` → `public_html/crows`, leaving out each
+   instance's own `config.php`, keys, logs, `sync/` files, test accounts and `seed_test.php`,
+5. runs `install.php` on production and checks that the live API answers.
+
+`server/promote.sh --status` shows what each instance runs. `server/promote.sh --rollback [<backup>]` puts the
+newest (or a named) backup back. Promotion adds and replaces files but never deletes any, and schema changes are
+additive, so a rollback restores the code but not the database.
+
+The deploy tools reuse one SSH connection (ControlMaster), because the host blocks port 22 for several minutes
+after a burst of new connections.
+
+## Test instance
+
+A second copy at **https://joshuaramsey.com/crows-test/** for trying changes and testing end to end. It has its own
+database (`joshuara_crowstest`), its own app folder (`~/crows-test-app`, with its own config.php, mfa.key and
+sync.key), and a session cookie scoped to `/crows-test/`, so nothing in it touches the live site's accounts.
+Its config sets `mail_log`, so it never sends email: every message (codes, reset links, notices) is appended to
+`~/crows-test-app/mail.log` instead. Each smoke run clears its rate limits first (`seed_test.php --unthrottle`). It also sends `X-Robots-Tag: noindex`. One thing is shared: both copies are on
+the same origin, so the apps' browser-only copies (localStorage) are too.
+
+```
+server/deploy.sh                              # stage and upload the test instance (the live site is untouched)
+python3 server/test_instance.py reseed        # new passwords and authenticator secrets; add --wipe to clear all data
+python3 server/test_instance.py smoke         # end-to-end check of the API as the test accounts
+python3 server/test_instance.py call test_ref list kind=campaigns
+python3 server/test_instance.py mail          # what it would have emailed
+```
+
+`seed_test.php` (only staged for the test instance, and refusing to run unless config.php sets `test_instance`)
+makes four accounts with authenticator-app two-step login: `test_admin` (admin), `test_ref`, `test_player`, and
+`test_player2`, at `@example.invalid` addresses. Their passwords, TOTP secrets and recovery codes are in
+`~/crows-test-app/test-accounts.json` (chmod 600), which `test_instance.py` reads over SSH; they're never in git.
 
 ## First admin
 

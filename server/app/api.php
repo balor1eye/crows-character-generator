@@ -123,6 +123,12 @@ function note_attempt(string $login): void {
 // ---------------------------------------------------------------- mail
 function send_mail(string $to, string $subject, string $text): bool {
     $c = config();
+    // Test instance: write the message to a file instead of sending it (codes and links can be read there).
+    if (!empty($c['mail_log'])) {
+        $ok = @file_put_contents($c['mail_log'], json_encode(['at' => now(), 'to' => $to, 'subject' => $subject, 'text' => $text],
+            JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES) . "\n", FILE_APPEND | LOCK_EX);
+        return $ok !== false;
+    }
     $from = $c['mail_from'] ?? '';
     // Subjects can carry names players typed: no line breaks (they'd start new headers), and encoded for UTF-8.
     $subject = mb_encode_mimeheader(trim(preg_replace('/[\r\n\t]+/', ' ', $subject)), 'UTF-8', 'Q');

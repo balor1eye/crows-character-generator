@@ -8,4 +8,7 @@ return [
     'site_url' => 'https://joshuaramsey.com/crows/',   // used in password-reset links
     'cookie_path' => '/crows/',
     'mail_from' => 'noreply@joshuaramsey.com',
+    // Test instance only (~/crows-test-app/config.php): no real email, just a log file; enables seed_test.php.
+    // 'mail_log' => __DIR__ . '/mail.log',
+    // 'test_instance' => true,
 ];
