@@ -25,7 +25,7 @@
 
   var css = 'body.ref-view #btn-random,body.ref-view #btn-new,body.ref-view .actions .file-btn{display:none}' +
     'body.ref-loading .layout{visibility:hidden}' +
-    '.ref-banner{max-width:1320px;margin:12px auto 0;padding:.6rem 16px}' +
+    '.ref-banner{margin:12px auto 0;padding:.6rem clamp(16px,2vw,40px)}' +
     '.ref-banner p{margin:0;padding:.6rem .8rem;border-left:4px solid var(--sel);background:var(--card);border-radius:6px;font-size:.92rem}' +
     'body.ref-view .ref-locked{cursor:not-allowed}' +
     // The condensed status view: only the Vitals card, without its title, headings, or rules text.
