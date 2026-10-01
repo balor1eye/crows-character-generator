@@ -58,12 +58,19 @@ php ~/crows-app/make_admin.php <your username>
 
 `src/cloud.js` is built into both apps. When the page is served next to `api.php` and the visitor is logged
 in, the open character or campaign is linked to a record in their account (`?id=N` in the URL). Changes are
-sent a moment after they're made (at most 8 seconds later while you keep typing) and again when the page is
+sent a third of a second after they're made (at most 1.5 seconds later while you keep typing) and again when the page is
 hidden. Every save carries a version number. If another window or device saved in the meantime, the app asks
 which copy to keep instead of silently overwriting. When offline, it keeps retrying, and the browser copy
 is always kept too. As a guest, offline, or on GitHub Pages, it does nothing.
 
-Open copies also poll every 10 seconds, so a player and their Ref (or two devices) see each other's changes.
+Open copies see each other's changes (a player and their Ref, or two devices) about a second after they're
+saved. Every save also rewrites a tiny static file, `sync/<hash>.txt`, holding the record's new version. Open
+pages fetch it once a second, which the web server answers without PHP or the database, and load the record
+only when the version moves. The name is an HMAC of the record under `~/crows-app/sync.key` (made on first
+use), so only people the API has shown the record to know it, and the file reveals nothing but a number.
+If the folder can't be written, pages fall back to asking the API every 10 seconds. The Ref Screen watches
+its linked crows the same way, so their party entries follow the player's sheet. Nobody's page is replaced
+while they're typing in a text field.
 Concurrent edits merge three ways against the last version both sides had. Changes to different things just
 combine, and only a change to the same thing on both sides asks which copy to keep.
 

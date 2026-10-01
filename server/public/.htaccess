@@ -28,6 +28,10 @@ RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
   <FilesMatch "\.(html|js|css)$">
     Header set Cache-Control "no-cache"
   </FilesMatch>
+  # Change signals (sync/<hash>.txt, rewritten on every save): never cache them anywhere.
+  <FilesMatch "^[0-9a-f]{32}\.txt$">
+    Header set Cache-Control "no-store"
+  </FilesMatch>
 </IfModule>
 
 # Content-Security-Policy per page, with hashes of the apps' inline scripts (filled in by server/csp.py).

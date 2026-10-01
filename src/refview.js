@@ -63,7 +63,7 @@
       b.innerHTML = '';
       var p = document.createElement('p');
       p.textContent = 'Ref view of ' + (name || 'this crow') + (owner ? ', played by ' + owner : '') + '. You can change conditions (Play tab), ' +
-        'equipment, and notes; the rest of the sheet is read-only. Changes save to the player’s character, and theirs show up here within a few seconds.';
+        'equipment, and notes; the rest of the sheet is read-only. Changes save to the player’s character, and theirs show up here within a second or two.';
       b.appendChild(p);
       document.body.classList.remove('ref-loading');
       lock();

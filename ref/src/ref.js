@@ -619,7 +619,8 @@
   /*
    * A player can share a character with a link (from their character list). Added here, the crow stays tied
    * to the player's sheet: "Open sheet" shows the whole thing, where the Ref can change conditions, equipment,
-   * and notes, and the party entry refreshes from the sheet. Needs the Ref to be logged in on the hosted site.
+   * and notes, and the party entry refreshes from the sheet about a second after the player changes it.
+   * Needs the Ref to be logged in on the hosted site.
    */
   function cloudOn() { return !!(window.CrowsCloud && window.CrowsCloud.active); }
   function linkToken(text) { var m = /(?:share=|addlink=)?([0-9a-f]{64})/.exec(String(text || '').trim()); return m ? m[1] : null; }
@@ -631,7 +632,19 @@
       ['id', 'status', 'ad', 'miasma', 'notes', 'pending'].forEach(function (k) { if (k in existing) pc[k] = existing[k]; });
       state.party[state.party.indexOf(existing)] = pc;
     } else state.party.push(pc);
+    watchLinked(item);
     return pc;
+  }
+  /* Refresh the party entry soon after the player's sheet changes (not while the Ref is typing). */
+  function watchLinked(item) {
+    var C = window.CrowsCloud, key = 'link-' + item.id;
+    if (!C || !C.watch) return;
+    C.watch(key, item.watch, item.version, function () {
+      var p = state.party.filter(function (x) { return x.link === item.id; })[0];
+      if (!p) { C.watch(key, null); return; }
+      if (C.typing) return;
+      return refreshLinked(p, true);
+    });
   }
   function addFromLink(text) {
     var tok = linkToken(text);
@@ -645,10 +658,14 @@
   function refreshLinked(p, quiet) {
     return window.CrowsCloud.api('GET', 'link.get', 'id=' + p.link).then(function (j) {
       linkPC(j.item); save(); render(); if (!quiet) toast('Updated ' + (j.item.name || 'the crow') + ' from the sheet.');
-    }, function (e) { if (!quiet || e.status === 404) toast((p.name || 'A crow') + ': ' + e.message); });
+    }, function (e) {
+      if (e.status === 404) window.CrowsCloud.watch('link-' + p.link, null);
+      if (!quiet || e.status === 404) toast((p.name || 'A crow') + ': ' + e.message);
+    });
   }
   function unlinkPC(p, quietly) {
     var id = p.link;
+    if (window.CrowsCloud) window.CrowsCloud.watch('link-' + id, null);
     delete p.link; delete p.owner; save(); render();
     if (cloudOn()) window.CrowsCloud.api('POST', 'link.remove', '', { id: id }).then(function () { if (!quietly) toast('Unlinked. The crow stays in the party as a copy.'); }, function () { /* already gone */ });
   }

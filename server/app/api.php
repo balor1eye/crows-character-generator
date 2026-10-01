@@ -292,6 +292,51 @@ function row_out(array $r, bool $withData = false): array {
     return $o;
 }
 
+// ---------------------------------------------------------------- change signals
+/*
+ * Open pages notice changes made elsewhere (another device, the player, their Ref) by fetching a tiny static
+ * file, sync/<name>.txt, about once a second. It holds the record's version and is rewritten on every save.
+ * The web server answers that without running PHP or opening a database connection, so checking that often
+ * costs next to nothing, and a change shows up on the other side about a second after it's saved.
+ * The name is a keyed hash of the record, given only to people who may open it; the file holds just the version.
+ */
+function sync_dir(): string { return dirname($_SERVER['SCRIPT_FILENAME']) . '/sync'; }
+function sync_key(): string {
+    static $key = null;
+    if ($key !== null) return $key;
+    $f = __DIR__ . '/sync.key';
+    $h = @fopen($f, 'x');   // only one request ever creates it, so every page gets the same names
+    if ($h) { fwrite($h, token()); fclose($h); chmod($f, 0600); }
+    $key = (string)@file_get_contents($f);
+    if (strlen($key) < 32) throw new RuntimeException('sync.key is unreadable');
+    return $key;
+}
+function sync_file(string $k, int $id): string { return substr(hash_hmac('sha256', "$k:$id", sync_key()), 0, 32) . '.txt'; }
+/** Record that $k #$id is now at $version. Never fails a save: without it pages just notice more slowly. */
+function signal(string $k, int $id, int $version): void {
+    try {
+        $dir = sync_dir();
+        if (!is_dir($dir) && !@mkdir($dir, 0755) && !is_dir($dir)) return;
+        $h = @fopen("$dir/" . sync_file($k, $id), 'c+');
+        if (!$h) return;
+        flock($h, LOCK_EX);
+        if ((int)stream_get_contents($h) < $version) { ftruncate($h, 0); rewind($h); fwrite($h, (string)$version); }   // never go backwards
+        fclose($h);
+    } catch (Throwable $e) { error_log('crows signal: ' . $e->getMessage()); }
+}
+function unsignal(string $k, int $id): void {
+    try { @unlink(sync_dir() . '/' . sync_file($k, $id)); } catch (Throwable $e) { /* ignore */ }
+}
+/** $o with the file to watch for changes to $k #$id (relative to the app), or without it if signals don't work here. */
+function with_watch(array $o, string $k, int $id): array {
+    try {
+        $f = sync_file($k, $id);
+        if (!is_file(sync_dir() . "/$f")) signal($k, $id, $o['version']);
+        if (is_file(sync_dir() . "/$f")) $o['watch'] = "sync/$f";
+    } catch (Throwable $e) { error_log('crows watch: ' . $e->getMessage()); }
+    return $o;
+}
+
 function a_list(): array {
     $k = kind(); $s = owner_for($k);
     $rows = q("SELECT id, name, summary, version, created_at, updated_at FROM $k WHERE user_id = ? ORDER BY updated_at DESC", [$s['id']])->fetchAll();
@@ -310,7 +355,7 @@ function a_get(): array {
     }
     $r = q("SELECT * FROM $k WHERE id = ? AND user_id = ?", [$id, $s['id']])->fetch();
     if (!$r) fail('That save was not found. It may have been deleted.', 404);
-    return ['item' => row_out($r, true)];
+    return ['item' => with_watch(row_out($r, true), $k, $id)];
 }
 
 function a_create(): array {
@@ -322,7 +367,7 @@ function a_create(): array {
     q("INSERT INTO $k (user_id, name, summary, data, version, created_at, updated_at) VALUES (?,?,?,?,1,?,?)",
       [$s['id'], clip(str('name', 1000), 120), clip(str('summary', 2000), 255), $data, now(), now()]);
     $r = q("SELECT * FROM $k WHERE id = ?", [(int)db()->lastInsertId()])->fetch();
-    return ['item' => row_out($r)];
+    return ['item' => with_watch(row_out($r), $k, (int)$r['id'])];
 }
 
 function a_save(): array {
@@ -340,7 +385,8 @@ function a_save(): array {
     if ($n === 0 && !$force && (int)$r['version'] !== (int)$base) {
         fail('This was changed in another window or device.', 409, ['item' => row_out($r)]);
     }
-    return ['item' => row_out($r)];
+    if ($n) signal($k, $id, (int)$r['version']);
+    return ['item' => with_watch(row_out($r), $k, $id)];
 }
 
 function a_duplicate(): array {
@@ -355,7 +401,8 @@ function a_duplicate(): array {
 
 function a_delete(): array {
     $k = kind(); $s = owner_for($k);
-    q("DELETE FROM $k WHERE id = ? AND user_id = ?", [record_id(), $s['id']]);
+    $id = record_id();
+    if (q("DELETE FROM $k WHERE id = ? AND user_id = ?", [$id, $s['id']])->rowCount()) unsignal($k, $id);
     return [];
 }
 
@@ -456,7 +503,7 @@ function linked_out(array $r, bool $withData): array {
     $o['id'] = (int)$r['access_id'];
     $o['owner'] = $r['owner'];
     if ($withData) $o['data'] = json_decode($r['data']);   // objects stay objects
-    return $o;
+    return with_watch($o, 'characters', (int)$r['id']);
 }
 
 function a_link_get(): array {
@@ -548,7 +595,9 @@ function a_link_save(): array {
         if ($pdo->inTransaction()) $pdo->rollBack();
         throw $e;
     }
-    return ['item' => linked_out(access_row($s, $aid), true)];
+    $out = linked_out(access_row($s, $aid), true);
+    if ($changed) signal('characters', (int)$r['id'], $out['version']);
+    return ['item' => $out];
 }
 
 function a_link_remove(): array {

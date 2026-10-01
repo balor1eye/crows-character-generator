@@ -418,6 +418,7 @@
     rollCoins();
   }
   var refView = !!(window.CrowsCloud && window.CrowsCloud.linked);   // a Ref looking at a player's shared character
+  var lastRemote = 0;   // when a change made elsewhere was last brought in
   function save() {
     // In the Ref view this is someone else's character: don't overwrite the Ref's own copy in this browser.
     if (!refView) try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
@@ -1112,7 +1113,10 @@
         if (window.CrowsRefView) window.CrowsRefView.ready(state.name, window.CrowsCloud.owner);
       },
       onRemote: function () {
-        toast(refView ? 'Updated with the player\u2019s latest changes.' : 'Updated with changes made on another device or by your Ref.');
+        // Changes now arrive within a second or two, so say so once in a while rather than every time.
+        var t = Date.now();
+        if (t - lastRemote > 30000) toast(refView ? 'Updated with the player\u2019s latest changes.' : 'Updated with changes made on another device or by your Ref.');
+        lastRemote = t;
         if (window.CrowsRefView) window.CrowsRefView.ready(state.name, window.CrowsCloud.owner);
       }
     });

@@ -11,9 +11,10 @@
  * ?link=<n> is the Ref's view of a character a player shared: only conditions, equipment, and notes
  * are sent back, and the server applies just those.
  *
- * Several windows (or a player and their Ref) can have the same character open. Each polls for newer
- * versions, and changes are merged three ways against the last version both sides agreed on, so edits
- * to different parts never clobber each other; only a real clash (both changed the same thing) asks.
+ * Several windows (or a player and their Ref) can have the same character open. Each checks about once a
+ * second for a newer version (a tiny static file the server rewrites on every save, see signal() in
+ * server/app/api.php), and changes are merged three ways against the last version both sides agreed on,
+ * so edits to different parts never clobber each other; only a real clash (both changed the same thing) asks.
  *
  * The app calls CrowsCloud.attach(opts) once at start-up, CrowsCloud.changed() from its save(),
  * and CrowsCloud.startNew() just before it replaces the whole thing (new, random, load file).
@@ -22,9 +23,12 @@
   'use strict';
 
   var API = 'api.php';
-  var DELAY = 1200;            // ms after the last change before saving
-  var MAX_WAIT = 8000;         // ...but never later than this after the first unsaved change
-  var POLL = 10000;            // how often to look for changes made elsewhere
+  var DELAY = 300;             // ms after the last change before saving
+  var MAX_WAIT = 1500;         // ...but never later than this after the first unsaved change
+  var WATCH = 1000;            // how often to check the change signal (a static file: no PHP, no database)
+  var POLL = 10000;            // how often to ask the API instead, when there's no signal to watch
+  var SLOW_POLL = 60000;       // ...and as a safety net when there is
+  var TYPING = 1500;           // hold off bringing in changes for this long after a keystroke in a text field
   // What a Ref may change on a shared character (must match SHARED_FIELDS in server/app/api.php).
   var LINK_FIELDS = [{ name: 'inv', path: ['inv'], label: 'equipment' }, { name: 'notes', path: ['notes'], label: 'notes' },
     { name: 'conds', path: ['play', 'conds'], label: 'conditions' }];
@@ -33,7 +37,7 @@
   var user = null, csrf = null;
   var linkId = null;           // set in the Ref's view of a shared character
   var owner = '';              // whose character that is
-  var rec = null;              // { id, version } of the linked record
+  var rec = null;              // { id, version, watch } of the linked record
   var ready = false;           // true once the account copy is loaded (changes before that are ignored)
   var lastSent = null;         // JSON of the data the server has (as this app represents it)
   var base = null;             // the same, parsed: the common ancestor for three-way merges
@@ -41,6 +45,8 @@
   var pendingNew = false, fresh = false;
   var gen = 0;                 // bumped when the app starts a new record, so late replies for the old one are ignored
   var chip = null, bar = null;
+  var lastPoll = 0, lastKey = 0;
+  var watches = {};            // change signals being watched: key -> { url, version, onNewer, busy }
 
   function params() {
     var p = {};
@@ -188,7 +194,7 @@
 
   /* Show `data` in the app and treat it as what the server has. */
   function adoptRemote(item, data) {
-    rec = { id: item.id, version: item.version };
+    rec = { id: item.id, version: item.version, watch: item.watch || (rec && rec.id === item.id ? rec.watch : null) };
     if (item.owner) owner = item.owner;
     cfg.apply(copy(data));
     synced();
@@ -231,7 +237,7 @@
     else p = call('POST', 'create', kq(), body);
     p.then(function (j) {
       if (myGen !== gen) return;
-      rec = { id: j.item.id, version: j.item.version };
+      rec = { id: j.item.id, version: j.item.version, watch: j.item.watch || null };
       lastSent = json; base = JSON.parse(json); retryMs = 0;
       remember(rec.id);
       status('saved', 'Saved', 'Saved to your account at ' + new Date().toLocaleTimeString());
@@ -326,7 +332,7 @@
           adoptRemote(item, item.data);
           cfg.apply(mixed);
         } else {
-          rec = { id: item.id, version: item.version };
+          rec = { id: item.id, version: item.version, watch: rec && rec.id === item.id ? rec.watch : null };
           base = copy(item.data); lastSent = JSON.stringify(item.data);
         }
         flush(true);
@@ -334,14 +340,48 @@
       { text: 'Use theirs', cls: 'btn-ghost', on: function () { closeBar(); adoptRemote(item, item.data); status('saved', 'Saved'); } }]);
   }
 
+  /* Someone is typing in a text field: replacing the page under them would move their cursor. */
+  function typing() {
+    var a = document.activeElement;
+    return !!a && /^(INPUT|TEXTAREA)$/.test(a.tagName) && Date.now() - lastKey < TYPING;
+  }
+
   /* Look for changes made elsewhere (another device, the player, or their Ref). */
   function poll() {
-    if (!ready || !user || !rec || busy() || bar || document.visibilityState === 'hidden') return;
+    if (!ready || !user || !rec || busy() || bar || typing() || document.visibilityState === 'hidden') return;
+    lastPoll = Date.now();
     var myGen = gen, id = rec.id;
     call('GET', getAction(), getQuery(id) + '&known=' + rec.version).then(function (j) {
       if (myGen !== gen || !rec || rec.id !== id || busy() || j.item.unchanged) return;
       mergeIn(j.item);
     }, function (e) { if (e.status === 404 || e.status === 403) failed(e); });
+  }
+  /* The API poll is the fallback; with a change signal to watch it only runs now and then. */
+  function slowPoll() { if (Date.now() - lastPoll >= (rec && rec.watch ? SLOW_POLL : POLL) - 500) poll(); }
+
+  /*
+   * Check every watched change signal: the open record's, plus any the app registered with watch() (the
+   * Ref Screen watches its linked crows). A file holding a version newer than the one we have means fetch it.
+   */
+  var checking = false;
+  function checkSignals() {
+    if (checking || !ready || !user || document.visibilityState === 'hidden') return;
+    var list = [];
+    if (rec && rec.watch) list.push({ url: rec.watch, version: rec.version, onNewer: poll });
+    Object.keys(watches).forEach(function (k) { if (!watches[k].busy) list.push(watches[k]); });
+    if (!list.length) return;
+    checking = true;
+    Promise.all(list.map(function (w) {
+      return fetch(w.url, { credentials: 'same-origin', cache: 'no-store' })
+        .then(function (r) { return r.ok ? r.text() : ''; })
+        .then(function (t) {
+          var v = parseInt(t, 10);
+          if (!(v > w.version) || w.busy) return;
+          if (w.onNewer === poll) { poll(); return; }
+          w.busy = true;
+          return Promise.resolve(w.onNewer(v)).then(null, function () { /* tried again next time */ }).then(function () { w.busy = false; });
+        }, function () { /* offline: the API poll will report it */ });
+    })).then(function () { checking = false; });
   }
 
   // Last-chance save when the page is hidden or closed (keepalive bodies are capped near 64 KB).
@@ -396,7 +436,9 @@
           ready = true;
           if (cfg.onReady) cfg.onReady(p);
           if (rec) status('saved', 'Saved'); else flush();
-          setInterval(poll, POLL);
+          lastPoll = Date.now();
+          setInterval(slowPoll, 1000);
+          setInterval(checkSignals, WATCH);
         }, function (e) {
           status('error', 'Not loaded', e.message);
           showBar((linkId ? 'Could not open this character: ' : 'Could not open that save: ') + e.message +
@@ -405,7 +447,8 @@
             { text: 'Retry', cls: 'btn-ghost', on: function () { location.reload(); } }]);
         });
       }, function () { /* no accounts server here: stay browser-only */ });
-      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushOnExit(); else poll(); });
+      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushOnExit(); else { poll(); checkSignals(); } });
+      document.addEventListener('input', function () { lastKey = Date.now(); }, true);
       window.addEventListener('pagehide', flushOnExit);
     },
 
@@ -433,6 +476,20 @@
       pendingNew = true;
       if (!reuse) fresh = false;
     },
+
+    /*
+     * Watch another record's change signal (item.watch from the API) and call onNewer(version) soon after it
+     * changes; the call is repeated until watch() is called again with that version or newer. A promise
+     * returned from onNewer holds off the next call until it settles. watch(key, null) stops watching.
+     */
+    watch: function (key, url, version, onNewer) {
+      if (!url) { delete watches[key]; return; }
+      var w = watches[key];
+      if (w && w.url === url) { w.version = Math.max(w.version, version); w.onNewer = onNewer; }
+      else watches[key] = { url: url, version: version, onNewer: onNewer, busy: false };
+    },
+    /* True while someone is typing in a text field (so a page can hold off re-rendering under them). */
+    get typing() { return typing(); },
 
     /* For the Ref Screen: calls the API with this page's login. */
     api: function (method, action, query, body) { return call(method, action, query, body); }
