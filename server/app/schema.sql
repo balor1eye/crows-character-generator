@@ -82,3 +82,25 @@ CREATE TABLE IF NOT EXISTS audit_log (
   KEY k_at (at),
   KEY k_user (user_id, at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A player's share link for one character (only the token's hash is kept). Making a new link replaces the old one.
+CREATE TABLE IF NOT EXISTS share_links (
+  character_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  token_hash CHAR(64) NOT NULL,
+  created_at DATETIME NOT NULL,
+  UNIQUE KEY uq_token (token_hash),
+  CONSTRAINT fk_share_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A Ref who added a shared character to a campaign: they can read it and change its conditions,
+-- equipment, and notes until the player (or the Ref) removes the access.
+CREATE TABLE IF NOT EXISTS character_access (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  character_id INT UNSIGNED NOT NULL,
+  ref_user_id INT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL,
+  UNIQUE KEY uq_char_ref (character_id, ref_user_id),
+  KEY k_ref (ref_user_id),
+  CONSTRAINT fk_access_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE,
+  CONSTRAINT fk_access_ref FOREIGN KEY (ref_user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

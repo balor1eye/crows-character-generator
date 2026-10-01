@@ -416,8 +416,10 @@
     resetGear();
     rollCoins();
   }
+  var refView = !!(window.CrowsCloud && window.CrowsCloud.linked);   // a Ref looking at a player's shared character
   function save() {
-    try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+    // In the Ref view this is someone else's character: don't overwrite the Ref's own copy in this browser.
+    if (!refView) try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
     if (window.CrowsCloud) window.CrowsCloud.changed();
   }
   function startNew() { if (window.CrowsCloud) window.CrowsCloud.startNew(); }
@@ -444,6 +446,8 @@
       return liveProps(c, { id: uid++, key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 });
     });
     s.play = normalizePlay(s.play);
+    // Older server copies turned an empty {} into []; named keys on an array would be dropped when saved.
+    if (!s.esAlloc || typeof s.esAlloc !== 'object' || Array.isArray(s.esAlloc)) s.esAlloc = {};
     s.prosperity = typeof s.prosperity === 'number' && isFinite(s.prosperity) ? Math.max(-10, Math.min(10, Math.round(s.prosperity))) : 0;
     state = s;
     syncBonusArrays();
@@ -1102,7 +1106,14 @@
         var b = CROWS.BACKGROUNDS[c.bg];
         return [b ? b.name : '', c.txp ? fmt(c.txp) + ' XP' : '', c.player ? 'played by ' + c.player : ''].filter(Boolean).join(' · ');
       },
-      onReady: function (p) { if (window.CrowsPlay && (p.mode === 'play' || p.mode === 'build')) window.CrowsPlay.setMode(p.mode); }
+      onReady: function (p) {
+        if (window.CrowsPlay && (p.mode === 'play' || p.mode === 'build')) window.CrowsPlay.setMode(p.mode);
+        if (window.CrowsRefView) window.CrowsRefView.ready(state.name, window.CrowsCloud.owner);
+      },
+      onRemote: function () {
+        toast(refView ? 'Updated with the player\u2019s latest changes.' : 'Updated with changes made on another device or by your Ref.');
+        if (window.CrowsRefView) window.CrowsRefView.ready(state.name, window.CrowsCloud.owner);
+      }
     });
   }
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();

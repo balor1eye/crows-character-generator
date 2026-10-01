@@ -9,6 +9,7 @@
   var GEN = 'Crows_Character_Generator.html';
   var REF = 'ref.php';
   var me = null, csrf = null, https = true;
+  var PENDING_SHARE = 'crows-pending-share';
 
   // ---------------------------------------------------------------- helpers
   function $(id) { return document.getElementById(id); }
@@ -62,12 +63,26 @@
     }, function () { throw new Error('Could not reach the server. Check your connection and try again.'); });
   }
   function signedIn(j) { me = j.user; csrf = j.csrf; }
+  /* Where to go after logging in: back to a character link that was opened while logged out, or home. */
+  function afterLogin() {
+    var tok = null;
+    try { tok = sessionStorage.getItem(PENDING_SHARE); sessionStorage.removeItem(PENDING_SHARE); } catch (e) { /* ignore */ }
+    go(tok ? 'share=' + tok : 'home');
+  }
 
   // ---------------------------------------------------------------- routing
   function route() {
     var h = location.hash.replace(/^#/, '');
     var m = /^reset=([0-9a-f]{64})$/.exec(h);
     if (m) return viewReset(m[1]);
+    var sh = /^share=([0-9a-f]{64})$/.exec(h);
+    if (sh) {
+      if (me) return viewShare(sh[1]);
+      // Remember it through login (or account creation), then come back to it.
+      try { sessionStorage.setItem(PENDING_SHARE, sh[1]); } catch (e) { /* ignore */ }
+      history.replaceState(null, '', location.pathname + '#login');
+      h = 'login';
+    }
     var page = h || (me ? 'home' : 'login');
     if (!me && ['login', 'register', 'forgot'].indexOf(page) < 0) page = 'login';
     if (me && ['login', 'register', 'forgot'].indexOf(page) >= 0) page = 'home';
@@ -135,16 +150,18 @@
     ]);
   }
 
+  function pendingShare() { try { return !!sessionStorage.getItem(PENDING_SHARE); } catch (e) { return false; } }
   function viewLogin() {
     show([el('div', { class: 'narrow' }, [
       el('div', { class: 'card' }, [
         el('h1', { text: 'Log in' }),
+        pendingShare() ? el('div', { class: 'msg ok', text: 'Log in (or create an account) to add the character someone shared with you.' }) : null,
         insecureNote(),
         form([
           field('Username or email', input('text', 'login', { autocomplete: 'username', autocapitalize: 'off', spellcheck: 'false' })),
           field('Password', input('password', 'password', { autocomplete: 'current-password' }))
         ], 'Log in', function (v) {
-          return api('POST', 'login', { login: v.login, password: v.password }).then(function (j) { signedIn(j); go('home'); });
+          return api('POST', 'login', { login: v.login, password: v.password }).then(function (j) { signedIn(j); afterLogin(); });
         }),
         el('div', { class: 'links' }, [a('Create an account', '#register', ''), a('Forgot your password?', '#forgot', '')])
       ]),
@@ -166,7 +183,7 @@
         ], 'Create account', function (v) {
           if (v.password !== v.password2) throw new Error('The two passwords don\'t match.');
           return api('POST', 'register', { username: v.username, email: v.email, password: v.password }).then(function (j) {
-            signedIn(j); go('home'); toast('Welcome, ' + me.username + '!');
+            signedIn(j); afterLogin(); toast('Welcome, ' + me.username + '!');
           });
         }),
         el('div', { class: 'links' }, [a('I already have an account', '#login', '')])
@@ -242,7 +259,10 @@
       }, function (e) { list.innerHTML = ''; list.appendChild(el('li', { class: 'empty', text: e.message })); });
     }
     function row(it) {
-      var btns = opts.buttons(it).concat(opts.manage ? [
+      var panel = el('div', { class: 'share-panel', hidden: true });
+      var btns = opts.buttons(it).concat(opts.manage && kind === 'characters' ? [
+        btn('Share', function () { if (panel.hidden) sharePanel(it, panel); else panel.hidden = true; }, 'btn-small btn-ghost', 'Send your Ref a link to this character')
+      ] : []).concat(opts.manage ? [
         btn('Download', function () {
           api('GET', 'get', undefined, 'kind=' + kind + '&id=' + it.id).then(function (j) {
             download(JSON.stringify(j.item.data, null, 2), fileBase(it.name) + K.fileSuffix);
@@ -259,7 +279,8 @@
       return el('li', null, [
         el('div', null, [el('div', { class: 'name', text: it.name || 'Untitled' }),
           el('div', { class: 'meta', text: [it.summary, 'saved ' + when(it.updatedAt)].filter(Boolean).join(' · ') })]),
-        el('div', { class: 'btns' }, btns)
+        el('div', { class: 'btns' }, btns),
+        panel
       ]);
     }
     function upload(input) {
@@ -287,6 +308,80 @@
     ]);
     show([head, opts.intro ? el('p', { class: 'muted', text: opts.intro }) : null, el('div', { class: 'card' }, [list])]);
     load();
+  }
+
+  /*
+   * Sharing one character with a Ref: make (or replace) the link, see which Refs have it, take access away.
+   * Only the link's hash is stored, so a link can be shown once; "New link" makes another and retires the old.
+   */
+  function sharePanel(it, panel) {
+    panel.hidden = false; panel.innerHTML = '';
+    panel.appendChild(el('p', { class: 'muted', text: 'Loading…' }));
+    var linkBox = el('div');
+    function showLink(link) {
+      var box = input('text', 'share', { value: link, readonly: true, 'aria-label': 'Character link' });
+      linkBox.innerHTML = '';
+      linkBox.appendChild(el('div', { class: 'msg ok' }, [
+        'Send this link to your Ref. They can add ' + (it.name || 'this crow') + ' to a campaign, see the sheet, and change its conditions, equipment, and notes. Keep it private: any Ref who has it can do the same.',
+        el('div', { class: 'copy' }, [box, btn('Copy', function () {
+          box.select();
+          (navigator.clipboard ? navigator.clipboard.writeText(link) : Promise.reject()).then(function () { toast('Link copied.'); }, function () { document.execCommand('copy'); toast('Link copied.'); });
+        }, 'btn-small')])]));
+    }
+    function draw(j) {
+      panel.innerHTML = '';
+      panel.appendChild(el('h3', { text: 'Share with your Ref' }));
+      panel.appendChild(el('div', { class: 'row-btns' }, [
+        btn(j.hasLink ? 'New link' : 'Make a link', function () {
+          if (j.hasLink && !confirm('Make a new link? The old one stops working for anyone who hasn\'t used it yet. Refs who already added this crow keep access.')) return;
+          api('POST', 'share.create', { id: it.id }).then(function (r) { j.hasLink = true; draw(j); showLink(r.link); }, function (e) { toast(e.message); });
+        }, 'btn-small btn-primary'),
+        j.hasLink ? btn('Turn off link', function () {
+          api('POST', 'share.disable', { id: it.id }).then(function () { j.hasLink = false; draw(j); toast('The link no longer works. Refs who already added this crow keep access.'); }, function (e) { toast(e.message); });
+        }, 'btn-small btn-ghost') : null
+      ]));
+      panel.appendChild(linkBox);
+      panel.appendChild(el('p', { class: 'fine', text: j.refs.length ? 'Refs with access:' : 'No Ref has added this crow yet.' }));
+      if (j.refs.length) panel.appendChild(el('ul', { class: 'access' }, j.refs.map(function (r) {
+        return el('li', null, [el('span', { text: r.username + ' · since ' + new Date(r.since).toLocaleDateString() }),
+          btn('Remove', function () {
+            if (!confirm('Take away ' + r.username + '\u2019s access to ' + (it.name || 'this crow') + '?')) return;
+            api('POST', 'share.revoke', { accessId: r.accessId }).then(function () { toast('Removed.'); load(); }, function (e) { toast(e.message); });
+          }, 'btn-small btn-danger')]);
+      })));
+    }
+    function load() { api('GET', 'share.get', undefined, 'id=' + it.id).then(draw, function (e) { panel.innerHTML = ''; panel.appendChild(el('p', { class: 'muted', text: e.message })); }); }
+    load();
+  }
+
+  /* Someone opened a character link. Refs pick a campaign to add it to; anyone else is told to pass it on. */
+  function viewShare(token) {
+    nav();
+    var box = el('div', { class: 'card' }, [el('p', { class: 'muted', text: 'Loading…' })]);
+    show([el('div', { class: 'narrow' }, [el('h1', { text: 'Shared character' }), box])]);
+    if (!me.canRef) {
+      box.innerHTML = '';
+      box.appendChild(el('p', { text: 'This is a link to someone\u2019s character. Only Refs can add characters to a campaign, so send it to your Ref.' }));
+      box.appendChild(a('Home', '#home', 'btn'));
+      return;
+    }
+    Promise.all([api('GET', 'link.preview', undefined, 'token=' + token), api('GET', 'list', undefined, 'kind=campaigns')]).then(function (res) {
+      var c = res[0], camps = res[1].items;
+      box.innerHTML = '';
+      box.appendChild(el('h2', { text: c.name || 'Unnamed crow' }));
+      box.appendChild(el('p', { class: 'muted', text: [c.summary, 'played by ' + c.owner].filter(Boolean).join(' · ') }));
+      if (c.own) box.appendChild(el('div', { class: 'msg warn', text: 'This is your own character.' }));
+      if (c.accessId) box.appendChild(el('div', { class: 'msg ok', text: 'You already have access to this crow. Adding it to another campaign is fine too.' }));
+      box.appendChild(el('p', { text: 'Add it to which campaign? You\u2019ll be able to open the sheet and change its conditions, equipment, and notes.' }));
+      box.appendChild(el('ul', { class: 'rows' }, camps.map(function (cp) {
+        return el('li', null, [el('div', null, [el('div', { class: 'name', text: cp.name || 'Untitled' }), el('div', { class: 'meta', text: cp.summary || '' })]),
+          a('Add to this campaign', REF + '?id=' + cp.id + '#addlink=' + token, 'btn btn-small btn-primary')]);
+      }).concat([el('li', null, [el('div', { class: 'name', text: 'A new campaign' }), a('Start one with this crow', REF + '?new=1#addlink=' + token, 'btn btn-small')])])));
+    }, function (e) {
+      box.innerHTML = '';
+      box.appendChild(el('p', { text: e.message }));
+      box.appendChild(a('Home', '#home', 'btn'));
+    });
   }
 
   function viewCharacters() {
@@ -413,7 +508,8 @@
       reset_requested: 'Asked for reset email', password_changed: 'Changed password', email_changed: 'Changed email',
       password_check_failed: 'Wrong current password', logout_others: 'Logged out other devices', account_deleted: 'Deleted own account',
       role_set: 'Role changed', admin_granted: 'Made admin', admin_revoked: 'Admin removed', reset_link_made: 'Reset link made',
-      user_deleted: 'Account deleted' };
+      user_deleted: 'Account deleted', share_link_made: 'Made a share link', share_link_disabled: 'Turned off share link',
+      share_redeemed: 'Ref added a shared crow', share_revoked: 'Took away a Ref\u2019s access' };
     var logBox = el('div', null, [btn('Show security log', function () {
       logBox.innerHTML = '<p class="muted">Loading…</p>';
       api('GET', 'admin.audit').then(function (j) {

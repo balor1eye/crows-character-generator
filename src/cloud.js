@@ -8,6 +8,12 @@
  *
  * URL parameters: ?id=<n> opens that saved record, ?new=1 starts a new one; with neither, the record
  * last open in this browser is reopened (or the current local state is saved as a new one).
+ * ?link=<n> is the Ref's view of a character a player shared: only conditions, equipment, and notes
+ * are sent back, and the server applies just those.
+ *
+ * Several windows (or a player and their Ref) can have the same character open. Each polls for newer
+ * versions, and changes are merged three ways against the last version both sides agreed on, so edits
+ * to different parts never clobber each other; only a real clash (both changed the same thing) asks.
  *
  * The app calls CrowsCloud.attach(opts) once at start-up, CrowsCloud.changed() from its save(),
  * and CrowsCloud.startNew() just before it replaces the whole thing (new, random, load file).
@@ -18,11 +24,19 @@
   var API = 'api.php';
   var DELAY = 1200;            // ms after the last change before saving
   var MAX_WAIT = 8000;         // ...but never later than this after the first unsaved change
+  var POLL = 10000;            // how often to look for changes made elsewhere
+  // What a Ref may change on a shared character (must match SHARED_FIELDS in server/app/api.php).
+  var LINK_FIELDS = [{ name: 'inv', path: ['inv'], label: 'equipment' }, { name: 'notes', path: ['notes'], label: 'notes' },
+    { name: 'conds', path: ['play', 'conds'], label: 'conditions' }];
+
   var cfg = null;              // attach() options
   var user = null, csrf = null;
+  var linkId = null;           // set in the Ref's view of a shared character
+  var owner = '';              // whose character that is
   var rec = null;              // { id, version } of the linked record
   var ready = false;           // true once the account copy is loaded (changes before that are ignored)
-  var lastSent = null;         // JSON of the last data the server has
+  var lastSent = null;         // JSON of the data the server has (as this app represents it)
+  var base = null;             // the same, parsed: the common ancestor for three-way merges
   var timer = null, inFlight = false, again = false, retryMs = 0, firstChange = 0;
   var pendingNew = false, fresh = false;
   var gen = 0;                 // bumped when the app starts a new record, so late replies for the old one are ignored
@@ -57,6 +71,59 @@
     });
   }
   function kq() { return 'kind=' + cfg.kind; }
+  function getAction() { return linkId ? 'link.get' : 'get'; }
+  function getQuery(id) { return (linkId ? '' : kq() + '&') + 'id=' + id; }
+
+  // ---------------------------------------------------------------- merging
+  /* JSON with sorted keys, so two values compare equal whatever order their keys were written in. */
+  function stable(v) {
+    if (v === undefined) return 'undefined';
+    if (v === null || typeof v !== 'object') return JSON.stringify(v);
+    if (Array.isArray(v)) return '[' + v.map(stable).join(',') + ']';
+    return '{' + Object.keys(v).sort().filter(function (k) { return v[k] !== undefined; })
+      .map(function (k) { return JSON.stringify(k) + ':' + stable(v[k]); }).join(',') + '}';
+  }
+  function same(a, b) { return stable(a) === stable(b); }
+  function isObj(v) { return v !== null && typeof v === 'object' && !Array.isArray(v); }
+  function copy(v) { return v === undefined ? undefined : JSON.parse(JSON.stringify(v)); }
+
+  /*
+   * Three-way merge of plain JSON: whichever side changed a value since `b` wins; objects merge key by key,
+   * arrays and other values are taken whole. Returns { value, clashes: [paths changed on both sides] }.
+   */
+  function merge3(b, l, r, path, clashes) {
+    clashes = clashes || [];
+    path = path || [];
+    var value;
+    if (same(l, r) || same(r, b)) value = copy(l);
+    else if (same(l, b)) value = copy(r);
+    else if (isObj(l) && isObj(r)) {
+      value = {};
+      var bb = isObj(b) ? b : {};
+      Object.keys(l).concat(Object.keys(r)).forEach(function (k) {
+        if (k in value) return;
+        var m = merge3(bb[k], l[k], r[k], path.concat(k), clashes).value;
+        if (m !== undefined) value[k] = m;
+      });
+    } else { clashes.push(path.join('.') || '(everything)'); value = copy(l); }
+    return { value: value, clashes: clashes };
+  }
+  function getPath(o, p) { for (var i = 0; i < p.length; i++) { if (!isObj(o)) return undefined; o = o[p[i]]; } return o; }
+  function setPath(o, p, v) {
+    for (var i = 0; i < p.length - 1; i++) { if (!isObj(o[p[i]])) o[p[i]] = {}; o = o[p[i]]; }
+    o[p[p.length - 1]] = copy(v);
+  }
+  /* In the Ref's view only the shared fields are theirs; everything else always follows the player. */
+  function mergeLinked(b, l, r) {
+    var value = copy(r), clashes = [];
+    LINK_FIELDS.forEach(function (f) {
+      var bv = getPath(b, f.path), lv = getPath(l, f.path), rv = getPath(r, f.path);
+      if (same(lv, bv) || same(lv, rv)) return;              // the Ref didn't change it: take the player's
+      if (!same(rv, bv)) clashes.push(f.label);              // both changed it
+      setPath(value, f.path, lv);
+    });
+    return { value: value, clashes: clashes };
+  }
 
   // ---------------------------------------------------------------- UI
   function injectStyles() {
@@ -91,8 +158,8 @@
   function status(s, text, title) {
     if (!chip) return;
     chip.setAttribute('data-s', s);
-    chip.querySelector('.txt').textContent = text;
-    chip.title = title || (user ? 'Account: ' + user.username : '');
+    chip.querySelector('.txt').textContent = (linkId && owner ? owner + '’s crow · ' : '') + text;
+    chip.title = title || (linkId ? 'Ref view: you can change conditions, equipment, and notes' : user ? 'Account: ' + user.username : '');
   }
   function closeBar() { if (bar) { bar.remove(); bar = null; } }
   function showBar(msg, buttons) {
@@ -112,19 +179,31 @@
   // ---------------------------------------------------------------- linking
   function linkKey() { return 'crows-cloud-' + cfg.kind + '-' + user.id; }
   function remember(id) {
+    if (linkId) return;
     try { if (id) localStorage.setItem(linkKey(), String(id)); else localStorage.removeItem(linkKey()); } catch (e) { /* ignore */ }
     var url = location.pathname + (id ? '?id=' + id : '') + location.hash;
     try { history.replaceState(null, '', url); } catch (e) { /* ignore */ }
   }
   function remembered() { try { return parseInt(localStorage.getItem(linkKey()), 10) || null; } catch (e) { return null; } }
 
+  /* Show `data` in the app and treat it as what the server has. */
+  function adoptRemote(item, data) {
+    rec = { id: item.id, version: item.version };
+    if (item.owner) owner = item.owner;
+    cfg.apply(copy(data));
+    synced();
+  }
+  /* The app's current state is exactly what the server has. */
+  function synced() {
+    lastSent = JSON.stringify(cfg.getData());
+    base = JSON.parse(lastSent);
+  }
+
   function openRecord(id) {
-    return call('GET', 'get', kq() + '&id=' + id).then(function (j) {
+    return call('GET', getAction(), getQuery(id)).then(function (j) {
       var item = j.item;
       if (!cfg.valid(item.data)) throw new Error('That save could not be read.');
-      rec = { id: item.id, version: item.version };
-      cfg.apply(item.data);
-      lastSent = JSON.stringify(cfg.getData());
+      adoptRemote(item, item.data);
       remember(item.id);
       return item;
     });
@@ -134,6 +213,7 @@
   function payload(data) { return { data: data, name: cfg.name(data) || '', summary: cfg.summary(data) || '' }; }
 
   function schedule(ms) { clearTimeout(timer); timer = setTimeout(function () { flush(); }, ms); }
+  function busy() { return !!(timer || inFlight); }
 
   function flush(force) {
     clearTimeout(timer); timer = null; firstChange = 0;
@@ -141,6 +221,7 @@
     if (inFlight) { again = true; return; }
     var data = cfg.getData(), json = JSON.stringify(data);
     if (rec && json === lastSent && !force) { status('saved', 'Saved'); return; }
+    if (linkId) return flushLinked(data, json);
     inFlight = true; again = false;
     // The first content sent after startNew() is the new record; anything sent after that is an edit.
     if (pendingNew) { pendingNew = false; fresh = true; } else fresh = false;
@@ -151,25 +232,14 @@
     p.then(function (j) {
       if (myGen !== gen) return;
       rec = { id: j.item.id, version: j.item.version };
-      lastSent = json; retryMs = 0;
+      lastSent = json; base = JSON.parse(json); retryMs = 0;
       remember(rec.id);
       status('saved', 'Saved', 'Saved to your account at ' + new Date().toLocaleTimeString());
     }, function (e) {
       if (myGen !== gen) return;
-      if (e.status === 409 && e.body && e.body.item) return conflict(e.body.item);
+      if (e.status === 409 && e.body && e.body.item) return changedElsewhere(e.body.item.id);
       if (e.status === 404 && rec) { rec = null; remember(null); again = true; return; }  // deleted elsewhere: save as new
-      if (e.status === 401 || e.status === 403) {
-        status('error', 'Not saved', e.message);
-        showBar(e.message + ' Your changes are kept in this browser until you log in again.', [
-          { text: 'Log in', cls: 'btn-primary', on: function () { location.href = './#login'; } },
-          { text: 'Dismiss', cls: 'btn-ghost', on: closeBar }]);
-        return;
-      }
-      if (e.status === 413 || (e.status === 409 && !rec)) { status('error', 'Not saved', e.message); showBar(e.message, [{ text: 'OK', on: closeBar }]); return; }
-      // Network trouble or a server hiccup: keep retrying, slower each time.
-      retryMs = Math.min(60000, retryMs ? retryMs * 2 : 4000);
-      status('error', 'Offline, retrying', 'Could not reach the server (' + e.message + '). Changes are kept in this browser.');
-      schedule(retryMs);
+      failed(e);
     }).then(function () {
       if (myGen !== gen) return;   // startNew() already released the lock
       inFlight = false;
@@ -177,48 +247,144 @@
     });
   }
 
-  function conflict(item) {
+  /* The Ref's save: just the shared fields that differ from what the server last had. */
+  function flushLinked(data, json) {
+    var fields = {}, from = {}, n = 0;
+    LINK_FIELDS.forEach(function (f) {
+      var lv = getPath(data, f.path), bv = getPath(base, f.path);
+      if (!same(lv, bv)) { fields[f.name] = lv === undefined ? null : lv; from[f.name] = bv === undefined ? null : bv; n++; }
+    });
+    if (!n) { lastSent = json; status('saved', 'Saved'); return; }   // nothing the Ref may change was changed
+    inFlight = true; again = false;
+    status('saving', 'Saving…');
+    call('POST', 'link.save', '', { id: linkId, fields: fields, base: from }).then(function (j) {
+      retryMs = 0;
+      var item = j.item;
+      rec.version = item.version;
+      // Show the player's latest too, unless the Ref has changed something new meanwhile.
+      if (JSON.stringify(cfg.getData()) === json) adoptRemote(item, item.data);
+      else base = item.data;
+      status('saved', 'Saved', 'Saved to ' + owner + '’s character at ' + new Date().toLocaleTimeString());
+    }, function (e) {
+      if (e.status === 409 && e.body && e.body.item) return mergeIn(e.body.item, true);
+      failed(e);
+    }).then(function () {
+      inFlight = false;
+      if (again) schedule(300);
+    });
+  }
+
+  function failed(e) {
+    if (e.status === 401 || e.status === 403 || (linkId && e.status === 404)) {
+      status('error', 'Not saved', e.message);
+      showBar(e.message + (linkId ? '' : ' Your changes are kept in this browser until you log in again.'), [
+        { text: linkId ? 'Home' : 'Log in', cls: 'btn-primary', on: function () { location.href = linkId ? './#home' : './#login'; } },
+        { text: 'Dismiss', cls: 'btn-ghost', on: closeBar }]);
+      return;
+    }
+    if (e.status === 413 || e.status === 409) { status('error', 'Not saved', e.message); showBar(e.message, [{ text: 'OK', on: closeBar }]); return; }
+    // Network trouble or a server hiccup: keep retrying, slower each time.
+    retryMs = Math.min(60000, retryMs ? retryMs * 2 : 4000);
+    status('error', 'Offline, retrying', 'Could not reach the server (' + e.message + '). Changes are kept in this browser.');
+    schedule(retryMs);
+  }
+
+  /* Someone else saved first: fetch their version and merge it with ours. */
+  function changedElsewhere(id) {
+    call('GET', getAction(), getQuery(id)).then(function (j) { mergeIn(j.item, true); }, failed);
+  }
+
+  /*
+   * Bring in a newer version from the server. With nothing unsaved here it's simply shown; otherwise it's
+   * merged with the local changes, which are then saved on top. A real clash asks which side to keep.
+   */
+  function mergeIn(item, thenSave) {
+    if (!cfg.valid(item.data)) return;
+    var local = cfg.getData();
+    var m = linkId ? mergeLinked(base, local, item.data) : merge3(base, local, item.data);
+    if (m.clashes.length) return clash(item, m.clashes);
+    var unsaved = !same(m.value, item.data);
+    adoptRemote(item, item.data);          // the server's version is the new common ancestor...
+    if (unsaved) cfg.apply(m.value);       // ...with our own changes laid back on top
+    if (cfg.onRemote) cfg.onRemote();
+    if (unsaved && thenSave !== false) flush();
+    else status('saved', 'Saved');
+  }
+
+  function clash(item, where) {
     status('conflict', 'Changed elsewhere');
-    var what = cfg.kind === 'campaigns' ? 'campaign' : 'character';
-    showBar('This ' + what + ' was saved from another window or device at ' + new Date(item.updatedAt).toLocaleTimeString() + '. Which version do you want to keep?', [
-      { text: 'Keep this one', cls: 'btn-primary', on: function () { closeBar(); flush(true); } },
-      { text: 'Load the other one', cls: 'btn-ghost', on: function () {
+    var who = linkId ? 'The player' : 'Another window or device';
+    var what = linkId ? 'this character’s ' + where.join(', ') : 'this ' + (cfg.kind === 'campaigns' ? 'campaign' : 'character');
+    showBar(who + ' changed ' + what + ' at the same time as you (saved ' + new Date(item.updatedAt).toLocaleTimeString() + '). Which version do you want to keep?', [
+      { text: 'Keep mine', cls: 'btn-primary', on: function () {
         closeBar();
-        openRecord(item.id).then(function () { status('saved', 'Saved'); }, function (e) { status('error', 'Not loaded', e.message); });
-      } }]);
+        // Re-base onto theirs, then resend ours.
+        var mine = cfg.getData();
+        if (linkId) {
+          var mixed = copy(item.data);
+          LINK_FIELDS.forEach(function (f) { setPath(mixed, f.path, getPath(mine, f.path)); });
+          adoptRemote(item, item.data);
+          cfg.apply(mixed);
+        } else {
+          rec = { id: item.id, version: item.version };
+          base = copy(item.data); lastSent = JSON.stringify(item.data);
+        }
+        flush(true);
+      } },
+      { text: 'Use theirs', cls: 'btn-ghost', on: function () { closeBar(); adoptRemote(item, item.data); status('saved', 'Saved'); } }]);
+  }
+
+  /* Look for changes made elsewhere (another device, the player, or their Ref). */
+  function poll() {
+    if (!ready || !user || !rec || busy() || bar || document.visibilityState === 'hidden') return;
+    var myGen = gen, id = rec.id;
+    call('GET', getAction(), getQuery(id) + '&known=' + rec.version).then(function (j) {
+      if (myGen !== gen || !rec || rec.id !== id || busy() || j.item.unchanged) return;
+      mergeIn(j.item);
+    }, function (e) { if (e.status === 404 || e.status === 403) failed(e); });
   }
 
   // Last-chance save when the page is hidden or closed (keepalive bodies are capped near 64 KB).
   function flushOnExit() {
     if (!ready || !user || !rec || inFlight) return;
     var data = cfg.getData(), json = JSON.stringify(data);
-    if (json === lastSent || json.length > 60000) { if (json !== lastSent) flush(); return; }
+    if (json === lastSent) return;
+    if (linkId || json.length > 60000) { flush(); return; }
     clearTimeout(timer);
     var body = payload(data); body.id = rec.id; body.version = rec.version;
-    call('POST', 'save', kq(), body, true).then(function (j) { rec.version = j.item.version; lastSent = json; }, function () { /* retried on return */ });
+    call('POST', 'save', kq(), body, true).then(function (j) { rec.version = j.item.version; lastSent = json; base = JSON.parse(json); }, function () { /* retried on return */ });
   }
 
   // ---------------------------------------------------------------- public API
   var Cloud = {
     get user() { return user; },
     get active() { return !!user && ready; },
+    get owner() { return owner; },
+    /* True in a Ref's view of a player's shared character (?link=). Known before attach() runs. */
+    get linked() { return /^https?:$/.test(location.protocol) && !!parseInt(params().link, 10); },
 
     /*
      * opts: kind ('characters' | 'campaigns'), getData(), apply(data), valid(data),
-     *       name(data), summary(data), fresh() (make a brand-new thing for ?new=1), onReady(params)
+     *       name(data), summary(data), fresh() (make a brand-new thing for ?new=1), onReady(params),
+     *       onRemote() (a change made elsewhere was just brought in)
      */
     attach: function (opts) {
       cfg = opts;
       if (!/^https?:$/.test(location.protocol) || !window.fetch) return;
       var p = params();
+      linkId = cfg.kind === 'characters' ? parseInt(p.link, 10) || null : null;
       call('GET', 'me').then(function (j) {
         user = j.user; csrf = j.csrf;
-        if (user && cfg.kind === 'campaigns' && !user.canRef) user = null;
+        if (user && (cfg.kind === 'campaigns' || linkId) && !user.canRef) user = null;
         showChip();
-        if (!user) return;
+        if (!user) {
+          if (linkId) showBar('Log in with your Ref account to see this character.', [{ text: 'Log in', cls: 'btn-primary', on: function () { location.href = './#login'; } }]);
+          return;
+        }
         var id = parseInt(p.id, 10) || null;
         var step;
-        if (p['new'] !== undefined) { cfg.fresh(); pendingNew = true; step = Promise.resolve(); remember(null); }
+        if (linkId) step = openRecord(linkId);
+        else if (p['new'] !== undefined) { cfg.fresh(); pendingNew = true; step = Promise.resolve(); remember(null); }
         else if (id || remembered()) {
           var want = id || remembered();
           step = openRecord(want).catch(function (e) {
@@ -230,14 +396,16 @@
           ready = true;
           if (cfg.onReady) cfg.onReady(p);
           if (rec) status('saved', 'Saved'); else flush();
+          setInterval(poll, POLL);
         }, function (e) {
           status('error', 'Not loaded', e.message);
-          showBar('Could not open that save: ' + e.message + ' You are looking at the copy kept in this browser, which is not being saved to your account.', [
+          showBar((linkId ? 'Could not open this character: ' : 'Could not open that save: ') + e.message +
+            (linkId ? '' : ' You are looking at the copy kept in this browser, which is not being saved to your account.'), [
             { text: 'Home', cls: 'btn-primary', on: function () { location.href = './#home'; } },
             { text: 'Retry', cls: 'btn-ghost', on: function () { location.reload(); } }]);
         });
       }, function () { /* no accounts server here: stay browser-only */ });
-      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushOnExit(); });
+      document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushOnExit(); else poll(); });
       window.addEventListener('pagehide', flushOnExit);
     },
 
@@ -255,16 +423,19 @@
      * rerolling "Random crow" doesn't leave a trail of throwaway saves).
      */
     startNew: function () {
-      if (!ready || !user) return;
+      if (!ready || !user || linkId) return;
       var reuse = fresh && (rec || inFlight);
       if (!reuse) {
         if (timer || (rec && JSON.stringify(cfg.getData()) !== lastSent)) flush();
-        gen++; rec = null; lastSent = null; remember(null);
+        gen++; rec = null; lastSent = null; base = null; remember(null);
         inFlight = false;   // a reply for the old record is now ignored, so don't wait on it
       }
       pendingNew = true;
       if (!reuse) fresh = false;
-    }
+    },
+
+    /* For the Ref Screen: calls the API with this page's login. */
+    api: function (method, action, query, body) { return call(method, action, query, body); }
   };
   window.CrowsCloud = Cloud;
 })();

@@ -96,7 +96,8 @@ which GitHub Pages publishes.
 
 The apps are also hosted with accounts at **https://joshuaramsey.com/crows/**. Log in to keep your characters
 (and, for Refs, campaigns) on the server with autosave, or continue as a guest. An admin marks accounts as
-players or Refs, and only Refs can open the Ref Screen there. The server code and deploy steps are in
+players or Refs, and only Refs can open the Ref Screen there. Players can share a character with their Ref by link. The Ref adds it to a campaign and can open the
+sheet to change its conditions, equipment, and notes, and both see each other's changes live. The server code and deploy steps are in
 [`server/README.md`](server/README.md). The offline files and the GitHub Pages copy work as before, with no
 account.
 
@@ -109,7 +110,8 @@ dist/index.html                       redirects the site root to the app (for Gi
 .github/workflows/pages.yml           publishes dist/ to GitHub Pages
 src/index.html, app.css, app.js       the app (dev version loads the files below separately)
 src/play.js                           Play mode: vitals, dice, rests, usage dice, XP tracking
-src/cloud.js                          account autosave for both apps (inactive without the accounts server)
+src/cloud.js                          account autosave, live sync, and merging for both apps (inactive without the accounts server)
+src/refview.js                        the Ref's limited view of a player's shared character
 server/                               the accounts site: PHP API, portal pages, deploy script
 src/game-data.js                      backgrounds, expertises, item cards, tables
 src/traits-data.js                    all 23 trait trees + their connection lines (extracted from the book)

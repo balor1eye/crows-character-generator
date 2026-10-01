@@ -124,10 +124,17 @@
   function startNew() { if (window.CrowsCloud) window.CrowsCloud.startNew(); }
   function isCampaign(s) { return !!(s && typeof s === 'object' && s.v === 1 && s.session && typeof s.session === 'object'); }
   function load() {
-    try { var raw = localStorage.getItem(STORAGE_KEY); if (raw) { var s = JSON.parse(raw); if (s && s.v === 1) return withDefaults(freshState(), s); } } catch (e) { /* ignore */ }
+    try { var raw = localStorage.getItem(STORAGE_KEY); if (raw) { var s = JSON.parse(raw); if (s && s.v === 1) return repairObjects(withDefaults(freshState(), s)); } } catch (e) { /* ignore */ }
     return null;
   }
   function S() { return state.session; }
+  /* Older server copies turned empty {} into []; named keys on an array are dropped when saved. */
+  function repairObjects(s) {
+    (s.session && s.session.combat && s.session.combat.list || []).forEach(function (c) {
+      ['conds', 'used'].forEach(function (k) { if (!c[k] || typeof c[k] !== 'object' || Array.isArray(c[k])) c[k] = {}; });
+    });
+    return s;
+  }
 
   // ------------------------------------------------------------------ log
   function log(kind, text) {
@@ -577,6 +584,19 @@
 
   // ------------------------------------------------------------------ import a character file from the character generator
   function importCharacter(s) {
+    var pc = pcFromSave(s);
+    var existing = state.party.filter(function (p) { return p.name && p.name === pc.name; })[0];
+    if (existing) {
+      pc.id = existing.id; pc.miasma = existing.miasma || []; pc.ad = existing.ad || 0;
+      if (existing.link) { pc.link = existing.link; pc.owner = existing.owner; }
+      state.party[state.party.indexOf(existing)] = pc;
+      return pc.name + ' (updated)';
+    }
+    state.party.push(pc);
+    return pc.name || 'a crow';
+  }
+  /* A party entry built from a Character Generator save. */
+  function pcFromSave(s) {
     if (!s || s.v !== 1 || typeof s.bg !== 'number' || !REF.BACKGROUNDS[s.bg]) throw new Error('not a Crows character file');
     var bg = REF.BACKGROUNDS[s.bg], two = bg[1].indexOf(s.twoChar) >= 0 ? s.twoChar : bg[1][0];
     var others = REF.CHARS.filter(function (c) { return c !== two; });
@@ -592,11 +612,47 @@
       stMax: stMax, st: typeof play.stamina === 'number' ? clamp(play.stamina, 0, stMax) : stMax, ad: 0,
       wounds: play.wounds ? Object.keys(play.wounds).length : 0, cruelty: play.cruelty | 0, txp: s.txp | 0, pending: play.pendingXP | 0,
       status: 'active', conn: s.connName || '', rel: s.connRel || '', benefit: s.connBenefit || '', miasma: [], notes: s.notes || '' };
-    var existing = state.party.filter(function (p) { return p.name && p.name === pc.name; })[0];
-    if (existing) { pc.id = existing.id; pc.miasma = existing.miasma || []; pc.ad = existing.ad || 0; state.party[state.party.indexOf(existing)] = pc; return pc.name + ' (updated)'; }
-    state.party.push(pc);
-    return pc.name || 'a crow';
+    return pc;
   }
+
+  // ------------------------------------------------------------------ crows linked to a player's account
+  /*
+   * A player can share a character with a link (from their character list). Added here, the crow stays tied
+   * to the player's sheet: "Open sheet" shows the whole thing, where the Ref can change conditions, equipment,
+   * and notes, and the party entry refreshes from the sheet. Needs the Ref to be logged in on the hosted site.
+   */
+  function cloudOn() { return !!(window.CrowsCloud && window.CrowsCloud.active); }
+  function linkToken(text) { var m = /(?:share=|addlink=)?([0-9a-f]{64})/.exec(String(text || '').trim()); return m ? m[1] : null; }
+  /* Add or refresh a linked crow from the server's copy. Ref-side bookkeeping (status, AD, Miasma, Ref notes) is kept. */
+  function linkPC(item) {
+    var pc = pcFromSave(item.data), existing = state.party.filter(function (p) { return p.link === item.id; })[0];
+    pc.link = item.id; pc.owner = item.owner || '';
+    if (existing) {
+      ['id', 'status', 'ad', 'miasma', 'notes', 'pending'].forEach(function (k) { if (k in existing) pc[k] = existing[k]; });
+      state.party[state.party.indexOf(existing)] = pc;
+    } else state.party.push(pc);
+    return pc;
+  }
+  function addFromLink(text) {
+    var tok = linkToken(text);
+    if (!tok) { toast('That doesn\'t look like a character link. Ask the player to copy it again from their character list.'); return Promise.resolve(); }
+    return window.CrowsCloud.api('POST', 'link.redeem', '', { token: tok }).then(function (j) {
+      var pc = linkPC(j.item);
+      log('', 'Added ' + (pc.name || 'a crow') + ' (' + pc.owner + '\u2019s character) to the party.');
+      save(); render(); toast('Added ' + (pc.name || 'the crow') + '.');
+    }, function (e) { toast(e.message); });
+  }
+  function refreshLinked(p, quiet) {
+    return window.CrowsCloud.api('GET', 'link.get', 'id=' + p.link).then(function (j) {
+      linkPC(j.item); save(); render(); if (!quiet) toast('Updated ' + (j.item.name || 'the crow') + ' from the sheet.');
+    }, function (e) { if (!quiet || e.status === 404) toast((p.name || 'A crow') + ': ' + e.message); });
+  }
+  function unlinkPC(p, quietly) {
+    var id = p.link;
+    delete p.link; delete p.owner; save(); render();
+    if (cloudOn()) window.CrowsCloud.api('POST', 'link.remove', '', { id: id }).then(function () { if (!quietly) toast('Unlinked. The crow stays in the party as a copy.'); }, function () { /* already gone */ });
+  }
+  function openSheet(p) { window.open('Crows_Character_Generator.html?link=' + encodeURIComponent(p.link) + '&mode=play', '_blank', 'noopener'); }
   function newPC() { return { id: nid(), name: '', player: '', bg: '', feature: '', A: 0, M: 0, S: 0, stMax: 7, st: 7, ad: 0, wounds: 0, cruelty: 0, txp: 0, pending: 0, status: 'active', conn: '', rel: '', benefit: '', miasma: [], notes: '' }; }
 
   // ================================================================== RENDERING
@@ -1084,7 +1140,12 @@
       });
     } });
     card('sec-party', el('h2', null, ['The Crows', el('small', { text: plural(activePCs().length, 'active crow') })]), [
-      el('p', { class: 'hint', text: 'Keep the party\'s key numbers at hand. Import the .json save files from the Crows Character Generator (Save file), or add crows by hand. Importing a crow with the same name updates it.' }),
+      el('p', { class: 'hint', text: 'Keep the party\'s key numbers at hand. Import the .json save files from the Crows Character Generator (Save file), or add crows by hand. Importing a crow with the same name updates it.' +
+        (cloudOn() ? ' Players can also send you a link to their character: added that way, the crow stays tied to their sheet, which you can open to change conditions, equipment, and notes.' : '') }),
+      cloudOn() ? el('div', { class: 'row', style: 'margin-bottom:.5rem' }, [
+        (ui.linkIn = el('input', { type: 'url', class: 'in grow', placeholder: 'Paste a player\u2019s character link', 'aria-label': 'Character link', value: ui.linkText || '',
+          oninput: function () { ui.linkText = this.value; }, onkeydown: function (e) { if (e.key === 'Enter') { addFromLink(this.value); ui.linkText = ''; } } })),
+        btn('Add from link', function () { addFromLink(ui.linkIn.value); ui.linkText = ''; }, 'btn-primary', 'The crow stays tied to the player\u2019s sheet')]) : null,
       el('div', { class: 'row', style: 'margin-bottom:.7rem' }, [btn('Add crow', function () { state.party.push(newPC()); save(); render(); }, 'btn-primary'),
         el('label', { class: 'btn file-btn' }, ['Import character files', fileIn]),
         btn('Everyone to full Stamina', function () { activePCs().forEach(function (p) { p.st = p.stMax; }); save(); render(); }, 'btn-ghost')]),
@@ -1148,7 +1209,17 @@
     return el('div', { class: 'pc-card ' + (p.status !== 'active' ? p.status : '') }, [
       el('div', { class: 'row center' }, [el('div', { class: 'grow' }, [inp(p, 'name', { placeholder: 'Crow name', 'aria-label': 'Name', class: 'in pc-name' })]),
         sel(p, 'status', [['active', 'Active'], ['dead', 'Dead'], ['retired', 'Retired'], ['lost', 'Lost to the Miasma'], ['away', 'Sitting out']], { class: 'in mini', label: 'Status' }),
-        el('button', { type: 'button', class: 'x', text: '×', 'aria-label': 'Delete crow', onclick: function () { if (confirm('Delete ' + (p.name || 'this crow') + ' from the party?')) { state.party = state.party.filter(function (x) { return x !== p; }); save(); render(); } } })]),
+        el('button', { type: 'button', class: 'x', text: '×', 'aria-label': 'Delete crow', onclick: function () {
+          if (!confirm('Delete ' + (p.name || 'this crow') + ' from the party?')) return;
+          if (p.link) unlinkPC(p, true);
+          state.party = state.party.filter(function (x) { return x !== p; }); save(); render();
+        } })]),
+      p.link ? el('div', { class: 'row center pc-link' }, [
+        el('span', { class: 'fine grow', text: 'Linked to ' + (p.owner ? p.owner + '\u2019s' : 'the player\u2019s') + ' sheet' }),
+        cloudOn() ? btn('Open sheet', function () { openSheet(p); }, 'btn-small btn-primary', 'See the whole sheet; change conditions, equipment, and notes') : null,
+        cloudOn() ? btn('Update from sheet', function () { refreshLinked(p); }, 'btn-small', 'Refresh name, characteristics, Stamina, wounds, and XP from the sheet') : null,
+        cloudOn() ? btn('Unlink', function () { if (confirm('Unlink ' + (p.name || 'this crow') + ' from the player\u2019s sheet? You keep this copy, but lose access to the sheet.')) unlinkPC(p); }, 'btn-small btn-ghost') : null
+      ]) : null,
       el('div', { class: 'grid2' }, [field('Player', inp(p, 'player')), field('Background', inp(p, 'bg', { list: 'bg-list' }))]),
       el('div', { class: 'grid3' }, [
         field('Agility', inp(p, 'A', { type: 'number', min: -5, max: 5 })), field('Mind', inp(p, 'M', { type: 'number', min: -5, max: 5 }, { re: true })), field('Strength', inp(p, 'S', { type: 'number', min: -5, max: 5 })),
@@ -1424,9 +1495,18 @@
       kind: 'campaigns',
       getData: function () { return state; },
       valid: isCampaign,
-      apply: function (data) { state = withDefaults(freshState(), clone(data)); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render(); },
+      apply: function (data) { state = repairObjects(withDefaults(freshState(), clone(data))); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render(); },
       fresh: function () { state = freshState(); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render(); },
       name: function (c) { return c.name || (c.village && c.village.name) || 'Untitled campaign'; },
+      onReady: function () {
+        // Refresh crows tied to players' sheets, then add one passed from the home page (#addlink=<token>).
+        state.party.filter(function (p) { return p.link; }).forEach(function (p) { refreshLinked(p, true); });
+        var tok = linkToken((/addlink=([0-9a-f]{64})/.exec(location.hash) || [])[1]);
+        if (tok) {
+          try { history.replaceState(null, '', location.pathname + location.search); } catch (e) { /* ignore */ }
+          addFromLink(tok).then(function () { setTab('party'); });
+        }
+      },
       summary: function (c) {
         var crows = (c.party || []).length;
         return ['Session ' + ((c.session && c.session.n) || 1), crows ? crows + (crows === 1 ? ' crow' : ' crows') : '',

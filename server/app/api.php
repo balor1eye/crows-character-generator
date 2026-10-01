@@ -21,14 +21,30 @@ final class ApiError extends Exception {
 
 function fail(string $msg, int $status = 400, array $extra = []): never { throw new ApiError($msg, $status, $extra); }
 
+function raw_body(): string {
+    static $raw = null;
+    return $raw ??= (string)file_get_contents('php://input', false, null, 0, MAX_DATA_BYTES + 100000);
+}
 function body(): array {
     static $b = null;
     if ($b !== null) return $b;
-    $raw = file_get_contents('php://input', false, null, 0, MAX_DATA_BYTES + 100000);
-    $b = $raw === '' || $raw === false ? [] : json_decode($raw, true, 64);
+    $raw = raw_body();
+    $b = $raw === '' ? [] : json_decode($raw, true, 64);
     if (!is_array($b)) fail('The request was not valid JSON.');
     return $b;
 }
+/**
+ * The body decoded with objects kept as objects. Saves go through this so an empty {} stays {} instead of
+ * turning into [] (which the apps would then fill with named keys that JSON.stringify silently drops).
+ */
+function body_obj(): object {
+    static $o = null;
+    if ($o !== null) return $o;
+    $o = json_decode(raw_body(), false, 64);
+    if (!is_object($o)) fail('The request was not valid JSON.');
+    return $o;
+}
+function enc($v): string { return json_encode($v, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES); }
 
 function str(string $key, int $max = 500): string {
     $v = body()[$key] ?? '';
@@ -261,9 +277,9 @@ function record_id(): int {
     return (int)$id;
 }
 function record_data(): string {
-    $d = body()['data'] ?? null;
-    if (!is_array($d) || array_is_list($d) && $d !== []) fail('Missing save data.');
-    $json = json_encode($d, JSON_UNESCAPED_UNICODE | JSON_UNESCAPED_SLASHES);
+    $d = body_obj()->data ?? null;
+    if (!is_object($d)) fail('Missing save data.');
+    $json = enc($d);
     if ($json === false) fail('Could not store that save.');
     if (strlen($json) > MAX_DATA_BYTES) fail('That save is too large to store (2 MB limit).', 413);
     return $json;
@@ -272,7 +288,7 @@ function clip(string $s, int $n): string { return mb_substr(trim(preg_replace('/
 function row_out(array $r, bool $withData = false): array {
     $o = ['id' => (int)$r['id'], 'name' => $r['name'], 'summary' => $r['summary'], 'version' => (int)$r['version'],
           'createdAt' => $r['created_at'] . 'Z', 'updatedAt' => $r['updated_at'] . 'Z'];
-    if ($withData) $o['data'] = json_decode($r['data'], true);
+    if ($withData) $o['data'] = json_decode($r['data']);   // objects stay objects, so {} is sent back as {}
     return $o;
 }
 
@@ -284,7 +300,15 @@ function a_list(): array {
 
 function a_get(): array {
     $k = kind(); $s = owner_for($k);
-    $r = q("SELECT * FROM $k WHERE id = ? AND user_id = ?", [record_id(), $s['id']])->fetch();
+    $id = record_id();
+    $known = (int)($_GET['known'] ?? 0);
+    if ($known) {
+        // Polling: answer "unchanged" without sending the whole save.
+        $v = q("SELECT version FROM $k WHERE id = ? AND user_id = ?", [$id, $s['id']])->fetchColumn();
+        if ($v === false) fail('That save was not found. It may have been deleted.', 404);
+        if ((int)$v === $known) return ['item' => ['id' => $id, 'version' => $known, 'unchanged' => true]];
+    }
+    $r = q("SELECT * FROM $k WHERE id = ? AND user_id = ?", [$id, $s['id']])->fetch();
     if (!$r) fail('That save was not found. It may have been deleted.', 404);
     return ['item' => row_out($r, true)];
 }
@@ -332,6 +356,204 @@ function a_duplicate(): array {
 function a_delete(): array {
     $k = kind(); $s = owner_for($k);
     q("DELETE FROM $k WHERE id = ? AND user_id = ?", [record_id(), $s['id']]);
+    return [];
+}
+
+// ---------------------------------------------------------------- sharing characters with a Ref
+/*
+ * A player makes a link for one of their characters and sends it to their Ref. A Ref who opens it adds the
+ * character to a campaign, which creates a character_access row. With it the Ref can read the whole
+ * character and change only its conditions, equipment, and notes (link.save merges just those fields).
+ * The player sees who has access and can remove it; deleting the character removes it too.
+ */
+const SHARED_FIELDS = ['inv', 'notes', 'conds'];
+
+function own_character(array $s, int $id): array {
+    $r = q('SELECT id, name FROM characters WHERE id = ? AND user_id = ?', [$id, $s['id']])->fetch();
+    if (!$r) fail('That character was not found.', 404);
+    return $r;
+}
+function share_url(string $tok): string { return rtrim(config()['site_url'], '/') . '/#share=' . $tok; }
+
+function a_share_get(): array {
+    $s = need_login();
+    $c = own_character($s, record_id());
+    $has = (bool)q('SELECT 1 FROM share_links WHERE character_id = ?', [$c['id']])->fetch();
+    $refs = q('SELECT a.id, a.created_at, u.username FROM character_access a JOIN users u ON u.id = a.ref_user_id
+               WHERE a.character_id = ? ORDER BY a.created_at', [$c['id']])->fetchAll();
+    return ['hasLink' => $has, 'refs' => array_map(function ($r) {
+        return ['accessId' => (int)$r['id'], 'username' => $r['username'], 'since' => $r['created_at'] . 'Z'];
+    }, $refs)];
+}
+
+function a_share_create(): array {
+    $s = need_login();
+    $c = own_character($s, record_id());
+    $tok = token();
+    q('REPLACE INTO share_links (character_id, token_hash, created_at) VALUES (?,?,?)', [$c['id'], sha($tok), now()]);
+    audit('share_link_made', $s['id'], 'character ' . $c['id']);
+    return ['link' => share_url($tok)];
+}
+
+function a_share_disable(): array {
+    $s = need_login();
+    $c = own_character($s, record_id());
+    q('DELETE FROM share_links WHERE character_id = ?', [$c['id']]);
+    audit('share_link_disabled', $s['id'], 'character ' . $c['id']);
+    return [];
+}
+
+function a_share_revoke(): array {
+    $s = need_login();
+    $aid = (int)(body()['accessId'] ?? 0);
+    $row = q('SELECT a.id, a.ref_user_id FROM character_access a JOIN characters c ON c.id = a.character_id
+              WHERE a.id = ? AND c.user_id = ?', [$aid, $s['id']])->fetch();
+    if (!$row) fail('That Ref no longer has access.', 404);
+    q('DELETE FROM character_access WHERE id = ?', [$aid]);
+    audit('share_revoked', $s['id'], 'access ' . $aid, null);
+    return [];
+}
+
+/** The character behind a share token, or a clear error. */
+function shared_by_token(string $tok): array {
+    if (!preg_match('/^[0-9a-f]{64}$/', $tok)) fail('That character link is not valid.');
+    $r = q('SELECT c.id, c.name, c.summary, c.user_id, u.username AS owner FROM share_links l
+            JOIN characters c ON c.id = l.character_id JOIN users u ON u.id = c.user_id WHERE l.token_hash = ?', [sha($tok)])->fetch();
+    if (!$r) fail('That character link no longer works. Ask the player for a new one.', 404);
+    return $r;
+}
+function need_ref(): array {
+    $s = need_login();
+    if (!can_ref($s)) fail('Only Refs can add characters to a campaign. Send this link to your Ref.', 403);
+    return $s;
+}
+
+function a_link_preview(): array {
+    $s = need_ref();
+    $c = shared_by_token((string)($_GET['token'] ?? ''));
+    $existing = q('SELECT id FROM character_access WHERE character_id = ? AND ref_user_id = ?', [$c['id'], $s['id']])->fetchColumn();
+    return ['name' => $c['name'], 'summary' => $c['summary'], 'owner' => $c['owner'], 'own' => (int)$c['user_id'] === $s['id'],
+            'accessId' => $existing ? (int)$existing : null];
+}
+
+function a_link_redeem(): array {
+    $s = need_ref();
+    $c = shared_by_token(str('token', 100));
+    q('INSERT IGNORE INTO character_access (character_id, ref_user_id, created_at) VALUES (?,?,?)', [$c['id'], $s['id'], now()]);
+    $aid = (int)q('SELECT id FROM character_access WHERE character_id = ? AND ref_user_id = ?', [$c['id'], $s['id']])->fetchColumn();
+    audit('share_redeemed', (int)$c['user_id'], 'character ' . $c['id'], $s['id']);
+    return ['item' => linked_out(access_row($s, $aid), true)];
+}
+
+function access_row(array $s, int $aid): array {
+    $r = q('SELECT a.id AS access_id, c.*, u.username AS owner FROM character_access a JOIN characters c ON c.id = a.character_id
+            JOIN users u ON u.id = c.user_id WHERE a.id = ? AND a.ref_user_id = ?', [$aid, $s['id']])->fetch();
+    if (!$r) fail('You no longer have access to that character. The player may have removed it.', 404);
+    return $r;
+}
+function linked_out(array $r, bool $withData): array {
+    $o = row_out($r, $withData);
+    $o['id'] = (int)$r['access_id'];
+    $o['owner'] = $r['owner'];
+    if ($withData) $o['data'] = json_decode($r['data']);   // objects stay objects
+    return $o;
+}
+
+function a_link_get(): array {
+    $s = need_ref();
+    $r = access_row($s, record_id());
+    $known = (int)($_GET['known'] ?? 0);
+    if ($known && (int)$r['version'] === $known) return ['item' => ['id' => (int)$r['access_id'], 'version' => $known, 'unchanged' => true]];
+    return ['item' => linked_out($r, true)];
+}
+
+/** Sorted-key form for comparing two decoded JSON values regardless of key order. */
+function canon($v): string {
+    $norm = function ($x) use (&$norm) {
+        if (is_object($x)) $x = get_object_vars($x);
+        if (!is_array($x)) return $x;
+        $isList = array_is_list($x) && $x !== [];
+        $x = array_map($norm, $x);
+        if (!$isList) ksort($x, SORT_STRING);
+        return $x;
+    };
+    return enc($norm($v));
+}
+function clean_inv($inv): array {
+    if (!is_array($inv) || count($inv) > 300) fail('Bad equipment list.');
+    $out = [];
+    foreach ($inv as $c) {
+        if (!is_object($c) || !is_string($c->key ?? null) || strlen($c->key) > 80) fail('Bad equipment card.');
+        $card = (object)['key' => $c->key, 'qty' => max(1, min(999, (int)($c->qty ?? 1))),
+            'area' => in_array($c->area ?? '', ['hand', 'belt', 'pack', 'none'], true) ? $c->area : 'none',
+            'idx' => max(0, min(99, (int)($c->idx ?? 0)))];
+        foreach (['ud', 'dmg', 'ammo'] as $k) if (isset($c->$k) && is_numeric($c->$k)) $card->$k = max(0, min(999, (int)$c->$k));
+        $out[] = $card;
+    }
+    return $out;
+}
+function clean_conds($c): object {
+    if (!is_object($c)) fail('Bad conditions.');
+    $out = new stdClass();
+    foreach (get_object_vars($c) as $k => $v) {
+        if (count(get_object_vars($out)) >= 30 || !preg_match('/^[A-Za-z][A-Za-z -]{0,29}$/', (string)$k)) fail('Bad condition.');
+        if ($v) $out->$k = true;
+    }
+    return $out;
+}
+function field_get(object $d, string $f) {
+    if ($f === 'conds') return isset($d->play) && is_object($d->play) ? ($d->play->conds ?? new stdClass()) : new stdClass();
+    return $d->$f ?? null;
+}
+function field_set(object $d, string $f, $v): void {
+    if ($f === 'conds') { if (!isset($d->play) || !is_object($d->play)) $d->play = new stdClass(); $d->play->conds = $v; }
+    else $d->$f = $v;
+}
+
+/**
+ * The Ref's save: only conditions, equipment, and notes, each applied only if the character still has the
+ * value the Ref started from. So the player's own changes (Stamina, rests, anything else) are never
+ * overwritten, and if both changed the same thing the Ref is told instead of silently winning.
+ */
+function a_link_save(): array {
+    $s = need_ref();
+    $aid = record_id();
+    $b = body_obj();
+    if (!isset($b->fields) || !is_object($b->fields) || !isset($b->base) || !is_object($b->base)) fail('Nothing to save.');
+    $pdo = db();
+    $pdo->beginTransaction();
+    try {
+        $r = q('SELECT a.id AS access_id, c.*, u.username AS owner FROM character_access a JOIN characters c ON c.id = a.character_id
+                JOIN users u ON u.id = c.user_id WHERE a.id = ? AND a.ref_user_id = ? FOR UPDATE', [$aid, $s['id']])->fetch();
+        if (!$r) fail('You no longer have access to that character. The player may have removed it.', 404);
+        $data = json_decode($r['data']);
+        if (!is_object($data)) fail('That character could not be read.', 500);
+        $changed = [];
+        foreach (get_object_vars($b->fields) as $f => $v) {
+            if (!in_array($f, SHARED_FIELDS, true)) fail('A Ref can only change conditions, equipment, and notes.', 403);
+            if (!property_exists($b->base, $f) || canon(field_get($data, $f)) !== canon($b->base->$f)) {
+                fail('The player changed this character at the same time.', 409, ['item' => linked_out($r, true)]);
+            }
+            if ($f === 'inv') $v = clean_inv($v);
+            elseif ($f === 'conds') $v = clean_conds($v);
+            elseif (!is_string($v) || mb_strlen($v) > 5000) fail('Notes are too long.');
+            field_set($data, $f, $v);
+            $changed[] = $f;
+        }
+        if ($changed) {
+            q('UPDATE characters SET data = ?, version = version + 1, updated_at = ? WHERE id = ?', [enc($data), now(), $r['id']]);
+        }
+        $pdo->commit();
+    } catch (Throwable $e) {
+        if ($pdo->inTransaction()) $pdo->rollBack();
+        throw $e;
+    }
+    return ['item' => linked_out(access_row($s, $aid), true)];
+}
+
+function a_link_remove(): array {
+    $s = need_login();
+    q('DELETE FROM character_access WHERE id = ? AND ref_user_id = ?', [record_id(), $s['id']]);
     return [];
 }
 
@@ -420,6 +642,15 @@ const ACTIONS = [
     'save' => ['POST', 'a_save', true],
     'duplicate' => ['POST', 'a_duplicate', true],
     'delete' => ['POST', 'a_delete', true],
+    'share.get' => ['GET', 'a_share_get', false],
+    'share.create' => ['POST', 'a_share_create', true],
+    'share.disable' => ['POST', 'a_share_disable', true],
+    'share.revoke' => ['POST', 'a_share_revoke', true],
+    'link.preview' => ['GET', 'a_link_preview', false],
+    'link.redeem' => ['POST', 'a_link_redeem', true],
+    'link.get' => ['GET', 'a_link_get', false],
+    'link.save' => ['POST', 'a_link_save', true],
+    'link.remove' => ['POST', 'a_link_remove', true],
     'admin.users' => ['GET', 'a_admin_users', false],
     'admin.audit' => ['GET', 'a_admin_audit', false],
     'admin.setRole' => ['POST', 'a_admin_set_role', true],

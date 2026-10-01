@@ -81,6 +81,11 @@ input[type=text], input[type=email], input[type=password], input[type=search], s
 .rows .name { font-weight: 600; }
 .rows .meta { color: var(--muted); font-size: .85rem; }
 .rows .btns { display: flex; gap: .35rem; flex-wrap: wrap; }
+.share-panel { flex-basis: 100%; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: .8rem; }
+.share-panel h3 { font-size: 1rem; }
+.share-panel .row-btns { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: .6rem; }
+.share-panel .access { list-style: none; margin: .3rem 0 0; padding: 0; }
+.share-panel .access li { display: flex; justify-content: space-between; align-items: center; gap: .5rem; padding: .3rem 0; border-top: 1px solid var(--line); }
 .empty { color: var(--muted); padding: .8rem 0; }
 
 .table-wrap { overflow-x: auto; }

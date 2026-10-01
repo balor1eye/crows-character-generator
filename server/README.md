@@ -12,6 +12,11 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
   The Character Generator loads the character from the account and autosaves every change about a second
   later. Save file / Load file still work.
 - **Refs** do the same with campaigns in the Ref Screen. `ref.php` only serves the Ref Screen to Refs and admins.
+- **Sharing with a Ref:** a player opens **Share** on a character and sends the link to their Ref. The Ref opens
+  it (or pastes it into the Ref Screen's Party tab) to add the crow to a campaign. The crow stays tied to the
+  player's sheet: **Open sheet** shows the whole character, where the Ref can change only conditions,
+  equipment, and notes. The server applies just those fields, and only if they haven't changed underneath.
+  The player sees which Refs have access and can remove any of them, or turn the link off or replace it.
 - **Admins** mark accounts as players or Refs, make other admins, make one-time password reset links (useful
   if email doesn't arrive), and delete accounts.
 
@@ -57,6 +62,10 @@ sent a moment after they're made (at most 8 seconds later while you keep typing)
 hidden. Every save carries a version number. If another window or device saved in the meantime, the app asks
 which copy to keep instead of silently overwriting. When offline, it keeps retrying, and the browser copy
 is always kept too. As a guest, offline, or on GitHub Pages, it does nothing.
+
+Open copies also poll every 10 seconds, so a player and their Ref (or two devices) see each other's changes.
+Concurrent edits merge three ways against the last version both sides had. Changes to different things just
+combine, and only a change to the same thing on both sides asks which copy to keep.
 
 Rerolling "Random crow" on a character nobody has edited yet replaces that save rather than piling up new
 ones. Once a character has been edited, Random crow, Start over, and Load file start a new save and leave the
