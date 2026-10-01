@@ -96,7 +96,7 @@ which GitHub Pages publishes.
 
 The apps are also hosted with accounts at **https://joshuaramsey.com/crows/**. Log in to keep your characters
 (and, for Refs, campaigns) on the server with autosave, or continue as a guest. An admin marks accounts as
-players or Refs, and only Refs can open the Ref Screen there. Players can share a character with their Ref by link. The Ref adds it to a campaign, works the
+players or Refs, and only Refs can open the Ref Screen there. Players can share a character with their Ref by link, or ask to join a campaign from the Ref's invite link. The Ref adds it to a campaign (or accepts the request), works the
 crow's live vitals on the Party tab with the sheet's own buttons (Stamina, damage, wounds, conditions…), opens the
 sheet to change equipment and notes too, and both see each other's changes live. The server code and deploy steps are in
 [`server/README.md`](server/README.md). The offline files and the GitHub Pages copy work as before, with no

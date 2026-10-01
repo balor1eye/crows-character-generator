@@ -184,6 +184,9 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .round-box .stat { min-width: 70px; }
 
 /* Party */
+.join-reqs { list-style: none; margin: .6rem 0 0; padding: 0; }
+.join-reqs li { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; padding: .5rem 0; border-top: 1px solid var(--line); }
+.invite-link { margin-top: .5rem; }
 .st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(370px, 1fr)); gap: .7rem; align-items: start; }
 .st-tile { border: 1px solid var(--line); border-top: 4px solid var(--accent); border-radius: 6px; padding: .5rem .7rem; background: var(--card); display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
 .st-tile.local { border-top-color: var(--ink); background: var(--slot); }

@@ -473,11 +473,12 @@ function shared_by_token(string $tok): array {
     if (!$r) fail('That character link no longer works. Ask the player for a new one.', 404);
     return $r;
 }
-function need_ref(): array {
+function need_ref(string $why = 'Only Refs can add characters to a campaign. Send this link to your Ref.'): array {
     $s = need_login();
-    if (!can_ref($s)) fail('Only Refs can add characters to a campaign. Send this link to your Ref.', 403);
+    if (!can_ref($s)) fail($why, 403);
     return $s;
 }
+const REF_ONLY = 'Only Refs can run campaigns.';
 
 function a_link_preview(): array {
     $s = need_ref();
@@ -652,6 +653,140 @@ function a_link_remove(): array {
     return [];
 }
 
+// ---------------------------------------------------------------- inviting players to a campaign
+/*
+ * A Ref makes an invite link for a campaign and sends it to the players. A logged-in player who opens it
+ * picks one of their characters and asks to join; the request shows up in the Ref Screen, where accepting it
+ * gives the Ref the same access a character link gives (character_access) and adds the crow to the party.
+ * Asking is the player's consent to that. The player can cancel a request until it's decided, and remove
+ * the Ref's access later from the character's Share panel, as with any Ref.
+ * The Ref Screen learns of new requests through the change signal for ('requests', campaign id), whose
+ * version is the newest request's id (a fresh request always gets a new, higher id).
+ */
+const MAX_PENDING = 30;   // per campaign, so a leaked link can't flood the Ref
+
+function own_campaign(array $s, int $id): array {
+    $r = q('SELECT id, name, summary FROM campaigns WHERE id = ? AND user_id = ?', [$id, $s['id']])->fetch();
+    if (!$r) fail('That campaign was not found.', 404);
+    return $r;
+}
+function invite_url(string $tok): string { return rtrim(config()['site_url'], '/') . '/#join=' . $tok; }
+/** The campaign behind an invite token (with its Ref's name), or a clear error. */
+function invited_by_token(string $tok): array {
+    if (!preg_match('/^[0-9a-f]{64}$/', $tok)) fail('That campaign link is not valid.');
+    $r = q('SELECT p.id, p.name, p.summary, p.user_id, u.username AS ref FROM campaign_invites i
+            JOIN campaigns p ON p.id = i.campaign_id JOIN users u ON u.id = p.user_id WHERE i.token_hash = ?', [sha($tok)])->fetch();
+    if (!$r) fail('That campaign link no longer works. Ask your Ref for a new one.', 404);
+    return $r;
+}
+function requests_signal(int $campaignId): void {
+    $v = (int)q('SELECT MAX(id) FROM join_requests WHERE campaign_id = ?', [$campaignId])->fetchColumn();
+    if ($v) signal('requests', $campaignId, $v);
+}
+
+/** For the Ref Screen: the campaign's link state and pending requests, plus where to watch for new ones. */
+function a_invite_get(): array {
+    $s = need_ref(REF_ONLY);
+    $c = own_campaign($s, record_id());
+    $has = (bool)q('SELECT 1 FROM campaign_invites WHERE campaign_id = ?', [$c['id']])->fetch();
+    $rows = q("SELECT j.id, j.created_at, c.name, c.summary, u.username FROM join_requests j JOIN characters c ON c.id = j.character_id
+               JOIN users u ON u.id = c.user_id WHERE j.campaign_id = ? AND j.status = 'pending' ORDER BY j.id", [$c['id']])->fetchAll();
+    $latest = (int)q('SELECT MAX(id) FROM join_requests WHERE campaign_id = ?', [$c['id']])->fetchColumn();
+    $w = with_watch(['version' => $latest], 'requests', (int)$c['id']);
+    return ['hasLink' => $has, 'latest' => $latest, 'watch' => $w['watch'] ?? null, 'requests' => array_map(function ($r) {
+        return ['id' => (int)$r['id'], 'name' => $r['name'], 'summary' => $r['summary'], 'player' => $r['username'], 'at' => $r['created_at'] . 'Z'];
+    }, $rows)];
+}
+
+function a_invite_create(): array {
+    $s = need_ref(REF_ONLY);
+    $c = own_campaign($s, record_id());
+    $tok = token();
+    q('REPLACE INTO campaign_invites (campaign_id, token_hash, created_at) VALUES (?,?,?)', [$c['id'], sha($tok), now()]);
+    audit('invite_link_made', $s['id'], 'campaign ' . $c['id']);
+    return ['link' => invite_url($tok)];
+}
+
+function a_invite_disable(): array {
+    $s = need_ref(REF_ONLY);
+    $c = own_campaign($s, record_id());
+    q('DELETE FROM campaign_invites WHERE campaign_id = ?', [$c['id']]);
+    audit('invite_link_disabled', $s['id'], 'campaign ' . $c['id']);
+    return [];
+}
+
+/** A player opened an invite: the campaign, and each of their characters with any request already made. */
+function a_join_preview(): array {
+    $s = need_login();
+    $p = invited_by_token((string)($_GET['token'] ?? ''));
+    $chars = q('SELECT c.id, c.name, c.summary, j.id AS rid, j.status, (a.id IS NOT NULL) AS has_access FROM characters c
+                LEFT JOIN join_requests j ON j.character_id = c.id AND j.campaign_id = ?
+                LEFT JOIN character_access a ON a.character_id = c.id AND a.ref_user_id = ?
+                WHERE c.user_id = ? ORDER BY c.updated_at DESC', [$p['id'], $p['user_id'], $s['id']])->fetchAll();
+    return ['campaign' => $p['name'], 'summary' => $p['summary'], 'ref' => $p['ref'], 'own' => (int)$p['user_id'] === $s['id'],
+        'characters' => array_map(function ($c) {
+            return ['id' => (int)$c['id'], 'name' => $c['name'], 'summary' => $c['summary'], 'requestId' => $c['rid'] ? (int)$c['rid'] : null,
+                    'status' => $c['status'], 'refHasAccess' => (bool)$c['has_access']];
+        }, $chars)];
+}
+
+function a_join_request(): array {
+    $s = need_login();
+    $p = invited_by_token(str('token', 100));
+    $c = own_character($s, (int)(body()['characterId'] ?? 0));
+    $cur = q('SELECT id, status FROM join_requests WHERE campaign_id = ? AND character_id = ?', [$p['id'], $c['id']])->fetch();
+    if ($cur && $cur['status'] === 'pending') fail('You already asked to join with this crow.', 409);
+    // Accepted, but if the player has since taken the Ref's access away they may ask again.
+    if ($cur && $cur['status'] === 'accepted' && q('SELECT 1 FROM character_access WHERE character_id = ? AND ref_user_id = ?', [$c['id'], $p['user_id']])->fetch()) {
+        fail('This crow is already in the campaign.', 409);
+    }
+    if ((int)q("SELECT COUNT(*) FROM join_requests WHERE campaign_id = ? AND status = 'pending'", [$p['id']])->fetchColumn() >= MAX_PENDING) {
+        fail('This campaign has too many requests waiting. Ask your Ref to answer some first.', 429);
+    }
+    // Asking again makes a new request (a new id, so the Ref Screen notices it).
+    if ($cur) q('DELETE FROM join_requests WHERE id = ?', [$cur['id']]);
+    q('INSERT INTO join_requests (campaign_id, character_id, created_at) VALUES (?,?,?)', [$p['id'], $c['id'], now()]);
+    audit('join_requested', (int)$p['user_id'], 'campaign ' . $p['id'] . ', character ' . $c['id'], $s['id']);
+    requests_signal((int)$p['id']);
+    return [];
+}
+
+function a_join_cancel(): array {
+    $s = need_login();
+    $n = q("DELETE j FROM join_requests j JOIN characters c ON c.id = j.character_id
+            WHERE j.id = ? AND c.user_id = ? AND j.status = 'pending'", [record_id(), $s['id']])->rowCount();
+    if (!$n) fail('That request was already answered or withdrawn.', 409);
+    return [];
+}
+
+/** The Ref's pending request $id for one of their campaigns, or a clear error. */
+function pending_request(array $s, int $id): array {
+    $r = q("SELECT j.id, j.campaign_id, j.character_id, c.user_id AS player_id FROM join_requests j
+            JOIN campaigns p ON p.id = j.campaign_id JOIN characters c ON c.id = j.character_id
+            WHERE j.id = ? AND p.user_id = ? AND j.status = 'pending'", [$id, $s['id']])->fetch();
+    if (!$r) fail('That request was withdrawn or already answered.', 404);
+    return $r;
+}
+
+/** Accept: the Ref gets access to the character, and the Ref Screen adds the returned crow to the party. */
+function a_join_accept(): array {
+    $s = need_ref(REF_ONLY);
+    $r = pending_request($s, record_id());
+    q('INSERT IGNORE INTO character_access (character_id, ref_user_id, created_at) VALUES (?,?,?)', [$r['character_id'], $s['id'], now()]);
+    $aid = (int)q('SELECT id FROM character_access WHERE character_id = ? AND ref_user_id = ?', [$r['character_id'], $s['id']])->fetchColumn();
+    q("UPDATE join_requests SET status = 'accepted', decided_at = ? WHERE id = ?", [now(), $r['id']]);
+    audit('join_accepted', (int)$r['player_id'], 'campaign ' . $r['campaign_id'] . ', character ' . $r['character_id'], $s['id']);
+    return ['item' => linked_out(access_row($s, $aid), true)];
+}
+
+function a_join_decline(): array {
+    $s = need_ref(REF_ONLY);
+    $r = pending_request($s, record_id());
+    q("UPDATE join_requests SET status = 'declined', decided_at = ? WHERE id = ?", [now(), $r['id']]);
+    audit('join_declined', (int)$r['player_id'], 'campaign ' . $r['campaign_id'] . ', character ' . $r['character_id'], $s['id']);
+    return [];
+}
+
 // ---------------------------------------------------------------- admin
 function a_admin_users(): array {
     need_admin();
@@ -746,6 +881,14 @@ const ACTIONS = [
     'link.get' => ['GET', 'a_link_get', false],
     'link.save' => ['POST', 'a_link_save', true],
     'link.remove' => ['POST', 'a_link_remove', true],
+    'invite.get' => ['GET', 'a_invite_get', false],
+    'invite.create' => ['POST', 'a_invite_create', true],
+    'invite.disable' => ['POST', 'a_invite_disable', true],
+    'join.preview' => ['GET', 'a_join_preview', false],
+    'join.request' => ['POST', 'a_join_request', true],
+    'join.cancel' => ['POST', 'a_join_cancel', true],
+    'join.accept' => ['POST', 'a_join_accept', true],
+    'join.decline' => ['POST', 'a_join_decline', true],
     'admin.users' => ['GET', 'a_admin_users', false],
     'admin.audit' => ['GET', 'a_admin_audit', false],
     'admin.setRole' => ['POST', 'a_admin_set_role', true],

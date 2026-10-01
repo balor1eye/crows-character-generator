@@ -104,3 +104,27 @@ CREATE TABLE IF NOT EXISTS character_access (
   CONSTRAINT fk_access_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE,
   CONSTRAINT fk_access_ref FOREIGN KEY (ref_user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A Ref's invite link for one campaign (only the token's hash is kept). Making a new link replaces the old one.
+CREATE TABLE IF NOT EXISTS campaign_invites (
+  campaign_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  token_hash CHAR(64) NOT NULL,
+  created_at DATETIME NOT NULL,
+  UNIQUE KEY uq_token (token_hash),
+  CONSTRAINT fk_invite_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A player asking, through an invite link, to bring one of their characters into a campaign. Accepting it
+-- gives the campaign's Ref a character_access row, just as a character link would.
+CREATE TABLE IF NOT EXISTS join_requests (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  campaign_id INT UNSIGNED NOT NULL,
+  character_id INT UNSIGNED NOT NULL,
+  status ENUM('pending','accepted','declined') NOT NULL DEFAULT 'pending',
+  created_at DATETIME NOT NULL,
+  decided_at DATETIME NULL,
+  UNIQUE KEY uq_campaign_character (campaign_id, character_id),
+  KEY k_character (character_id),
+  CONSTRAINT fk_join_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+  CONSTRAINT fk_join_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

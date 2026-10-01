@@ -19,6 +19,12 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
   shows the whole character. Either way the Ref can change only those vitals, equipment, and notes. The server
   applies just those fields, and only if they haven't changed underneath (log entries from both sides are combined).
   The player sees which Refs have access and can remove any of them, or turn the link off or replace it.
+- **Inviting players to a campaign:** it also works the other way. On the Ref Screen's Party tab, **Invite players**
+  makes a link to the campaign (replace it or turn it off there too). A player who opens it, logging in or signing
+  up first if needed, picks one of their crows and asks to join, and can withdraw the request while it's waiting.
+  The request shows up in the Ref Screen within a second or two, with a count on the Party tab. **Accept**
+  gives the Ref the same access a character link would and adds the crow to the party; **Decline** lets the
+  player ask again. A campaign holds at most 30 waiting requests.
 - **Admins** mark accounts as players or Refs, make other admins, make one-time password reset links (useful
   if email doesn't arrive), and delete accounts.
 

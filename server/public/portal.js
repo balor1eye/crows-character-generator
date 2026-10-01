@@ -63,11 +63,12 @@
     }, function () { throw new Error('Could not reach the server. Check your connection and try again.'); });
   }
   function signedIn(j) { me = j.user; csrf = j.csrf; }
-  /* Where to go after logging in: back to a character link that was opened while logged out, or home. */
+  /* Where to go after logging in: back to a character or campaign link opened while logged out, or home. */
   function afterLogin() {
-    var tok = null;
-    try { tok = sessionStorage.getItem(PENDING_SHARE); sessionStorage.removeItem(PENDING_SHARE); } catch (e) { /* ignore */ }
-    go(tok ? 'share=' + tok : 'home');
+    var to = null;
+    try { to = sessionStorage.getItem(PENDING_SHARE); sessionStorage.removeItem(PENDING_SHARE); } catch (e) { /* ignore */ }
+    if (to && /^[0-9a-f]{64}$/.test(to)) to = 'share=' + to;   // saved by an older version of this page
+    go(to && /^(share|join)=[0-9a-f]{64}$/.test(to) ? to : 'home');
   }
 
   // ---------------------------------------------------------------- routing
@@ -75,11 +76,11 @@
     var h = location.hash.replace(/^#/, '');
     var m = /^reset=([0-9a-f]{64})$/.exec(h);
     if (m) return viewReset(m[1]);
-    var sh = /^share=([0-9a-f]{64})$/.exec(h);
+    var sh = /^(share|join)=([0-9a-f]{64})$/.exec(h);
     if (sh) {
-      if (me) return viewShare(sh[1]);
+      if (me) return sh[1] === 'share' ? viewShare(sh[2]) : viewJoin(sh[2]);
       // Remember it through login (or account creation), then come back to it.
-      try { sessionStorage.setItem(PENDING_SHARE, sh[1]); } catch (e) { /* ignore */ }
+      try { sessionStorage.setItem(PENDING_SHARE, h); } catch (e) { /* ignore */ }
       history.replaceState(null, '', location.pathname + '#login');
       h = 'login';
     }
@@ -150,12 +151,18 @@
     ]);
   }
 
-  function pendingShare() { try { return !!sessionStorage.getItem(PENDING_SHARE); } catch (e) { return false; } }
+  /* What the person was sent ('share' for a character, 'join' for a campaign) before they had to log in. */
+  function pendingShare() { try { var v = sessionStorage.getItem(PENDING_SHARE) || ''; return v ? (/^join=/.test(v) ? 'join' : 'share') : null; } catch (e) { return null; } }
+  function pendingNote() {
+    var p = pendingShare();
+    return p ? el('div', { class: 'msg ok', text: p === 'join' ? 'Log in (or create an account) to ask to join the campaign your Ref invited you to.' :
+      'Log in (or create an account) to add the character someone shared with you.' }) : null;
+  }
   function viewLogin() {
     show([el('div', { class: 'narrow' }, [
       el('div', { class: 'card' }, [
         el('h1', { text: 'Log in' }),
-        pendingShare() ? el('div', { class: 'msg ok', text: 'Log in (or create an account) to add the character someone shared with you.' }) : null,
+        pendingNote(),
         insecureNote(),
         form([
           field('Username or email', input('text', 'login', { autocomplete: 'username', autocapitalize: 'off', spellcheck: 'false' })),
@@ -382,6 +389,55 @@
       box.appendChild(el('p', { text: e.message }));
       box.appendChild(a('Home', '#home', 'btn'));
     });
+  }
+
+  /*
+   * Someone opened a campaign invite. They pick which of their crows to bring; the Ref accepts or declines in
+   * the Ref Screen. Each crow shows where its request stands, and a waiting one can be withdrawn.
+   */
+  function viewJoin(token) {
+    nav();
+    var box = el('div', { class: 'card' }, [el('p', { class: 'muted', text: 'Loading…' })]);
+    show([el('div', { class: 'narrow' }, [el('h1', { text: 'Join a campaign' }), box])]);
+    function load() {
+      api('GET', 'join.preview', undefined, 'token=' + token).then(draw, function (e) {
+        box.innerHTML = '';
+        box.appendChild(el('p', { text: e.message }));
+        box.appendChild(a('Home', '#home', 'btn'));
+      });
+    }
+    function draw(j) {
+      box.innerHTML = '';
+      box.appendChild(el('h2', { text: j.campaign || 'Untitled campaign' }));
+      box.appendChild(el('p', { class: 'muted', text: [j.summary, 'run by ' + j.ref].filter(Boolean).join(' · ') }));
+      if (j.own) box.appendChild(el('div', { class: 'msg warn', text: 'This is your own campaign.' }));
+      box.appendChild(el('p', { text: 'Pick the crow you want to play. ' + j.ref + ' will see your request in the Ref Screen. If they accept, ' +
+        'the crow joins the party: they can see its sheet and change its vitals (Stamina, wounds, conditions…), equipment, and notes, ' +
+        'and you both see each other\u2019s changes live. You can take that access away later from the crow\u2019s Share button.' }));
+      var NEW = GEN + '?new=1&mode=build';
+      if (!j.characters.length) {
+        box.appendChild(el('p', { class: 'muted', text: 'You have no characters yet. Make one, then open this link again.' }));
+        box.appendChild(a('Create a character', NEW, 'btn btn-primary'));
+        return;
+      }
+      box.appendChild(el('ul', { class: 'rows' }, j.characters.map(function (c) {
+        var state = c.status === 'pending' ? el('span', { class: 'meta', text: 'Waiting for ' + j.ref })
+          : c.status === 'accepted' && c.refHasAccess ? el('span', { class: 'meta', text: 'In the campaign' })
+          : c.status === 'declined' ? el('span', { class: 'meta', text: 'Declined' }) : null;
+        var act = c.status === 'pending' ? btn('Withdraw', function () {
+            api('POST', 'join.cancel', { id: c.requestId }).then(function () { toast('Request withdrawn.'); load(); }, function (e) { toast(e.message); load(); });
+          }, 'btn-small btn-ghost')
+          : c.status === 'accepted' && c.refHasAccess ? null
+          : btn(c.status === 'declined' ? 'Ask again' : 'Ask to join', function () {
+            api('POST', 'join.request', { token: token, characterId: c.id }).then(function () { toast('Asked to join with ' + (c.name || 'this crow') + '.'); load(); },
+              function (e) { toast(e.message); load(); });
+          }, 'btn-small btn-primary');
+        return el('li', null, [el('div', null, [el('div', { class: 'name', text: c.name || 'Unnamed crow' }), el('div', { class: 'meta', text: c.summary || '' })]),
+          el('div', { class: 'btns' }, [state, act])]);
+      })));
+      box.appendChild(el('p', { class: 'fine' }, ['Want a new crow for this campaign? ', a('Create one', NEW, ''), ', then open this link again.']));
+    }
+    load();
   }
 
   function viewCharacters() {

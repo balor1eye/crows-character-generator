@@ -680,6 +680,7 @@
     TABS.forEach(function (t) {
       var badge = null;
       if (t[0] === 'session' && (S().pending || S().combat.list.some(function (c) { return !c.dead && c.kind === 'foe'; }))) badge = el('span', { class: 'badge', text: S().pending ? '!' : '⚔' });
+      if (t[0] === 'party' && inv.requests.length && inv.id === (window.CrowsCloud && window.CrowsCloud.recordId)) badge = el('span', { class: 'badge', text: String(inv.requests.length), title: 'Join requests waiting' });
       bar.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': tab === t[0] ? 'true' : 'false', onclick: function () { setTab(t[0]); } }, [t[1], badge]));
     });
     $('camp-name').textContent = state.name || state.village.name || '';
@@ -1143,6 +1144,73 @@
   }
 
   // ------------------------------------------------------------------ Party tab
+  // ------------------------------------------------------------------ inviting players
+  /*
+   * The Ref makes an invite link for this campaign and sends it to the players. A player who opens it asks to
+   * join with one of their crows; the request appears here within a second or two (through the change signal
+   * the server writes for each new request). Accepting links the crow, just as a character link would.
+   */
+  var inv = { id: null, loading: false, hasLink: false, link: '', requests: [], latest: 0, at: 0 };
+  function loadInvites() {
+    var id = window.CrowsCloud && window.CrowsCloud.recordId;
+    if (!cloudOn() || !id || inv.loading) return Promise.resolve();
+    inv.loading = true;
+    return window.CrowsCloud.api('GET', 'invite.get', 'id=' + id).then(function (j) {
+      var known = inv.id === id ? inv.requests.map(function (r) { return r.id; }) : null;
+      if (inv.id !== id) inv.link = '';
+      inv.id = id; inv.hasLink = j.hasLink; inv.requests = j.requests; inv.latest = j.latest; inv.at = Date.now();
+      var fresh = known ? j.requests.filter(function (r) { return known.indexOf(r.id) < 0; }) : [];
+      if (fresh.length) toast(fresh.map(function (r) { return r.player + ' asks to join with ' + (r.name || 'a crow'); }).join('. ') + '. See the Party tab.');
+      window.CrowsCloud.watch('requests', j.watch, j.latest, function () { if (!window.CrowsCloud.typing) return loadInvites(); });
+      render();
+    }, function (e) { inv.at = Date.now(); if (e.status !== 404) toast(e.message); }).then(function () { inv.loading = false; });
+  }
+  function answerRequest(r, accept) {
+    window.CrowsCloud.api('POST', accept ? 'join.accept' : 'join.decline', '', { id: r.id }).then(function (j) {
+      inv.requests = inv.requests.filter(function (x) { return x.id !== r.id; });
+      if (accept) {
+        var pc = linkPC(j.item);
+        log('', (pc.name || 'A crow') + ' (' + pc.owner + '\u2019s character) joined the party.');
+        toast((pc.name || 'The crow') + ' joined the party.');
+      } else toast('Declined ' + r.player + '\u2019s request.');
+      save(); render();
+    }, function (e) { toast(e.message); loadInvites(); });
+  }
+  function renderInvite() {
+    var box = $('sec-invite'), id = window.CrowsCloud && window.CrowsCloud.recordId;
+    box.hidden = !cloudOn(); box.style.display = cloudOn() ? '' : 'none';
+    if (!cloudOn()) return;
+    if (!id) { card('sec-invite', 'Invite players', [el('p', { class: 'hint', text: 'Saving the campaign to your account first…' })]); setTimeout(function () { if (tab === 'party') render(); }, 1500); return; }
+    if (inv.id !== id || Date.now() - inv.at > 60000) loadInvites();   // also catches requests withdrawn meanwhile
+    var linkBox = null;
+    if (inv.link) {
+      var box2 = el('input', { type: 'text', class: 'in grow', readonly: true, value: inv.link, 'aria-label': 'Invite link', onfocus: function () { this.select(); } });
+      linkBox = el('div', { class: 'invite-link' }, [el('p', { class: 'fine', text: 'Send this link to your players. Keep it private: anyone with an account who has it can ask to join. It\u2019s only shown now; make a new one if you lose it.' }),
+        el('div', { class: 'row center' }, [box2, btn('Copy', function () {
+          box2.select();
+          (navigator.clipboard ? navigator.clipboard.writeText(inv.link) : Promise.reject()).then(function () { toast('Link copied.'); }, function () { document.execCommand('copy'); toast('Link copied.'); });
+        }, 'btn-small')])]);
+    }
+    card('sec-invite', el('h2', null, ['Invite players', el('small', { text: inv.requests.length ? plural(inv.requests.length, 'request') + ' waiting' : 'campaign link' })]), [
+      el('p', { class: 'hint', text: 'Send players a link to this campaign. They log in, pick a crow, and ask to join; accept here and the crow joins the party, tied to their sheet with its vitals live.' }),
+      el('div', { class: 'row center' }, [
+        btn(inv.hasLink ? 'New link' : 'Make an invite link', function () {
+          if (inv.hasLink && !confirm('Make a new link? The old one stops working. Requests already made stay here.')) return;
+          window.CrowsCloud.api('POST', 'invite.create', '', { id: id }).then(function (j) { inv.hasLink = true; inv.link = j.link; render(); }, function (e) { toast(e.message); });
+        }, inv.hasLink ? 'btn-small' : 'btn-small btn-primary'),
+        inv.hasLink ? btn('Turn off link', function () {
+          window.CrowsCloud.api('POST', 'invite.disable', '', { id: id }).then(function () { inv.hasLink = false; inv.link = ''; render(); toast('The invite link no longer works. Waiting requests stay here.'); }, function (e) { toast(e.message); });
+        }, 'btn-small btn-ghost') : null,
+        el('span', { class: 'fine', text: inv.hasLink ? (inv.link ? '' : 'A link is active.') : 'No link yet.' })]),
+      linkBox,
+      inv.requests.length ? el('ul', { class: 'join-reqs' }, inv.requests.map(function (r) {
+        return el('li', null, [el('div', { class: 'grow' }, [el('b', { text: r.name || 'Unnamed crow' }), el('span', { class: 'fine', text: ' \u00b7 ' + r.player + (r.summary ? ' \u00b7 ' + r.summary : '') })]),
+          btn('Accept', function () { answerRequest(r, true); }, 'btn-small btn-primary', 'Add this crow to the party, tied to the player\u2019s sheet'),
+          btn('Decline', function () { answerRequest(r, false); }, 'btn-small btn-ghost')]);
+      })) : null
+    ]);
+  }
+
   // ------------------------------------------------------------------ Party status
   /*
    * A condensed, live view of every crow in play. A crow linked to a player's sheet shows that sheet's own Vitals
@@ -1222,6 +1290,7 @@
   });
 
   function renderParty() {
+    renderInvite();
     renderStatus();
     var fileIn = el('input', { type: 'file', accept: '.json,application/json', multiple: true, onchange: function () {
       var files = Array.prototype.slice.call(this.files || []), input = this, done = [];
@@ -1602,6 +1671,7 @@
       fresh: function () { state = freshState(); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render(); },
       name: function (c) { return c.name || (c.village && c.village.name) || 'Untitled campaign'; },
       onReady: function () {
+        loadInvites();   // join requests (and the badge) show whichever tab is open
         // Refresh crows tied to players' sheets, then add one passed from the home page (#addlink=<token>).
         state.party.filter(function (p) { return p.link; }).forEach(function (p) { refreshLinked(p, true); });
         var tok = linkToken((/addlink=([0-9a-f]{64})/.exec(location.hash) || [])[1]);

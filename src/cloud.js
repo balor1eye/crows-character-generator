@@ -414,6 +414,8 @@
     get user() { return user; },
     get active() { return !!user && ready; },
     get owner() { return owner; },
+    /* The id of the open record in the account, once it has one. */
+    get recordId() { return rec && !linkId ? rec.id : null; },
     /* True in a Ref's view of a player's shared character (?link=). Known before attach() runs. */
     get linked() { return /^https?:$/.test(location.protocol) && !!parseInt(params().link, 10); },
 
