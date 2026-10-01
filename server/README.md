@@ -74,8 +74,8 @@ makes the same layout for local testing. `deploy.sh --production` deploys straig
 instance; it's for emergencies.
 
 Both instances run byte-identical files. The entry points find their app folder from their own folder name
-(`public_html/crows` → `~/crows-app`, `public_html/crows-test` → `~/crows-test-app`), and the one `.htaccess` adds
-the noindex header only under `/crows-test/`. So `promote.sh` copies the files server-side rather than rebuilding,
+(`public_html/crows` → `~/crows-app`, `public_html/crows-test` → `~/crows-test-app`), and the one `.htaccess` serves
+both (each sends a noindex header, like the rest of joshuaramsey.com). So `promote.sh` copies the files server-side rather than rebuilding,
 and production gets exactly what was tested. It:
 
 1. shows what each instance runs (`DEPLOYED.txt`) and runs the smoke test (`--skip-smoke` to skip it),
@@ -98,7 +98,7 @@ A second copy at **https://joshuaramsey.com/crows-test/** for trying changes and
 database (`joshuara_crowstest`), its own app folder (`~/crows-test-app`, with its own config.php, mfa.key and
 sync.key), and a session cookie scoped to `/crows-test/`, so nothing in it touches the live site's accounts.
 Its config sets `mail_log`, so it never sends email: every message (codes, reset links, notices) is appended to
-`~/crows-test-app/mail.log` instead. Each smoke run clears its rate limits first (`seed_test.php --unthrottle`). It also sends `X-Robots-Tag: noindex`. One thing is shared: both copies are on
+`~/crows-test-app/mail.log` instead. Each smoke run clears its rate limits first (`seed_test.php --unthrottle`). One thing is shared: both copies are on
 the same origin, so the apps' browser-only copies (localStorage) are too.
 
 ```
