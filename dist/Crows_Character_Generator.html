@@ -6832,8 +6832,8 @@ var CROWS_TRAIT_TREES = [
  *
  * When the app is served next to the accounts API (api.php) and the visitor is logged in, the thing
  * being edited (a character or a campaign) is kept in their account: it's loaded from the server and
- * every change is saved back a moment after it's made. Anywhere else (the offline file, GitHub Pages,
- * a guest) this does nothing beyond one failed probe, and the app keeps its browser-only autosave.
+ * every change is saved back a moment after it's made. Anywhere else (the offline file, a guest) this does
+ * nothing beyond one failed probe, and the app keeps its browser-only autosave.
  *
  * URL parameters: ?id=<n> opens that saved record, ?new=1 starts a new one; with neither, the record
  * last open in this browser is reopened (or the current local state is saved as a new one).
@@ -6885,6 +6885,7 @@ var CROWS_TRAIT_TREES = [
   var gen = 0;                 // bumped when the app starts a new record, so late replies for the old one are ignored
   var chip = null, bar = null;
   var lastPoll = 0, lastKey = 0;
+  var server = false;          // the accounts server answered
   var watches = {};            // change signals being watched: key -> { url, version, onNewer, busy }
 
   function params() {
@@ -7072,7 +7073,7 @@ var CROWS_TRAIT_TREES = [
     function add(label, cls, on) { var b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-small ' + cls; b.textContent = label; b.addEventListener('click', on); row.appendChild(b); }
     function dismiss() { box.remove(); call('POST', 'notes.dismiss', '', { id: n.id }).then(null, function () { /* shown again next time */ }); }
     if (n.kind === 'join_accepted' && n.detail && n.detail.characterId && cfg.kind === 'characters' && !(rec && rec.id === n.detail.characterId)) {
-      add('Open ' + (n.detail.character || 'that crow'), 'btn-primary', function () { dismiss(); location.href = location.pathname + '?id=' + n.detail.characterId + '&mode=play'; });
+      add('Open ' + (n.detail.character || 'that crow'), 'btn-primary', function () { dismiss(); location.href = 'play?id=' + n.detail.characterId; });
     }
     add('OK', '', dismiss);
     box.appendChild(row);
@@ -7324,11 +7325,13 @@ var CROWS_TRAIT_TREES = [
     /* The id of the open record in the account, once it has one. */
     get recordId() { return rec && !linkId ? rec.id : null; },
     /* True in a Ref's view of a player's shared character (?link=). Known before attach() runs. */
+    /* True once the accounts server has answered (logged in or not). */
+    get server() { return server; },
     get linked() { return /^https?:$/.test(location.protocol) && !!parseInt(params().link, 10); },
 
     /*
      * opts: kind ('characters' | 'campaigns'), getData(), apply(data), valid(data),
-     *       name(data), summary(data), fresh() (make a brand-new thing for ?new=1), onReady(params),
+     *       name(data), summary(data), fresh() (make a brand-new thing for ?new=1), onReady(params), onServer() (the accounts server answered),
      *       onRemote(before) (a change made elsewhere was just brought in; `before` is what getData() gave just before)
      */
     attach: function (opts) {
@@ -7337,7 +7340,8 @@ var CROWS_TRAIT_TREES = [
       var p = params();
       linkId = cfg.kind === 'characters' ? parseInt(p.link, 10) || null : null;
       call('GET', 'me').then(function (j) {
-        user = j.user; csrf = j.csrf;
+        user = j.user; csrf = j.csrf; server = true;
+        if (cfg.onServer) cfg.onServer();
         if (user && (cfg.kind === 'campaigns' || linkId) && !user.canRef) user = null;
         showChip();
         if (!user) {
@@ -8729,6 +8733,7 @@ var CROWS_TRAIT_TREES = [
         var b = CROWS.BACKGROUNDS[c.bg];
         return [b ? b.name : '', c.txp ? fmt(c.txp) + ' XP' : '', c.player ? 'played by ' + c.player : ''].filter(Boolean).join(' · ');
       },
+      onServer: function () { if (window.CrowsPlay) window.CrowsPlay.syncAddress(); },
       onReady: function (p) {
         if (window.CrowsPlay && (p.mode === 'play' || p.mode === 'build')) window.CrowsPlay.setMode(p.mode);
         if (window.CrowsRefView) window.CrowsRefView.ready(state.name, window.CrowsCloud.owner);
@@ -8810,6 +8815,9 @@ var CROWS_TRAIT_TREES = [
   // ------------------------------------------------------------------ mode switch
   // The Ref Screen's condensed status view is always Play mode, without changing this browser's choice.
   var FORCED = window.CrowsRefView && window.CrowsRefView.status ? 'play' : null;
+  // On the accounts site Play has its own address, play (the same page, see server/public/.htaccess); opening it starts in Play.
+  var GEN = 'Crows_Character_Generator.html', PLAY = 'play';
+  if (/\/play$/.test(location.pathname) && !FORCED) try { localStorage.setItem(MODE_KEY, 'play'); } catch (e) { /* storage unavailable */ }
   function mode() { if (FORCED) return FORCED; try { return localStorage.getItem(MODE_KEY) === 'play' ? 'play' : 'build'; } catch (e) { return 'build'; } }
   function setMode(m) {
     if (FORCED) return;
@@ -8822,6 +8830,19 @@ var CROWS_TRAIT_TREES = [
     document.body.setAttribute('data-mode', m);
     $('tab-build').setAttribute('aria-pressed', String(m === 'build'));
     $('tab-play').setAttribute('aria-pressed', String(m === 'play'));
+    var what = m === 'play' ? 'Play' : 'Character Generator';
+    document.title = 'The Nest · ' + what;
+    var sub = document.querySelector('.brand-sub');
+    if (sub) sub.textContent = 'Crows Playtest 2 · ' + what;
+    syncAddress();
+  }
+  /* Show this mode's address. Only where the accounts server answered: elsewhere there's no play address to go to. */
+  function syncAddress() {
+    if (FORCED || !window.CrowsCloud || !window.CrowsCloud.server) return;
+    var dir = location.pathname.replace(/[^\/]*$/, ''), page = mode() === 'play' ? PLAY : GEN;
+    var search = location.search.replace(/([?&])mode=[^&]*&?/, '$1').replace(/[?&]$/, '');
+    if (location.pathname === dir + page && search === location.search) return;
+    try { history.replaceState(history.state, '', dir + page + search + location.hash); } catch (e) { /* ignore */ }
   }
   function gotoBuild(sectionId) {
     setMode('build');
@@ -9659,7 +9680,7 @@ var CROWS_TRAIT_TREES = [
   $('tab-build').addEventListener('click', function () { setMode('build'); });
   $('tab-play').addEventListener('click', function () { setMode('play'); });
   applyMode(mode());
-  window.CrowsPlay = { render: render, setMode: setMode,
+  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress,
     /* Back to full Stamina, as the Full button does (the Ref Screen's "Everyone to full Stamina"). */
     fullStamina: function () { if (C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); commit('Back to full Stamina.'); } },
     /*

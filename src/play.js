@@ -58,6 +58,9 @@
   // ------------------------------------------------------------------ mode switch
   // The Ref Screen's condensed status view is always Play mode, without changing this browser's choice.
   var FORCED = window.CrowsRefView && window.CrowsRefView.status ? 'play' : null;
+  // On the accounts site Play has its own address, play (the same page, see server/public/.htaccess); opening it starts in Play.
+  var GEN = 'Crows_Character_Generator.html', PLAY = 'play';
+  if (/\/play$/.test(location.pathname) && !FORCED) try { localStorage.setItem(MODE_KEY, 'play'); } catch (e) { /* storage unavailable */ }
   function mode() { if (FORCED) return FORCED; try { return localStorage.getItem(MODE_KEY) === 'play' ? 'play' : 'build'; } catch (e) { return 'build'; } }
   function setMode(m) {
     if (FORCED) return;
@@ -70,6 +73,19 @@
     document.body.setAttribute('data-mode', m);
     $('tab-build').setAttribute('aria-pressed', String(m === 'build'));
     $('tab-play').setAttribute('aria-pressed', String(m === 'play'));
+    var what = m === 'play' ? 'Play' : 'Character Generator';
+    document.title = 'The Nest · ' + what;
+    var sub = document.querySelector('.brand-sub');
+    if (sub) sub.textContent = 'Crows Playtest 2 · ' + what;
+    syncAddress();
+  }
+  /* Show this mode's address. Only where the accounts server answered: elsewhere there's no play address to go to. */
+  function syncAddress() {
+    if (FORCED || !window.CrowsCloud || !window.CrowsCloud.server) return;
+    var dir = location.pathname.replace(/[^\/]*$/, ''), page = mode() === 'play' ? PLAY : GEN;
+    var search = location.search.replace(/([?&])mode=[^&]*&?/, '$1').replace(/[?&]$/, '');
+    if (location.pathname === dir + page && search === location.search) return;
+    try { history.replaceState(history.state, '', dir + page + search + location.hash); } catch (e) { /* ignore */ }
   }
   function gotoBuild(sectionId) {
     setMode('build');
@@ -907,7 +923,7 @@
   $('tab-build').addEventListener('click', function () { setMode('build'); });
   $('tab-play').addEventListener('click', function () { setMode('play'); });
   applyMode(mode());
-  window.CrowsPlay = { render: render, setMode: setMode,
+  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress,
     /* Back to full Stamina, as the Full button does (the Ref Screen's "Everyone to full Stamina"). */
     fullStamina: function () { if (C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); commit('Back to full Stamina.'); } },
     /*

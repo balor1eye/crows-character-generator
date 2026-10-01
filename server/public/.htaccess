@@ -11,6 +11,9 @@ RewriteEngine On
 RewriteCond %{HTTPS} off
 RewriteRule ^ https://%{HTTP_HOST}%{REQUEST_URI} [R=301,L]
 
+# Play: the Character Generator's Play mode at its own address (the page picks the mode from it).
+RewriteRule ^play$ Crows_Character_Generator.html [L]
+
 # Never serve dotfiles, logs, or backups, even if one ends up here by accident.
 <FilesMatch "(^\.|error_log|\.log$|\.bak$|\.sql$|~$)">
   Require all denied

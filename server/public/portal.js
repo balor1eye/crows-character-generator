@@ -6,7 +6,7 @@
 (function () {
   'use strict';
 
-  var GEN = 'Crows_Character_Generator.html';
+  var GEN = 'Crows_Character_Generator.html', PLAY = 'play';   // Play is the generator's Play mode at its own address (.htaccess)
   var REF = 'ref.php';
   var me = null, csrf = null, https = true, unread = 0;   // unread: notifications not yet dismissed
   var PENDING_SHARE = 'crows-pending-share';
@@ -415,7 +415,7 @@
           return el('li', { class: ok ? 'yes' : 'no' }, [
             el('div', null, [el('div', { text: noteText(n) }), el('div', { class: 'meta', text: when(n.at) })]),
             el('div', { class: 'btns' }, [
-              ok && n.detail.characterId ? a('Play ' + (n.detail.character || 'it'), GEN + '?id=' + n.detail.characterId + '&mode=play', 'btn btn-small btn-primary') : null,
+              ok && n.detail.characterId ? a('Play ' + (n.detail.character || 'it'), PLAY + '?id=' + n.detail.characterId, 'btn btn-small btn-primary') : null,
               btn('Dismiss', function () { api('POST', 'notes.dismiss', { id: n.id }).then(function () { loadNews(box); }, function (e) { toast(e.message); }); }, 'btn-small btn-ghost')])
           ]);
         }))]));
@@ -636,7 +636,7 @@
       title: 'My characters', manage: true, campaigns: true,
       intro: 'Create a character to roll up a new crow; it goes into your account when you press Save character. Saved crows save changes as you go.',
       empty: 'No characters yet. Use Create a character above, or upload a save file from the character generator.',
-      buttons: function (it) { return [a('Edit', GEN + '?id=' + it.id + '&mode=build', 'btn btn-small btn-primary'), a('Play', GEN + '?id=' + it.id + '&mode=play', 'btn btn-small')]; }
+      buttons: function (it) { return [a('Edit', GEN + '?id=' + it.id + '&mode=build', 'btn btn-small btn-primary'), a('Play', PLAY + '?id=' + it.id, 'btn btn-small')]; }
     });
   }
   function viewPlay() {
@@ -644,7 +644,7 @@
       title: 'Play', manage: false,
       intro: 'Pick a crow to open in Play mode. Everything you change at the table is saved to your account as you go.',
       empty: 'You have no characters yet. Create one in My characters first.',
-      buttons: function (it) { return [a('Play', GEN + '?id=' + it.id + '&mode=play', 'btn btn-small btn-primary')]; }
+      buttons: function (it) { return [a('Play', PLAY + '?id=' + it.id, 'btn btn-small btn-primary')]; }
     });
   }
   function viewCampaigns() {

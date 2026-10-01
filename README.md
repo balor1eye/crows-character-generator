@@ -3,11 +3,11 @@
 The Nest is a character creator, Ref Screen, and accounts site. It's a character creator for the MCDM **Crows** public playtest 2 (August–September 2026), built from the
 Rules, Characters, and Ref books and the playtest inventory cards.
 
-**Use it online: https://balor1eye.github.io/crows-character-generator/**
+**Use it online: https://joshuaramsey.com/crows/**
 
 ## Using it
 
-Open the link above in any browser, including on a phone. To use it offline, open
+Open the link above in any browser, including on a phone (log in, or continue as a guest). To use it offline, open
 **`dist/Crows_Character_Generator.html`** in any modern browser (Chrome, Edge, Firefox, Safari)
 on Windows, macOS, or Linux. It's one self-contained file: no installs, plugins, server, or internet
 connection needed. You can copy it anywhere (USB stick, cloud drive, email) and double-click it.
@@ -74,7 +74,7 @@ choice is remembered and shared by the Character Generator, the Ref Screen, and 
 ## Ref Screen (for the Ref)
 
 A separate, self-contained app for running sessions and keeping the campaign between them:
-**https://balor1eye.github.io/crows-character-generator/Crows_Ref_Screen.html**, or offline as
+on the accounts site (Ref accounts only), or offline as
 **`dist/Crows_Ref_Screen.html`** (one file, works offline, autosaves in the browser; **Save campaign /
 Load campaign** writes a `.json` file).
 
@@ -92,8 +92,7 @@ Load campaign** writes a `.json` file).
 - **Bestiary**, **Tables** (every rollable table), and a searchable **Rules** reference.
 
 Source is in `ref/src/`; rebuild with `python ref/build/build.py` (plain Python 3, no packages). The build reads
-`docs/CROWS_PT2_RULES.md` for the Rules tab, so the built file contains that text, and writes to `dist/`,
-which GitHub Pages publishes.
+`docs/CROWS_PT2_RULES.md` for the Rules tab, so the built file contains that text, and writes to `dist/`.
 
 ## Accounts (optional)
 
@@ -102,16 +101,13 @@ The apps are also hosted with accounts at **https://joshuaramsey.com/crows/**. L
 players or Refs, and only Refs can open the Ref Screen there. Players can share a character with their Ref by link, or ask to join a campaign from the Ref's invite link. The Ref adds it to a campaign (or accepts the request), works the
 crow's live vitals on the Party tab with the sheet's own buttons (Stamina, damage, wounds, conditions…), opens the
 sheet to change equipment and notes too, and both see each other's changes live. The server code and deploy steps are in
-[`server/README.md`](server/README.md). The offline files and the GitHub Pages copy work as before, with no
-account.
+[`server/README.md`](server/README.md). The offline files work as before, with no account.
 
 ## Project layout
 
 ```
 dist/Crows_Character_Generator.html   the finished single-file app (this is what you share)
 dist/Crows_Ref_Screen.html            the Ref Screen (built from ref/src by ref/build/build.py)
-dist/index.html                       redirects the site root to the app (for GitHub Pages)
-.github/workflows/pages.yml           publishes dist/ to GitHub Pages
 src/index.html, app.css, app.js       the app (dev version loads the files below separately)
 src/play.js                           Play mode: vitals, dice, rests, usage dice, XP tracking
 src/cloud.js                          account autosave, live sync, and merging for both apps (inactive without the accounts server)
@@ -125,24 +121,6 @@ build/build.py                        builds the template and inlines everything
 assets/                               the official playtest inventory sheet PDF
 vendor/pdf-lib.min.js                 pdf-lib 1.17.1 (MIT), inlined to build the PDF in the browser
 ```
-
-## Publishing on GitHub Pages
-
-The workflow in `.github/workflows/pages.yml` publishes the `dist/` folder whenever a push to `main`
-changes it. `dist/index.html` sends visitors on to the app, so the site's address opens it directly.
-
-One-time setup:
-
-1. Create a GitHub repository and push this project to it (`main` branch).
-2. In the repository, open **Settings > Pages** and set **Source** to **GitHub Actions**.
-3. Push a change under `dist/`, or run the workflow from the **Actions** tab. The site appears at
-   `https://<your-user>.github.io/<repo-name>/` (this project's is
-   https://balor1eye.github.io/crows-character-generator/).
-
-To update the site, rebuild (`python build/build.py`), commit `dist/`, and push.
-
-On a free GitHub plan, Pages only works for public repositories, so the whole project (including
-the official inventory sheet in `assets/`) becomes publicly visible.
 
 ## Rebuilding
 

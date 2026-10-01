@@ -921,7 +921,7 @@ function notify_decision(array $ref, array $r, bool $accepted): void {
         if ($accepted) send_mail($p['email'], "$crow joined $camp",
             "Hi {$p['username']},\n\n{$ref['username']} accepted $crow into $camp. Your Ref can now see the sheet and change its vitals, " .
             "equipment, and notes, and you'll both see each other's changes live.\n\nPlay $crow:\n" .
-            site_link('Crows_Character_Generator.html?id=' . (int)$r['character_id'] . '&mode=play') . "\n\n" .
+            site_link('play?id=' . (int)$r['character_id']) . "\n\n" .
             "You can take the Ref's access away any time from the crow's Share button in My characters.\n" . prefs_footer());
         else send_mail($p['email'], "Your request to join $camp",
             "Hi {$p['username']},\n\n{$ref['username']} declined $crow's request to join $camp.\n" .

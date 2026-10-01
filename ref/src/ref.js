@@ -712,7 +712,7 @@
     p.owed.forEach(function (o) { w.CrowsPlay.refChange(o); });
     delete p.owed; save();
   }
-  function openSheet(p) { window.open('Crows_Character_Generator.html?link=' + encodeURIComponent(p.link) + '&mode=play', '_blank', 'noopener'); }
+  function openSheet(p) { window.open('play?link=' + encodeURIComponent(p.link), '_blank', 'noopener'); }
   function newPC() { return { id: nid(), name: '', player: '', bg: '', feature: '', A: 0, M: 0, S: 0, stMax: 7, st: 7, ad: 0, wounds: 0, cruelty: 0, txp: 0, pending: 0, status: 'active', conn: '', rel: '', benefit: '', miasma: [], notes: '' }; }
 
   // ================================================================== RENDERING

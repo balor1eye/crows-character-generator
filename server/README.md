@@ -52,7 +52,7 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
 ~/public_html/crows/         the web root for https://joshuaramsey.com/crows/
   index.html, portal.js/css  login, home, lists, account, admin
   api.php, ref.php           tiny entry points that load ~/crows-app
-  Crows_Character_Generator.html
+  Crows_Character_Generator.html   also served as play (Play mode), by a rewrite in .htaccess
   .htaccess                  runs PHP 8.3 here, security headers
 ```
 
@@ -81,7 +81,7 @@ in, the open character or campaign is linked to a record in their account (`?id=
 sent a third of a second after they're made (at most 1.5 seconds later while you keep typing) and again when the page is
 hidden. Every save carries a version number. If another window or device saved in the meantime, the app asks
 which copy to keep instead of silently overwriting. When offline, it keeps retrying, and the browser copy
-is always kept too. As a guest, offline, or on GitHub Pages, it does nothing.
+is always kept too. As a guest or offline, it does nothing.
 
 Open copies see each other's changes (a player and their Ref, or two devices) about a second after they're
 saved. Every save also rewrites a tiny static file, `sync/<hash>.txt`, holding the record's new version. Open
