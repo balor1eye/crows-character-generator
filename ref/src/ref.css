@@ -206,14 +206,29 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .st-nums { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; font-size: .85rem; }
 .st-nums > span { display: inline-flex; align-items: center; gap: .25rem; }
 .st-nums .bad b { color: var(--bad); }
-.pc-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(290px, 1fr)); gap: .7rem; }
-.pc-card { border: 1px solid var(--line); border-top: 4px solid var(--ink); border-radius: 6px; padding: .6rem .7rem; background: var(--slot); display: flex; flex-direction: column; gap: .4rem; }
-.pc-card.dead { border-top-color: var(--bad); opacity: .75; }
-.pc-card.retired { border-top-color: var(--muted); opacity: .75; }
-.pc-card .pc-name { font: bold 1.1rem var(--serif); }
-.pc-card .grid3 { gap: .4rem; }
-.pc-card .field { font-size: .75rem; }
-.pc-card .field input, .pc-card .field select { min-height: 32px; padding: .25rem .4rem; }
+.pc-list { display: flex; flex-direction: column; }
+.pc-head, .pc-main { display: grid; grid-template-columns: minmax(200px, 2.4fr) repeat(3, 3.3rem) 7.4rem repeat(3, 3.6rem) 5.6rem minmax(5.5rem, auto); gap: .45rem; align-items: center; }
+.pc-head { font-size: .68rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; padding: 0 .5rem .3rem calc(.5rem + 4px); border-bottom: 1px solid var(--line); }
+.pc-row { border-bottom: 1px solid var(--line); border-left: 4px solid var(--ok); padding: .4rem .5rem; background: var(--slot); }
+.pc-row.away { border-left-color: var(--warn); }
+.pc-row.dead, .pc-row.lost { border-left-color: var(--bad); opacity: .75; }
+.pc-row.retired { border-left-color: var(--muted); opacity: .75; }
+.pc-row .c { display: flex; flex-direction: column; min-width: 0; }
+.pc-row .c .l { display: none; font-size: .66rem; text-transform: uppercase; letter-spacing: .04em; color: var(--muted); font-weight: 700; }
+.pc-row .who .sub { gap: .4rem; margin-top: .2rem; flex-wrap: nowrap; }
+.pc-row .who select.mini { width: auto; min-width: 6.5rem; flex: none; }
+.pc-row .who .sub .fine { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.pc-row .pc-name { font: bold 1rem var(--serif); padding: .2rem .4rem; min-height: 30px; }
+.pc-row input.n { width: 100%; min-height: 30px; padding: .2rem .25rem; text-align: center; }
+.pc-row .stam { flex-direction: row; align-items: center; gap: .2rem; flex-wrap: wrap; }
+.pc-row .stam .l { flex-basis: 100%; }
+.pc-row .stam input.n { width: 3.1rem; }
+.pc-row .acts { flex-direction: row; gap: .3rem; align-items: center; justify-content: flex-end; }
+.pc-more { margin-top: .3rem; }
+.pc-more > summary { cursor: pointer; font-size: .8rem; color: var(--muted); }
+.pc-more[open] { padding-bottom: .3rem; }
+.pc-more .grid3 { gap: .4rem; margin-top: .4rem; }
+.pc-more .field { font-size: .75rem; }
 .pc-sum { font-size: .84rem; color: var(--muted); }
 .list { display: flex; flex-direction: column; }
 .li { display: grid; grid-template-columns: minmax(0, 1fr) auto; gap: .5rem; align-items: start; padding: .45rem 0; border-bottom: 1px solid var(--line); }
@@ -295,13 +310,21 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
   .rules-tools { top: 0; }
   body[data-tab="session"] .side-timer { display: none; }
 }
+/* The crow rows need about 900px; narrower, each crow wraps onto a few lines with its own labels. */
+@media (max-width: 920px) {
+  .pc-head { display: none; }
+  .pc-main { grid-template-columns: repeat(auto-fill, minmax(4.4rem, 1fr)); }
+  .pc-row .who { grid-column: 1 / -1; }
+  .pc-row .stam, .pc-row .acts { grid-column: span 2; }
+  .pc-row .acts { align-self: end; }
+  .pc-row .c .l { display: block; }
+}
 @media (max-width: 700px) {
   .grid2, .grid3, .dt-grid { grid-template-columns: 1fr; }
   .brand-sub, .camp-name { display: none; }
   .masthead { position: static; }
   .clock { font-size: 2.6rem; }
-  .pc-card .grid3 { grid-template-columns: repeat(3, minmax(0, 1fr)); }
-  .table-grid, .beast-list, .pc-list, .st-grid { grid-template-columns: 1fr; }
+  .table-grid, .beast-list, .st-grid { grid-template-columns: 1fr; }
   .kv { grid-template-columns: 1fr; }
 }
 @media print {
