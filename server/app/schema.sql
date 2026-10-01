@@ -1,4 +1,4 @@
--- Crows accounts: users, login sessions, saved characters and campaigns.
+-- The Nest accounts: users, login sessions, saved characters and campaigns.
 -- Applied by install.php (safe to re-run: every statement is IF NOT EXISTS).
 
 CREATE TABLE IF NOT EXISTS users (

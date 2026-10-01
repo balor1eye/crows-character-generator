@@ -1315,7 +1315,7 @@
       });
     } });
     card('sec-party', el('h2', null, ['The Crows', el('small', { text: plural(activePCs().length, 'active crow') })]), [
-      el('p', { class: 'hint', text: 'Keep the party\'s key numbers at hand. Import the .json save files from the Crows Character Generator (Save file), or add crows by hand. Importing a crow with the same name updates it.' +
+      el('p', { class: 'hint', text: 'Keep the party\'s key numbers at hand. Import the .json save files from the Character Generator (Save file), or add crows by hand. Importing a crow with the same name updates it.' +
         (cloudOn() ? ' Players can also send you a link to their character: added that way, the crow stays tied to their sheet. Its vitals show live under Party status, and you can open the sheet to change equipment and notes too.' : '') }),
       cloudOn() ? el('div', { class: 'row', style: 'margin-bottom:.5rem' }, [
         (ui.linkIn = el('input', { type: 'url', class: 'in grow', placeholder: 'Paste a player\u2019s character link', 'aria-label': 'Character link', value: ui.linkText || '',

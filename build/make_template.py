@@ -525,7 +525,7 @@ def main():
     w.append(PdfReader(stats))
     w.append(PdfReader(official))
     w.append(PdfReader(cheat))
-    w.add_metadata({'/Title': 'Crows Character Sheet', '/Author': 'Crows Playtest Character Generator'})
+    w.add_metadata({'/Title': 'Crows Character Sheet', '/Author': 'The Nest'})
     with open(out_dir + '/template.pdf', 'wb') as f:
         w.write(f)
     with open(out_dir + '/field_layout.json', 'w') as f:

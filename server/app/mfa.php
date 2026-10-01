@@ -13,7 +13,7 @@
  */
 declare(strict_types=1);
 
-const MFA_ISSUER = 'Crows';
+const MFA_ISSUER = 'The Nest';   // the name authenticator apps show (accounts set up earlier keep their old label)
 const MFA_LOGIN_TTL = 900;      // seconds to finish a login challenge
 const MFA_SETUP_TTL = 1800;     // ...or set up a second factor
 const MFA_MAX_TRIES = 5;        // wrong codes per challenge
@@ -105,8 +105,8 @@ function mfa_send_code(array $c, array $u): void {
     if ($c['code_sent_at'] && strtotime($c['code_sent_at'] . ' UTC') > time() - 30) fail('A code was just sent. Wait half a minute before asking for another.', 429);
     $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
     q('UPDATE mfa_challenges SET code_hash = ?, code_sent_at = ?, sends = sends + 1 WHERE token_hash = ?', [sha($c['token_hash'] . $code), now(), $c['token_hash']]);
-    send_mail($u['email'], "Your Crows code: $code",
-        "Hi {$u['username']},\n\nYour Crows sign-in code is:\n\n    $code\n\nIt works for 15 minutes. If you didn't just try to sign in, " .
+    send_mail($u['email'], "Your code for The Nest: $code",
+        "Hi {$u['username']},\n\nYour sign-in code for The Nest is:\n\n    $code\n\nIt works for 15 minutes. If you didn't just try to sign in, " .
         "someone has your password: change it on your Account page.\n");
 }
 /** A wrong code: count it, and drop the challenge after too many. */
@@ -254,8 +254,8 @@ function a_admin_reset_mfa(): array {
     q('DELETE FROM mfa_recovery WHERE user_id = ?', [$uid]);
     q('DELETE FROM sessions WHERE user_id = ?', [$uid]);   // anyone holding a session re-proves the new factor
     audit('mfa_reset', $uid, '', $a['id']);
-    send_mail($u['email'], 'Your Crows two-step login was reset',
-        "Hi {$u['username']},\n\nAn admin reset the two-step login on your Crows account, and you were logged out everywhere. " .
+    send_mail($u['email'], 'Your two-step login for The Nest was reset',
+        "Hi {$u['username']},\n\nAn admin reset the two-step login on your account on The Nest, and you were logged out everywhere. " .
         "You'll set up a new authenticator app or emailed codes the next time you log in.\n" .
         "If you didn't ask for this, contact the site admin right away.\n");
     return [];

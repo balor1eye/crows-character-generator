@@ -949,7 +949,7 @@
         form.updateFieldAppearances(font);
         doc.setTitle((state.name || 'Crow') + ' - Crows Character Sheet');
         doc.setSubject('Crows Playtest 2 character: ' + bg().name);
-        doc.setCreator('Crows Playtest Character Generator');
+        doc.setCreator('The Nest (Crows Playtest 2 character generator)');
         return doc.save();
       });
     });

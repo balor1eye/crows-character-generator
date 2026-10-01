@@ -1,4 +1,4 @@
-# Crows accounts site. Run PHP 8.3 here (the parent site's default handler is older).
+# The Nest accounts site. Run PHP 8.3 here (the parent site's default handler is older).
 <IfModule mime_module>
   AddHandler application/x-httpd-ea-php83___lsphp .php
 </IfModule>

@@ -1,5 +1,5 @@
 /*
- * Crows accounts portal: log in / create an account / reset a password, then a home page that leads to
+ * The Nest accounts portal: log in / create an account / reset a password, then a home page that leads to
  * character creation, saved characters, play, and (for Refs) campaigns and the Ref Screen, plus account
  * settings and (for admins) account management. Routes live in the URL hash (#login, #home, ...).
  */
@@ -288,7 +288,7 @@
       step([
         el('h1', { text: opts.change ? 'Change two-step login' : 'Protect your account' }),
         el('p', { class: 'muted', text: (opts.change ? '' : 'One more step' + (c.username ? ', ' + c.username : '') + '. ') +
-          'Every Crows account uses two-step login: after your password, you also enter a code. Pick where your codes come from.' }),
+          'Every account on The Nest uses two-step login: after your password, you also enter a code. Pick where your codes come from.' }),
         el('div', { class: 'choices' }, [
           el('button', { type: 'button', class: 'choice', onclick: function () { start('totp'); } }, [el('span', { class: 't', text: 'Authenticator app' }), el('span', { class: 'tag', text: 'Recommended' }),
             el('span', { class: 'd', text: 'Google Authenticator, Microsoft Authenticator, 1Password, Authy, or similar. Works offline and doesn\u2019t depend on email.' })]),
@@ -313,7 +313,7 @@
           el('li', { text: 'In your authenticator app, add an account and scan this code.' }),
           el('li', null, ['Can\u2019t scan it (say, on this same phone)? Enter this key instead: ', el('code', { class: 'secret', text: j.secret }),
             ' ', el('a', { href: j.uri, text: 'or open it in an app on this device' })]),
-          el('li', { text: 'Type the 6-digit code the app shows for Crows.' })
+          el('li', { text: 'Type the 6-digit code the app shows for The Nest.' })
         ]),
         qrSvg(j.uri),
         confirmForm('Turn on two-step login'),
@@ -342,7 +342,7 @@
 
   /* Show new recovery codes once, with ways to keep them, and continue only after they're saved. */
   function recoveryCodes(box, codes, title, onDone) {
-    var text = 'Crows recovery codes for ' + me.username + ' (each works once):\n\n' + codes.join('\n') + '\n';
+    var text = 'The Nest recovery codes for ' + me.username + ' (each works once):\n\n' + codes.join('\n') + '\n';
     var ok = el('input', { type: 'checkbox' }), cont = btn('Continue', function () { if (!ok.checked) { toast('Tick the box once you\u2019ve saved them.'); return; } onDone(); }, 'btn-primary wide');
     box.innerHTML = '';
     [el('h1', { text: title }),
@@ -350,7 +350,7 @@
       el('ul', { class: 'recovery' }, codes.map(function (c) { return el('li', null, [el('code', { text: c })]); })),
       el('div', { class: 'row-btns' }, [
         btn('Copy', function () { (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { toast('Copied.'); }, function () { toast('Copy them by hand, or use Download.'); }); }, 'btn-small'),
-        btn('Download', function () { download(text, 'Crows_recovery_codes.txt'); }, 'btn-small'),
+        btn('Download', function () { download(text, 'The_Nest_recovery_codes.txt'); }, 'btn-small'),
         btn('Print', function () { window.print(); }, 'btn-small btn-ghost')]),
       el('label', { class: 'check-row' }, [ok, ' I\u2019ve saved my recovery codes']),
       el('div', { class: 'form-actions' }, [cont])

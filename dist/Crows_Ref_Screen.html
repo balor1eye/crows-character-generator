@@ -3,7 +3,7 @@
 <head>
 <meta charset="utf-8">
 <meta name="viewport" content="width=device-width, initial-scale=1">
-<title>Crows Ref Screen</title>
+<title>The Nest · Ref Screen</title>
 <style>
 :root {
   --paper: #f4efe6;
@@ -346,8 +346,8 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 <header class="masthead">
   <div class="masthead-inner">
     <div class="brand">
-      <span class="brand-mark">CROWS</span>
-      <span class="brand-sub">Playtest 2 Ref Screen</span>
+      <span class="brand-mark">THE NEST</span>
+      <span class="brand-sub">Crows Playtest 2 · Ref Screen</span>
     </div>
     <nav class="actions">
       <span class="camp-name" id="camp-name"></span>
@@ -416,7 +416,7 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 </main>
 
 <footer class="footer">
-  <p>Unofficial fan tool for the MCDM <em>Crows</em> public playtest (August&ndash;September 2026). Rules and names are &copy; MCDM Productions LLC. Everything runs in your browser and is saved on this device and in the campaign files you download, plus in your Crows account when you are logged in.</p>
+  <p>The Nest is an unofficial fan tool for the MCDM <em>Crows</em> public playtest (August&ndash;September 2026). Rules and names are &copy; MCDM Productions LLC. Everything runs in your browser and is saved on this device and in the campaign files you download, plus in your account on The Nest when you are logged in.</p>
 </footer>
 
 <div id="toast" class="toast" role="status" aria-live="polite"></div>
@@ -903,7 +903,7 @@ REF.QUICK = [
 </script>
 <script>
 /*
- * Crows account autosave, shared by the Character Generator and the Ref Screen.
+ * The Nest account autosave, shared by the Character Generator and the Ref Screen.
  *
  * When the app is served next to the accounts API (api.php) and the visitor is logged in, the thing
  * being edited (a character or a campaign) is kept in their account: it's loaded from the server and
@@ -2823,7 +2823,7 @@ REF.QUICK = [
       });
     } });
     card('sec-party', el('h2', null, ['The Crows', el('small', { text: plural(activePCs().length, 'active crow') })]), [
-      el('p', { class: 'hint', text: 'Keep the party\'s key numbers at hand. Import the .json save files from the Crows Character Generator (Save file), or add crows by hand. Importing a crow with the same name updates it.' +
+      el('p', { class: 'hint', text: 'Keep the party\'s key numbers at hand. Import the .json save files from the Character Generator (Save file), or add crows by hand. Importing a crow with the same name updates it.' +
         (cloudOn() ? ' Players can also send you a link to their character: added that way, the crow stays tied to their sheet. Its vitals show live under Party status, and you can open the sheet to change equipment and notes too.' : '') }),
       cloudOn() ? el('div', { class: 'row', style: 'margin-bottom:.5rem' }, [
         (ui.linkIn = el('input', { type: 'url', class: 'in grow', placeholder: 'Paste a player\u2019s character link', 'aria-label': 'Character link', value: ui.linkText || '',

@@ -1,6 +1,6 @@
-# Crows Playtest Character Generator
+# The Nest
 
-A character creator for the MCDM **Crows** public playtest 2 (August–September 2026), built from the
+The Nest is a character creator, Ref Screen, and accounts site. It's a character creator for the MCDM **Crows** public playtest 2 (August–September 2026), built from the
 Rules, Characters, and Ref books and the playtest inventory cards.
 
 **Use it online: https://balor1eye.github.io/crows-character-generator/**

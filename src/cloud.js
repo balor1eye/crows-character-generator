@@ -1,5 +1,5 @@
 /*
- * Crows account autosave, shared by the Character Generator and the Ref Screen.
+ * The Nest account autosave, shared by the Character Generator and the Ref Screen.
  *
  * When the app is served next to the accounts API (api.php) and the visitor is logged in, the thing
  * being edited (a character or a campaign) is kept in their account: it's loaded from the server and

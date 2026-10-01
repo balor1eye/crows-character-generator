@@ -1,6 +1,6 @@
 <?php
 /*
- * Crows accounts: shared setup for the web entry points (public/api.php, public/ref.php) and the
+ * The Nest accounts: shared setup for the web entry points (public/api.php, public/ref.php) and the
  * command-line tools. Lives outside the web root; config.php (not in git) sits next to it.
  * All times are stored in UTC, computed in PHP (never MySQL's NOW()).
  */

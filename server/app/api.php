@@ -1,6 +1,6 @@
 <?php
 /*
- * Crows accounts JSON API. Reached through public/api.php?a=<action>.
+ * The Nest accounts JSON API. Reached through public/api.php?a=<action>.
  *
  * Reads are GET, writes are POST with a JSON body. Every POST must be application/json (so a
  * cross-site form can't forge one), and once logged in it must also carry the session's CSRF
@@ -126,7 +126,7 @@ function send_mail(string $to, string $subject, string $text): bool {
     $from = $c['mail_from'] ?? '';
     // Subjects can carry names players typed: no line breaks (they'd start new headers), and encoded for UTF-8.
     $subject = mb_encode_mimeheader(trim(preg_replace('/[\r\n\t]+/', ' ', $subject)), 'UTF-8', 'Q');
-    $headers = "Content-Type: text/plain; charset=UTF-8\r\n" . ($from ? "From: Crows <$from>\r\n" : '');
+    $headers = "Content-Type: text/plain; charset=UTF-8\r\n" . ($from ? "From: The Nest <$from>\r\n" : '');
     try { return @mail($to, $subject, $text, $headers, $from ? '-f' . $from : ''); }
     catch (Throwable $e) { error_log('crows mail: ' . $e->getMessage()); return false; }
 }
@@ -153,8 +153,8 @@ function mail_admins_new_account(string $username, string $email): void {
         $total = (int)q('SELECT COUNT(*) FROM users')->fetchColumn();
         foreach (q('SELECT id, username, email FROM users WHERE is_admin = 1')->fetchAll() as $a) {
             if (!wants_email((int)$a['id'], 'newAccounts')) continue;
-            send_mail($a['email'], "New Crows account: $username",
-                "Hi {$a['username']},\n\nSomeone just created an account on the Crows site.\n\n" .
+            send_mail($a['email'], "New account on The Nest: $username",
+                "Hi {$a['username']},\n\nSomeone just created an account on The Nest.\n\n" .
                 "Username: $username\nEmail: $email\nAccounts now: $total\n\n" .
                 "New accounts are players. To make one a Ref, or to remove it, use Manage accounts:\n" . site_link('#admin') . "\n" . prefs_footer());
         }
@@ -224,8 +224,8 @@ function a_forgot(): array {
     if ($u) {
         audit('reset_requested', (int)$u['id']);
         $link = reset_link((int)$u['id'], 2);
-        send_mail($u['email'], 'Reset your Crows password',
-            "Hi {$u['username']},\n\nSomeone (hopefully you) asked to reset the password for your Crows account.\n" .
+        send_mail($u['email'], 'Reset your password for The Nest',
+            "Hi {$u['username']},\n\nSomeone (hopefully you) asked to reset the password for your account on The Nest.\n" .
             "Open this link within 2 hours to choose a new one:\n\n$link\n\nIf you didn't ask for this, you can ignore this email.\n");
     }
     // Same answer either way, so this can't be used to find out who has an account.
@@ -259,8 +259,8 @@ function a_account_update(): array {
         q('UPDATE users SET email = ? WHERE id = ?', [$email, $s['id']]);
         audit('email_changed', $s['id']);
         // Tell the old address, so a hijacked account doesn't go unnoticed.
-        send_mail($s['email'], 'Your Crows account email was changed',
-            "Hi {$s['username']},\n\nThe email on your Crows account was just changed to $email.\n" .
+        send_mail($s['email'], 'Your email on The Nest was changed',
+            "Hi {$s['username']},\n\nThe email on your account on The Nest was just changed to $email.\n" .
             "If you didn't do this, contact the site admin right away.\n");
     }
     if (is_string($newPw) && $newPw !== '') {
@@ -268,8 +268,8 @@ function a_account_update(): array {
         // A new password signs out every other device.
         q('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', [$s['id'], $s['token_hash']]);
         audit('password_changed', $s['id']);
-        send_mail(is_string($email) && $email !== '' ? $email : $s['email'], 'Your Crows password was changed',
-            "Hi {$s['username']},\n\nThe password on your Crows account was just changed, and your other devices were logged out.\n" .
+        send_mail(is_string($email) && $email !== '' ? $email : $s['email'], 'Your password for The Nest was changed',
+            "Hi {$s['username']},\n\nThe password on your account on The Nest was just changed, and your other devices were logged out.\n" .
             "If you didn't do this, reset your password and contact the site admin.\n");
     }
     return ['user' => public_user(q('SELECT * FROM users WHERE id = ?', [$s['id']])->fetch())];
