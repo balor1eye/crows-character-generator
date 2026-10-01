@@ -8,6 +8,7 @@
  */
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
+require __DIR__ . '/mfa.php';
 
 final class ApiError extends Exception {
     public int $status;
@@ -188,9 +189,8 @@ function a_register(): array {
     $id = (int)db()->lastInsertId();
     audit('register', $id, $username);
     mail_admins_new_account($username, $email);
-    $sess = start_session($id);
-    $u = q('SELECT * FROM users WHERE id = ?', [$id])->fetch();
-    return ['user' => public_user($u), 'csrf' => $sess['csrf']];
+    // No session yet: the new account sets up its second factor first (mfa.php).
+    return mfa_gate(q('SELECT * FROM users WHERE id = ?', [$id])->fetch());
 }
 
 function a_login(): array {
@@ -209,10 +209,9 @@ function a_login(): array {
     if (password_needs_rehash($u['pass_hash'], pw_algo())) {
         q('UPDATE users SET pass_hash = ? WHERE id = ?', [hash_password($pw), $u['id']]);
     }
-    audit('login', (int)$u['id']);
+    audit('login_password', (int)$u['id']);
     q('DELETE FROM login_attempts WHERE login = ?', [$key]);
-    $sess = start_session((int)$u['id']);
-    return ['user' => public_user($u), 'csrf' => $sess['csrf']];
+    return mfa_gate($u);   // the session comes after the second step (mfa.php)
 }
 
 function a_logout(): array { end_session(); return []; }
@@ -244,9 +243,8 @@ function a_reset(): array {
     audit('password_reset', $uid);
     q('DELETE FROM password_resets WHERE user_id = ?', [$uid]);
     q('DELETE FROM sessions WHERE user_id = ?', [$uid]);
-    $sess = start_session($uid);
-    $u = q('SELECT * FROM users WHERE id = ?', [$uid])->fetch();
-    return ['user' => public_user($u), 'csrf' => $sess['csrf']];
+    // A reset link proves the mailbox, not the second factor: that still has to be shown (mfa.php).
+    return mfa_gate(q('SELECT * FROM users WHERE id = ?', [$uid])->fetch());
 }
 
 // ---------------------------------------------------------------- account
@@ -896,13 +894,14 @@ function a_admin_users(): array {
     need_admin();
     $rows = q('SELECT u.id, u.username, u.email, u.role, u.is_admin, u.created_at, u.last_login,
                  (SELECT COUNT(*) FROM characters c WHERE c.user_id = u.id) AS characters,
-                 (SELECT COUNT(*) FROM campaigns m WHERE m.user_id = u.id) AS campaigns
+                 (SELECT COUNT(*) FROM campaigns m WHERE m.user_id = u.id) AS campaigns,
+                 (SELECT method FROM mfa f WHERE f.user_id = u.id) AS mfa
                FROM users u ORDER BY u.username')->fetchAll();
     return ['users' => array_map(function ($r) {
         return ['id' => (int)$r['id'], 'username' => $r['username'], 'email' => $r['email'], 'role' => $r['role'],
                 'isAdmin' => (bool)$r['is_admin'], 'createdAt' => $r['created_at'] . 'Z',
                 'lastLogin' => $r['last_login'] ? $r['last_login'] . 'Z' : null,
-                'characters' => (int)$r['characters'], 'campaigns' => (int)$r['campaigns']];
+                'characters' => (int)$r['characters'], 'campaigns' => (int)$r['campaigns'], 'mfa' => $r['mfa']];
     }, $rows)];
 }
 
@@ -970,6 +969,14 @@ const ACTIONS = [
     'account.update' => ['POST', 'a_account_update', true],
     'account.logoutOthers' => ['POST', 'a_account_logout_others', true],
     'account.emailPrefs' => ['GET', 'a_account_email_prefs', false],
+    'account.mfa' => ['GET', 'a_account_mfa', false],
+    'account.mfaChange' => ['POST', 'a_account_mfa_change', true],
+    'account.mfaRecovery' => ['POST', 'a_account_mfa_recovery', true],
+    // The second login step: authorised by the challenge token (there's no session yet), JSON-only like every POST.
+    'mfa.verify' => ['POST', 'a_mfa_verify', false],
+    'mfa.resend' => ['POST', 'a_mfa_resend', false],
+    'mfa.setupStart' => ['POST', 'a_mfa_setup_start', false],
+    'mfa.setupFinish' => ['POST', 'a_mfa_setup_finish', false],
     'account.setEmailPrefs' => ['POST', 'a_account_set_email_prefs', true],
     'account.delete' => ['POST', 'a_account_delete', true],
     'list' => ['GET', 'a_list', false],
@@ -1003,6 +1010,7 @@ const ACTIONS = [
     'admin.setAdmin' => ['POST', 'a_admin_set_admin', true],
     'admin.resetLink' => ['POST', 'a_admin_reset_link', true],
     'admin.deleteUser' => ['POST', 'a_admin_delete_user', true],
+    'admin.resetMfa' => ['POST', 'a_admin_reset_mfa', true],
 ];
 
 function run_api(): void {

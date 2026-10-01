@@ -170,7 +170,7 @@
           field('Username or email', input('text', 'login', { autocomplete: 'username', autocapitalize: 'off', spellcheck: 'false' })),
           field('Password', input('password', 'password', { autocomplete: 'current-password' }))
         ], 'Log in', function (v) {
-          return api('POST', 'login', { login: v.login, password: v.password }).then(function (j) { signedIn(j); afterLogin(); });
+          return api('POST', 'login', { login: v.login, password: v.password }).then(afterPassword);
         }),
         el('div', { class: 'links' }, [a('Create an account', '#register', ''), a('Forgot your password?', '#forgot', '')])
       ]),
@@ -186,14 +186,12 @@
         insecureNote(),
         form([
           field('Username', input('text', 'username', { autocomplete: 'username', autocapitalize: 'off', spellcheck: 'false', maxlength: 32 }), '3–32 letters, numbers, dots, dashes, or underscores.'),
-          field('Email', input('email', 'email', { autocomplete: 'email' }), 'Only used to reset your password.'),
+          field('Email', input('email', 'email', { autocomplete: 'email' }), 'For resetting your password, sign-in codes if you choose them, and notices you can turn off.'),
           field('Password', input('password', 'password', { autocomplete: 'new-password', minlength: 8 }), 'At least 8 characters. A long passphrase is best; very common passwords are refused.'),
           field('Password again', input('password', 'password2', { autocomplete: 'new-password' }))
         ], 'Create account', function (v) {
           if (v.password !== v.password2) throw new Error('The two passwords don\'t match.');
-          return api('POST', 'register', { username: v.username, email: v.email, password: v.password }).then(function (j) {
-            signedIn(j); afterLogin(); toast('Welcome, ' + me.username + '!');
-          });
+          return api('POST', 'register', { username: v.username, email: v.email, password: v.password }).then(afterPassword);
         }),
         el('div', { class: 'links' }, [a('I already have an account', '#login', '')])
       ])
@@ -222,10 +220,156 @@
       ], 'Save password', function (v) {
         if (v.password !== v.password2) throw new Error('The two passwords don\'t match.');
         return api('POST', 'reset', { token: token, password: v.password }).then(function (j) {
-          signedIn(j); history.replaceState(null, '', location.pathname + '#home'); route(); toast('Password changed. You are logged in.');
+          history.replaceState(null, '', location.pathname + '#login'); toast('Password changed.'); afterPassword(j);
         });
       })
     ])])]);
+  }
+
+  // ---------------------------------------------------------------- two-step login
+  /*
+   * A correct password gets a challenge, not a session: prove the second factor (an authenticator app code, an
+   * emailed code, or a recovery code), or, for an account without one (every new account), set one up first.
+   * These steps aren't routes: reloading the page goes back to logging in, which makes a fresh challenge.
+   */
+  function afterPassword(j) {
+    if (j.mfa) return viewMfaLogin(j.mfa);
+    if (j.mfaSetup) return viewMfaSetup(j.mfaSetup);
+    signedIn(j); afterLogin();
+  }
+  function codeInput(extra) {
+    return input('text', 'code', Object.assign({ inputmode: 'numeric', autocomplete: 'one-time-code', autocapitalize: 'off', spellcheck: 'false', maxlength: 12, class: 'code-in' }, extra || {}));
+  }
+  function resendBtn(token) {
+    return btn('Send a new code', function () {
+      api('POST', 'mfa.resend', { token: token }).then(function () { toast('A new code is on its way.'); }, function (e) { toast(e.message); });
+    }, 'btn-small btn-ghost');
+  }
+
+  function viewMfaLogin(c) {
+    nav();
+    var recovery = false, hint = el('p', { class: 'muted' }), label = el('span'), code = codeInput();
+    function mode() {
+      label.textContent = recovery ? 'Recovery code' : 'Code';
+      code.setAttribute('inputmode', recovery ? 'text' : 'numeric');
+      code.placeholder = recovery ? 'xxxx-xxxx' : '123456';
+      hint.textContent = recovery ? 'Enter one of the recovery codes you saved when you set up two-step login. Each works once.'
+        : c.method === 'totp' ? 'Enter the 6-digit code from your authenticator app.' : 'We emailed a 6-digit code to ' + c.email + '. It works for 15 minutes; check your spam folder if it\u2019s not there.';
+      toggle.textContent = recovery ? (c.method === 'totp' ? 'Use my authenticator app' : 'Use the emailed code') : 'Use a recovery code instead';
+      code.value = ''; code.focus();
+    }
+    var toggle = el('a', { href: '#', onclick: function (e) { e.preventDefault(); recovery = !recovery; mode(); } });
+    var f = form([hint, el('label', { class: 'field' }, [label, code])], 'Log in', function (v) {
+      return api('POST', 'mfa.verify', { token: c.token, code: v.code }).then(function (j) {
+        signedIn(j); afterLogin();
+        if (j.recoveryLeft !== undefined) toast(j.recoveryLeft <= 3 ? 'Recovery code used. Only ' + j.recoveryLeft + ' left: make new ones on your Account page.' : 'Recovery code used (' + j.recoveryLeft + ' left).');
+      });
+    });
+    show([el('div', { class: 'narrow' }, [el('div', { class: 'card' }, [
+      el('h1', { text: 'Two-step login' }), f,
+      el('div', { class: 'links' }, [toggle, c.method === 'email' ? resendBtn(c.token) : null,
+        el('a', { href: '#login', text: 'Start over', onclick: function (e) { e.preventDefault(); go('login'); } })]),   // the URL may already be #login
+      el('p', { class: 'fine', text: 'Lost your phone and your recovery codes? Ask the site admin to reset your two-step login.' })
+    ])])]);
+    mode();
+  }
+
+  /*
+   * Setting up the second factor: at sign-up, at the first login of an older account, or from the Account page
+   * (opts.change). Pick a method, confirm it with a code, then save the recovery codes.
+   */
+  function viewMfaSetup(c, opts) {
+    opts = opts || {};
+    nav();
+    var box = el('div', { class: 'card' });
+    show([el('div', { class: 'narrow' }, [box])]);
+    function step(kids) { box.innerHTML = ''; kids.forEach(function (k) { if (k) box.appendChild(k); }); var i = box.querySelector('input'); if (i) i.focus(); }
+    function choose() {
+      step([
+        el('h1', { text: opts.change ? 'Change two-step login' : 'Protect your account' }),
+        el('p', { class: 'muted', text: (opts.change ? '' : 'One more step' + (c.username ? ', ' + c.username : '') + '. ') +
+          'Every Crows account uses two-step login: after your password, you also enter a code. Pick where your codes come from.' }),
+        el('div', { class: 'choices' }, [
+          el('button', { type: 'button', class: 'choice', onclick: function () { start('totp'); } }, [el('span', { class: 't', text: 'Authenticator app' }), el('span', { class: 'tag', text: 'Recommended' }),
+            el('span', { class: 'd', text: 'Google Authenticator, Microsoft Authenticator, 1Password, Authy, or similar. Works offline and doesn\u2019t depend on email.' })]),
+          el('button', { type: 'button', class: 'choice', onclick: function () { start('email'); } }, [el('span', { class: 't', text: 'Emailed codes' }),
+            el('span', { class: 'd', text: 'We email a code to ' + c.email + ' each time you log in. Simpler, but only as safe as your email.' })])
+        ]),
+        opts.change ? el('div', { class: 'links' }, [a('Cancel', '#account', '')]) : null
+      ]);
+    }
+    function start(method) {
+      api('POST', 'mfa.setupStart', { token: c.token, method: method }).then(function (j) { method === 'totp' ? scan(j) : emailed(j); }, function (e) { toast(e.message); if (e.status === 401) go('login'); });
+    }
+    function confirmForm(submitText) {
+      return form([el('label', { class: 'field' }, ['6-digit code', codeInput({ placeholder: '123456' })])], submitText, function (v) {
+        return api('POST', 'mfa.setupFinish', { token: c.token, code: v.code }).then(done);
+      });
+    }
+    function scan(j) {
+      step([
+        el('h1', { text: 'Set up your authenticator app' }),
+        el('ol', { class: 'steps' }, [
+          el('li', { text: 'In your authenticator app, add an account and scan this code.' }),
+          el('li', null, ['Can\u2019t scan it (say, on this same phone)? Enter this key instead: ', el('code', { class: 'secret', text: j.secret }),
+            ' ', el('a', { href: j.uri, text: 'or open it in an app on this device' })]),
+          el('li', { text: 'Type the 6-digit code the app shows for Crows.' })
+        ]),
+        qrSvg(j.uri),
+        confirmForm('Turn on two-step login'),
+        el('div', { class: 'links' }, [a('Pick a different method', '#', ''), opts.change ? a('Cancel', '#account', '') : null])
+      ]);
+      box.querySelector('.links a').addEventListener('click', function (e) { e.preventDefault(); choose(); });
+    }
+    function emailed(j) {
+      step([
+        el('h1', { text: 'Check your email' }),
+        el('p', { class: 'muted', text: 'We sent a 6-digit code to ' + j.email + '. It works for 15 minutes; check your spam folder if it\u2019s not there.' }),
+        confirmForm('Turn on two-step login'),
+        el('div', { class: 'links' }, [resendBtn(c.token), a('Pick a different method', '#', ''), opts.change ? a('Cancel', '#account', '') : null])
+      ]);
+      box.querySelectorAll('.links a')[0].addEventListener('click', function (e) { e.preventDefault(); choose(); });
+    }
+    function done(j) {
+      signedIn(j);
+      recoveryCodes(box, j.recoveryCodes, opts.change ? 'Two-step login is changed.' : 'Two-step login is on.', function () {
+        if (opts.change) { go('account'); toast('Two-step login changed.'); }
+        else { afterLogin(); toast('Welcome, ' + me.username + '!'); }
+      });
+    }
+    choose();
+  }
+
+  /* Show new recovery codes once, with ways to keep them, and continue only after they're saved. */
+  function recoveryCodes(box, codes, title, onDone) {
+    var text = 'Crows recovery codes for ' + me.username + ' (each works once):\n\n' + codes.join('\n') + '\n';
+    var ok = el('input', { type: 'checkbox' }), cont = btn('Continue', function () { if (!ok.checked) { toast('Tick the box once you\u2019ve saved them.'); return; } onDone(); }, 'btn-primary wide');
+    box.innerHTML = '';
+    [el('h1', { text: title }),
+      el('p', { text: 'Save these recovery codes somewhere safe, like a password manager or a printout. If you lose your phone or can\u2019t get your email, one of them gets you in. Each works once. They won\u2019t be shown again.' }),
+      el('ul', { class: 'recovery' }, codes.map(function (c) { return el('li', null, [el('code', { text: c })]); })),
+      el('div', { class: 'row-btns' }, [
+        btn('Copy', function () { (navigator.clipboard ? navigator.clipboard.writeText(text) : Promise.reject()).then(function () { toast('Copied.'); }, function () { toast('Copy them by hand, or use Download.'); }); }, 'btn-small'),
+        btn('Download', function () { download(text, 'Crows_recovery_codes.txt'); }, 'btn-small'),
+        btn('Print', function () { window.print(); }, 'btn-small btn-ghost')]),
+      el('label', { class: 'check-row' }, [ok, ' I\u2019ve saved my recovery codes']),
+      el('div', { class: 'form-actions' }, [cont])
+    ].forEach(function (k) { box.appendChild(k); });
+  }
+
+  /* The otpauth:// link as a QR code (qrcode.js, vendored), drawn as SVG on a white quiet zone so it scans in dark mode. */
+  function qrSvg(uri) {
+    var NS = 'http://www.w3.org/2000/svg', q = window.qrcode(0, 'M');
+    q.addData(uri); q.make();
+    var n = q.getModuleCount(), m = 4, size = n + m * 2, path = '';
+    for (var r = 0; r < n; r++) for (var c = 0; c < n; c++) if (q.isDark(r, c)) path += 'M' + (c + m) + ' ' + (r + m) + 'h1v1h-1z';
+    var svg = document.createElementNS(NS, 'svg');
+    svg.setAttribute('viewBox', '0 0 ' + size + ' ' + size); svg.setAttribute('class', 'qr'); svg.setAttribute('role', 'img');
+    svg.setAttribute('aria-label', 'QR code for your authenticator app');
+    var bg = document.createElementNS(NS, 'rect'); bg.setAttribute('width', size); bg.setAttribute('height', size); bg.setAttribute('fill', '#fff');
+    var fg = document.createElementNS(NS, 'path'); fg.setAttribute('d', path); fg.setAttribute('fill', '#000');
+    svg.appendChild(bg); svg.appendChild(fg);
+    return svg;
   }
 
   // ---------------------------------------------------------------- home
@@ -527,6 +671,7 @@
       el('p', { class: 'muted' }, ['You are a ', el('strong', { text: me.role === 'ref' ? 'Ref' : 'player' }), me.isAdmin ? ' and an admin' : '', '.',
         me.role !== 'ref' && !me.isAdmin ? ' An admin can make you a Ref if you run games.' : '']),
       el('div', { class: 'card' }, [el('h2', { text: 'Details' }), details]),
+      mfaCard(),
       emailCard(),
       el('div', { class: 'card' }, [el('h2', { text: 'Devices' }),
         el('p', { class: 'muted', text: 'You stay logged in for 30 days on each device you use.' }),
@@ -536,6 +681,36 @@
       el('div', { class: 'card' }, [el('h2', { text: 'Delete account' }),
         el('p', { class: 'muted', text: 'This removes your account and all its saved characters and campaigns. Download anything you want to keep first.' }), del])
     ])]);
+  }
+
+  /* How this account signs in, and ways to change it or get new recovery codes (both need the password). */
+  function mfaCard() {
+    var box = el('div', { class: 'card' }, [el('h2', { text: 'Two-step login' }), el('p', { class: 'muted', text: 'Loading…' })]);
+    function withPassword(label, then) {
+      var pw = input('password', 'currentPassword', { autocomplete: 'current-password' });
+      var f = form([field('Current password', pw)], label, function (v) { return then(v.currentPassword); });
+      box.appendChild(f); pw.focus();
+    }
+    api('GET', 'account.mfa').then(function (j) {
+      box.innerHTML = '';
+      box.appendChild(el('h2', { text: 'Two-step login' }));
+      box.appendChild(el('p', { class: 'muted', text: j.method ? 'On, with ' + (j.method === 'totp' ? 'an authenticator app' : 'codes emailed to ' + me.email) + '. ' +
+        j.recoveryLeft + ' recovery code' + (j.recoveryLeft === 1 ? '' : 's') + ' left.' : 'Not set up yet: you\u2019ll set it up the next time you log in.' }));
+      if (j.method && j.recoveryLeft <= 3) box.appendChild(el('div', { class: 'msg warn', text: 'You\u2019re running low on recovery codes. Make new ones.' }));
+      box.appendChild(el('div', { class: 'row-btns' }, [
+        btn(j.method ? 'Change method' : 'Set it up now', function () {
+          withPassword('Continue', function (pw) { return api('POST', 'account.mfaChange', { currentPassword: pw }).then(function (r) { viewMfaSetup({ token: r.token, email: r.email }, { change: true }); }); });
+        }, 'btn-small'),
+        j.method ? btn('New recovery codes', function () {
+          withPassword('Make new codes', function (pw) {
+            return api('POST', 'account.mfaRecovery', { currentPassword: pw }).then(function (r) {
+              var card = el('div', { class: 'card' }); show([el('div', { class: 'narrow' }, [card])]);
+              recoveryCodes(card, r.recoveryCodes, 'New recovery codes', function () { go('account'); toast('Your old recovery codes no longer work.'); });
+            });
+          });
+        }, 'btn-small btn-ghost') : null]));
+    }, function (e) { box.lastChild.textContent = e.message; });
+    return box;
   }
 
   /* Optional emails, saved as soon as a box is ticked or unticked. */
@@ -560,12 +735,12 @@
 
   // ---------------------------------------------------------------- admin
   function viewAdmin() {
-    var body = el('tbody', null, [el('tr', null, [el('td', { colspan: 6, class: 'muted', text: 'Loading…' })])]);
+    var body = el('tbody', null, [el('tr', null, [el('td', { colspan: 7, class: 'muted', text: 'Loading…' })])]);
     var search = input('search', 'q', { placeholder: 'Filter by name or email' });
     var users = [];
     var linkBox = el('div');
     function load() {
-      api('GET', 'admin.users').then(function (j) { users = j.users; draw(); }, function (e) { body.innerHTML = ''; body.appendChild(el('tr', null, [el('td', { colspan: 6, text: e.message })])); });
+      api('GET', 'admin.users').then(function (j) { users = j.users; draw(); }, function (e) { body.innerHTML = ''; body.appendChild(el('tr', null, [el('td', { colspan: 7, text: e.message })])); });
     }
     function act(action, payload, done) {
       return api('POST', action, payload).then(function (j) { if (done) done(j); load(); }, function (e) { toast(e.message); load(); });
@@ -590,6 +765,7 @@
           el('td', null, [role]),
           el('td', null, [adm]),
           el('td', { class: 'fine', text: u.characters + ' char. · ' + u.campaigns + ' camp.' }),
+          el('td', { class: 'fine', text: u.mfa === 'totp' ? 'App' : u.mfa === 'email' ? 'Email' : 'Not yet' }),
           el('td', { class: 'fine', text: u.lastLogin ? when(u.lastLogin) : 'never' }),
           el('td', null, [el('div', { class: 'cell-btns' }, [
             btn('Reset link', function () {
@@ -605,6 +781,10 @@
                 linkBox.scrollIntoView({ block: 'nearest' });
               });
             }, 'btn-small btn-ghost', 'Make a one-time link that lets this user choose a new password'),
+            u.mfa ? btn('Reset 2-step', function () {
+              if (!confirm('Reset ' + u.username + '\u2019s two-step login? They\u2019re logged out everywhere and set up a new method at their next login. Do this only once you\u2019re sure it\u2019s really them asking.')) return;
+              act('admin.resetMfa', { userId: u.id }, function () { toast(u.username + ' will set up two-step login again at their next login.'); if (self) { me = null; go('login'); } });
+            }, 'btn-small btn-ghost', 'For someone who lost their phone and recovery codes') : null,
             self ? null : btn('Delete', function () {
               if (!confirm('Delete ' + u.username + ' and all of their saved characters and campaigns? This can\'t be undone.')) return;
               act('admin.deleteUser', { id: u.id }, function () { toast('Deleted ' + u.username + '.'); });
@@ -612,7 +792,7 @@
           ])])
         ]));
       });
-      if (!body.children.length) body.appendChild(el('tr', null, [el('td', { colspan: 6, class: 'muted', text: 'No matching accounts.' })]));
+      if (!body.children.length) body.appendChild(el('tr', null, [el('td', { colspan: 7, class: 'muted', text: 'No matching accounts.' })]));
     }
     search.addEventListener('input', draw);
     var EVENTS = { login: 'Logged in', login_failed: 'Failed login', register: 'Created account', password_reset: 'Reset password',
@@ -620,7 +800,9 @@
       password_check_failed: 'Wrong current password', logout_others: 'Logged out other devices', account_deleted: 'Deleted own account',
       role_set: 'Role changed', admin_granted: 'Made admin', admin_revoked: 'Admin removed', reset_link_made: 'Reset link made',
       user_deleted: 'Account deleted', share_link_made: 'Made a share link', share_link_disabled: 'Turned off share link',
-      share_redeemed: 'Ref added a shared crow', share_revoked: 'Took away a Ref\u2019s access' };
+      share_redeemed: 'Ref added a shared crow', share_revoked: 'Took away a Ref\u2019s access', login_password: 'Password OK (second step next)',
+      mfa_failed: 'Wrong two-step code', mfa_set_up: 'Set up two-step login', mfa_recovery_used: 'Used a recovery code',
+      mfa_recovery_regenerated: 'Made new recovery codes', mfa_reset: 'Two-step login reset by admin' };
     var logBox = el('div', null, [btn('Show security log', function () {
       logBox.innerHTML = '<p class="muted">Loading…</p>';
       api('GET', 'admin.audit').then(function (j) {
@@ -641,7 +823,7 @@
       el('div', { class: 'card' }, [
         el('div', { style: 'margin-bottom:.8rem;max-width:320px' }, [search]),
         el('div', { class: 'table-wrap' }, [el('table', null, [
-          el('thead', null, [el('tr', null, ['Account', 'Role', 'Admin', 'Saves', 'Last login', ''].map(function (h) { return el('th', { text: h }); }))]),
+          el('thead', null, [el('tr', null, ['Account', 'Role', 'Admin', 'Saves', '2-step', 'Last login', ''].map(function (h) { return el('th', { text: h }); }))]),
           body])])
       ]),
       el('div', { class: 'card' }, [el('h2', { text: 'Security log' }),

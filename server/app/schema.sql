@@ -149,3 +149,41 @@ CREATE TABLE IF NOT EXISTS email_prefs (
   new_accounts TINYINT(1) NOT NULL DEFAULT 1,
   CONSTRAINT fk_prefs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Two-step login (see mfa.php). Every account sets one up: an authenticator app (secret encrypted with
+-- mfa.key; last_step stops a code being used twice) or a code emailed at each login.
+CREATE TABLE IF NOT EXISTS mfa (
+  user_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  method ENUM('totp','email') NOT NULL,
+  secret VARCHAR(255) NULL,
+  last_step BIGINT NOT NULL DEFAULT 0,
+  created_at DATETIME NOT NULL,
+  CONSTRAINT fk_mfa_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- One-time recovery codes (hashes only), for when the phone or mailbox isn't at hand.
+CREATE TABLE IF NOT EXISTS mfa_recovery (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  code_hash CHAR(64) NOT NULL,
+  created_at DATETIME NOT NULL,
+  used_at DATETIME NULL,
+  KEY k_user (user_id),
+  CONSTRAINT fk_recovery_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A login (or setup) waiting for its second step: made after a correct password, before any session exists.
+CREATE TABLE IF NOT EXISTS mfa_challenges (
+  token_hash CHAR(64) NOT NULL PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  purpose ENUM('login','setup') NOT NULL,
+  method ENUM('totp','email') NULL,
+  secret VARCHAR(255) NULL,
+  code_hash CHAR(64) NULL,
+  code_sent_at DATETIME NULL,
+  sends TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  expires_at DATETIME NOT NULL,
+  KEY k_user (user_id),
+  CONSTRAINT fk_challenge_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

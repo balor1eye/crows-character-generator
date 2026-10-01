@@ -6,6 +6,10 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
 - **Visitors** can create an account, log in, reset a forgotten password by email, change their email or
   password, log out other devices, and delete their account. They can also skip all of that and use the
   apps as a guest, which keeps today's browser-only behavior.
+- **Two-step login** is part of every account. While signing up, people pick an authenticator app (QR code,
+  recommended) or a code emailed at each login, confirm it with a code, and save ten one-time recovery codes.
+  Accounts made before this set it up at their next login. The Account page shows the method, switches it, and
+  makes new recovery codes; an admin can reset it for someone who lost their phone and codes.
 - **Home page** (after login): Create a character, My characters, Play, and for Refs the Ref Screen
   (campaigns), plus Manage accounts for admins.
 - **Players** keep characters in their account (open, play, copy, download as .json, upload .json, delete).
@@ -92,6 +96,14 @@ old one in the account.
 
 ## Security notes
 
+- **Two-step login** (`app/mfa.php`): a correct password (at login, sign-up, or after a password reset) never
+  starts a session by itself, only a 15-minute challenge (30 for setup) whose token the page holds until the
+  second factor is shown: a TOTP code (RFC 6238, one step of drift, each step usable once), an emailed 6-digit
+  code, or a recovery code (stored hashed, each works once). A challenge allows 5 wrong codes, codes are also
+  throttled per account, and emailed codes can be re-sent at most 5 times, 30 seconds apart. Authenticator
+  secrets are encrypted with libsodium using `~/crows-app/mfa.key` (made on first use, chmod 600, never in git
+  or deploys: losing it means everyone with an app sets it up again). The QR code is drawn in the page by
+  `qrcode.js` (vendored, MIT; see `vendor/qrcode-generator-LICENSE.md`), so the secret never leaves the site.
 - **Passwords** are hashed with Argon2id (older hashes upgrade on the next login), must be 8+ characters, and
   can't be a very common password or the account's username/email. Unknown usernames take as long to reject
   as wrong passwords, so login timing doesn't reveal who has an account.

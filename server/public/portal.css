@@ -64,6 +64,20 @@ input[type=text], input[type=email], input[type=password], input[type=search], s
 .or::before, .or::after { content: ""; flex: 1; border-top: 1px solid var(--line); }
 .links { display: flex; justify-content: space-between; gap: .5rem; flex-wrap: wrap; margin-top: .9rem; font-size: .9rem; }
 
+.code-in { font: 600 1.4rem/1.2 ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .15em; max-width: 14rem; }
+.row-btns { display: flex; gap: .4rem; flex-wrap: wrap; margin: .4rem 0; }
+.choices { display: grid; gap: .7rem; margin: 1rem 0; }
+.choice { display: grid; grid-template-columns: 1fr auto; gap: .2rem .6rem; text-align: left; padding: .9rem 1rem; border: 1px solid var(--line); border-radius: 8px; background: var(--card); color: inherit; font: inherit; cursor: pointer; }
+.choice:hover, .choice:focus-visible { border-color: var(--accent); }
+.choice .t { font-weight: 700; }
+.choice .tag { font-size: .72rem; font-weight: 700; color: #fff; background: var(--ok); border-radius: 999px; padding: .05rem .5rem; align-self: start; }
+.choice .d { grid-column: 1 / -1; color: var(--muted); font-size: .9rem; }
+.steps { padding-left: 1.2rem; } .steps li { margin: .3rem 0; }
+.secret { font: 600 .95rem ui-monospace, SFMono-Regular, Menlo, monospace; word-break: break-all; background: var(--soft); padding: .05rem .3rem; border-radius: 4px; }
+.qr { display: block; width: 220px; max-width: 70vw; height: auto; margin: .6rem auto 1rem; border-radius: 6px; }
+.recovery { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: .3rem 1rem; list-style: none; padding: .8rem 1rem; margin: .8rem 0; background: var(--soft); border-radius: 8px; }
+.recovery code { font: 600 1.05rem ui-monospace, SFMono-Regular, Menlo, monospace; letter-spacing: .05em; }
+@media print { .masthead, footer, .row-btns, .check-row, .form-actions { display: none !important; } }
 .check-row { display: flex; gap: .5rem; align-items: flex-start; margin: .4rem 0; }
 .check-row input { margin-top: .25rem; }
 .count { display: inline-block; min-width: 1.2rem; margin-left: .35rem; padding: 0 .3rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: .72rem; font-weight: 700; text-align: center; }
