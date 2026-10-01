@@ -272,6 +272,7 @@ input.mini { width: 5.5rem; padding: .35rem .45rem; border: 1px solid var(--line
 .atk-list { display: flex; flex-direction: column; gap: .45rem; }
 .atk { display: flex; gap: .7rem; align-items: center; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 6px; padding: .45rem .6rem; background: var(--slot); }
 .atk-main { flex: 1; min-width: 0; }
+.atk-btns { display: flex; gap: .35rem; flex-shrink: 0; }
 .warnish { color: var(--warn); }
 .item-list { display: flex; flex-direction: column; }
 .item-row { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: .5rem; align-items: center; padding: .3rem 0; border-bottom: 1px solid var(--line); font-size: .9rem; }

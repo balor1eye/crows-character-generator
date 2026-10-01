@@ -371,8 +371,9 @@
     if (p.stamina !== null && typeof p.stamina !== 'number') p.stamina = null;
     return p;
   }
-  // Per-card live values kept across saves: ud = usage dice left, dmg = AD lost, ammo = shots left.
-  var CARD_LIVE = ['ud', 'dmg', 'ammo'];
+  // Per-card live values kept across saves: ud = usage dice left, dmg = AD lost, ammo = shots left,
+  // thrown = 1 while a thrown weapon is out of hand (Play mode: Recover clears it).
+  var CARD_LIVE = ['ud', 'dmg', 'ammo', 'thrown'];
   function liveProps(src, dst) {
     CARD_LIVE.forEach(function (k) { if (typeof src[k] === 'number' && isFinite(src[k])) dst[k] = Math.max(0, Math.floor(src[k])); });
     return dst;

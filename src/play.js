@@ -212,7 +212,10 @@
         if (q.ammo <= 0) { removeCard(q); r.extra.push('that was the last one'); }
       }
     }
-    if (o.thrown) r.extra.push('The ' + o.card.key.toLowerCase() + ' leaves your hand; you can recover it later.');
+    if (o.thrown) {
+      o.card.thrown = 1;
+      r.extra.push('The ' + o.card.key.toLowerCase() + ' leaves your hand: Recover it before you can throw or attack with it again.');
+    }
     if (o.kind === 'cast') {
       if (r.doom) r.extra.push('Doom: a BACKLASH happens (Ref rolls d100 + rank).');
       else if (r.baseTier === 1) {
@@ -613,10 +616,10 @@
 
   function renderAttacks() {
     var rows = el('div', { class: 'atk-list' });
-    function row(title, sub, action, label, disabled, extra) {
+    function row(title, sub, action, label, disabled, extra, more) {
       rows.appendChild(el('div', { class: 'atk' }, [
         el('div', { class: 'atk-main' }, [el('b', { text: title }), el('div', { class: 'fine', text: sub }), extra ? el('div', { class: 'fine warnish', text: extra }) : null]),
-        btn(label, action, 'btn-primary', { disabled: disabled || null })
+        el('div', { class: 'atk-btns' }, [btn(label, action, 'btn-primary', { disabled: disabled || null }), more || null])
       ]));
     }
     var hands = inHands();
@@ -625,15 +628,18 @@
       if (it.cat === 'weapon') {
         var a = weaponAttack(c);
         if (!a) return;
-        var note = null, dis = false;
-        if (a.ammo) {
+        var note = null, dis = !!c.thrown;
+        if (c.thrown) note = 'Thrown: recover it first.';
+        else if (a.ammo) {
           var q = findCarried(a.ammo);
           note = q ? a.ammo.replace(/ of 20.*/, '') + ': ' + (typeof q.ammo === 'number' ? q.ammo : 20) + ' left' : 'No ' + a.ammo.toLowerCase() + ' carried!';
           dis = !q;
         }
         row(c.key + ' (' + where(c) + ')', a.summary, function () { rollTest(a); }, 'Attack', dis, note);
         var t = weaponAttack(c, true);
-        if (t) row('Throw ' + c.key.toLowerCase() + ' (' + where(c) + ')', t.summary, function () { rollTest(t); }, 'Throw', false, null);
+        if (t) row('Throw ' + c.key.toLowerCase() + ' (' + where(c) + ')', t.summary, function () { rollTest(t); }, 'Throw', !!c.thrown,
+          c.thrown ? 'Thrown: it\'s out of your hand until you recover it.' : null,
+          c.thrown ? btn('Recover', function () { delete c.thrown; commit('Recovered the ' + c.key.toLowerCase() + '.'); }, null, { title: 'You pick the weapon back up' }) : null);
       } else if (it.cat === 'spell') {
         var o = castOpts(c), u = udNow(c);
         row(c.key.replace(/ Book$/, '') + ' (' + where(c) + ')', o.summary, function () { rollTest(o); }, 'Cast', u <= 0, u > 0 ? null : 'Usage die spent: recharges on a rest.');

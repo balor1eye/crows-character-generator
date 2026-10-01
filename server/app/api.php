@@ -487,7 +487,7 @@ function clean_inv($inv): array {
         $card = (object)['key' => $c->key, 'qty' => max(1, min(999, (int)($c->qty ?? 1))),
             'area' => in_array($c->area ?? '', ['hand', 'belt', 'pack', 'none'], true) ? $c->area : 'none',
             'idx' => max(0, min(99, (int)($c->idx ?? 0)))];
-        foreach (['ud', 'dmg', 'ammo'] as $k) if (isset($c->$k) && is_numeric($c->$k)) $card->$k = max(0, min(999, (int)$c->$k));
+        foreach (['ud', 'dmg', 'ammo', 'thrown'] as $k) if (isset($c->$k) && is_numeric($c->$k)) $card->$k = max(0, min(999, (int)$c->$k));
         $out[] = $card;
     }
     return $out;
