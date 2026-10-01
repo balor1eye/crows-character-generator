@@ -305,6 +305,8 @@ input.mini { width: 5.5rem; padding: .35rem .45rem; border: 1px solid var(--line
 .play-log { list-style: none; padding: 0; margin: 0 0 .6rem; max-height: 360px; overflow: auto; font-size: .86rem; }
 .play-log li { padding: .25rem 0; border-bottom: 1px solid var(--line); }
 .play-sum { font-size: .85rem; margin: .4rem 0 0; }
+.play-camp { font-family: var(--serif); font-style: italic; margin: -.2rem 0 .4rem; }
+.play-camp:empty { display: none !important; }
 .play-side { margin-top: .8rem; border-top: 1px solid var(--line); padding-top: .6rem; }
 .play-side h3 { margin-bottom: .4rem; }
 .seg { display: grid; grid-template-columns: repeat(5, 1fr); border: 1px solid var(--line); border-radius: 6px; overflow: hidden; }
@@ -590,6 +592,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
   <aside class="summary" id="summary">
     <div class="summary-inner">
       <h2>Crow</h2>
+      <p class="play-only play-camp" id="play-camp"></p>
       <div id="summary-body"></div>
       <p class="play-only play-sum" id="play-sum"></p>
       <div class="play-only play-side" id="play-side"></div>
@@ -8851,10 +8854,11 @@ var CROWS_TRAIT_TREES = [
     document.body.setAttribute('data-mode', m);
     $('tab-build').setAttribute('aria-pressed', String(m === 'build'));
     $('tab-play').setAttribute('aria-pressed', String(m === 'play'));
-    var what = m === 'play' ? 'Play' : 'Character Generator';
-    document.title = 'The Nest · ' + what + (m === 'play' && campaignName() ? ' · ' + campaignName() : '');
+    var what = m === 'play' ? 'Play' : 'Character Generator', camp = m === 'play' ? campaignName() : null;
+    document.title = 'The Nest · ' + what + (camp ? ' · ' + camp : '');
     var sub = document.querySelector('.brand-sub');
-    if (sub) sub.textContent = 'Crows Playtest 2 · ' + what;
+    if (sub) sub.textContent = 'Crows Playtest 2 · ' + what + (camp ? ' · ' + camp : '');
+    if ($('play-camp')) $('play-camp').textContent = camp ? 'In ' + camp : '';
     syncAddress();
   }
   /* Show this mode's address. Only where the accounts server answered: elsewhere there's no play address to go to. */

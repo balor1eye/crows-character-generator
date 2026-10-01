@@ -73,10 +73,11 @@
     document.body.setAttribute('data-mode', m);
     $('tab-build').setAttribute('aria-pressed', String(m === 'build'));
     $('tab-play').setAttribute('aria-pressed', String(m === 'play'));
-    var what = m === 'play' ? 'Play' : 'Character Generator';
-    document.title = 'The Nest · ' + what + (m === 'play' && campaignName() ? ' · ' + campaignName() : '');
+    var what = m === 'play' ? 'Play' : 'Character Generator', camp = m === 'play' ? campaignName() : null;
+    document.title = 'The Nest · ' + what + (camp ? ' · ' + camp : '');
     var sub = document.querySelector('.brand-sub');
-    if (sub) sub.textContent = 'Crows Playtest 2 · ' + what;
+    if (sub) sub.textContent = 'Crows Playtest 2 · ' + what + (camp ? ' · ' + camp : '');
+    if ($('play-camp')) $('play-camp').textContent = camp ? 'In ' + camp : '';
     syncAddress();
   }
   /* Show this mode's address. Only where the accounts server answered: elsewhere there's no play address to go to. */
