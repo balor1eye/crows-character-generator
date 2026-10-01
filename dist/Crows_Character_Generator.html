@@ -6923,7 +6923,11 @@ var CROWS_TRAIT_TREES = [
       '.cloud-home{color:#f4efe6!important;text-decoration:none}' +
       '.cloud-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:60;max-width:calc(100vw - 32px);width:560px;' +
       'background:var(--card,#fff);color:var(--ink,#111);border:2px solid var(--bad,#a3231a);border-radius:8px;padding:.8rem 1rem;' +
-      'box-shadow:0 4px 18px rgba(0,0,0,.25);font-size:.92rem}.cloud-bar p{margin:0 0 .6rem}.cloud-bar .row{display:flex;gap:.5rem;flex-wrap:wrap}';
+      'box-shadow:0 4px 18px rgba(0,0,0,.25);font-size:.92rem}.cloud-bar p{margin:0 0 .6rem}.cloud-bar .row{display:flex;gap:.5rem;flex-wrap:wrap}' +
+      '.cloud-notes{position:fixed;right:16px;bottom:16px;z-index:61;display:flex;flex-direction:column;gap:.5rem;max-width:min(380px,calc(100vw - 32px))}' +
+      '.cloud-note{background:var(--card,#fff);color:var(--ink,#111);border:1px solid var(--line,#ccc);border-left:5px solid var(--ok,#2f6b3a);border-radius:8px;' +
+      'padding:.7rem .9rem;box-shadow:0 4px 18px rgba(0,0,0,.25);font-size:.92rem}.cloud-note.no{border-left-color:var(--warn,#9a5b00)}' +
+      '.cloud-note p{margin:0 0 .5rem}.cloud-note .row{display:flex;gap:.4rem;flex-wrap:wrap}';
     var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
   }
   function actions() { return document.querySelector('.masthead .actions'); }
@@ -6962,6 +6966,45 @@ var CROWS_TRAIT_TREES = [
     });
     bar.appendChild(row);
     document.body.appendChild(bar);
+  }
+
+  // ---------------------------------------------------------------- notifications
+  /*
+   * Messages for this account (a Ref accepted or declined a join request), shown in the corner until
+   * dismissed. New ones pop up within a second or two of being sent, through the ('notes', user) change signal.
+   * Not in a Ref's view of someone else's sheet: that's the Ref's account, and their own pages show theirs.
+   */
+  var notesBox = null, shownNotes = {};
+  function noteText(n) {
+    var d = n.detail || {}, crow = d.character || 'your crow', camp = d.campaign || 'their campaign';
+    if (n.kind === 'join_accepted') return d.ref + ' accepted ' + crow + ' into ' + camp + '.';
+    if (n.kind === 'join_declined') return d.ref + ' declined ' + crow + '\u2019s request to join ' + camp + '.';
+    return null;
+  }
+  function showNote(n) {
+    var text = noteText(n);
+    if (!text || shownNotes[n.id]) return;
+    shownNotes[n.id] = true;
+    injectStyles();
+    if (!notesBox) { notesBox = document.createElement('div'); notesBox.className = 'cloud-notes'; notesBox.setAttribute('role', 'status'); document.body.appendChild(notesBox); }
+    var box = document.createElement('div');
+    box.className = 'cloud-note' + (n.kind === 'join_declined' ? ' no' : '');
+    var p = document.createElement('p'); p.textContent = text; box.appendChild(p);
+    var row = document.createElement('div'); row.className = 'row';
+    function add(label, cls, on) { var b = document.createElement('button'); b.type = 'button'; b.className = 'btn btn-small ' + cls; b.textContent = label; b.addEventListener('click', on); row.appendChild(b); }
+    function dismiss() { box.remove(); call('POST', 'notes.dismiss', '', { id: n.id }).then(null, function () { /* shown again next time */ }); }
+    if (n.kind === 'join_accepted' && n.detail && n.detail.characterId && cfg.kind === 'characters' && !(rec && rec.id === n.detail.characterId)) {
+      add('Open ' + (n.detail.character || 'that crow'), 'btn-primary', function () { dismiss(); location.href = location.pathname + '?id=' + n.detail.characterId + '&mode=play'; });
+    }
+    add('OK', '', dismiss);
+    box.appendChild(row);
+    notesBox.appendChild(box);
+  }
+  function loadNotes() {
+    return call('GET', 'notes.list').then(function (j) {
+      j.items.slice(0, 5).reverse().forEach(showNote);
+      Cloud.watch('notes', j.watch, j.latest, loadNotes);
+    }, function () { /* no notifications here (older server): nothing to show */ });
   }
 
   // ---------------------------------------------------------------- linking
@@ -7221,6 +7264,7 @@ var CROWS_TRAIT_TREES = [
           if (cfg.onReady) cfg.onReady(p);
           if (rec) status('saved', 'Saved'); else flush();
           lastPoll = Date.now();
+          if (!linkId) loadNotes();
           setInterval(slowPoll, 1000);
           setInterval(checkSignals, WATCH);
         }, function (e) {

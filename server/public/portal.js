@@ -8,7 +8,7 @@
 
   var GEN = 'Crows_Character_Generator.html';
   var REF = 'ref.php';
-  var me = null, csrf = null, https = true;
+  var me = null, csrf = null, https = true, unread = 0;   // unread: notifications not yet dismissed
   var PENDING_SHARE = 'crows-pending-share';
 
   // ---------------------------------------------------------------- helpers
@@ -62,7 +62,7 @@
       });
     }, function () { throw new Error('Could not reach the server. Check your connection and try again.'); });
   }
-  function signedIn(j) { me = j.user; csrf = j.csrf; }
+  function signedIn(j) { me = j.user; csrf = j.csrf; unread = j.notes || 0; }
   /* Where to go after logging in: back to a character or campaign link opened while logged out, or home. */
   function afterLogin() {
     var to = null;
@@ -105,7 +105,9 @@
     var n = $('nav'); n.innerHTML = '';
     if (!me) return;
     n.appendChild(el('span', { class: 'who', text: me.username + (me.isAdmin ? ' · admin' : me.role === 'ref' ? ' · Ref' : '') }));
-    n.appendChild(a('Home', '#home', 'btn btn-ghost btn-small'));
+    var home = a('Home', '#home', 'btn btn-ghost btn-small');
+    if (unread) { home.appendChild(el('span', { class: 'count', text: String(unread), title: unread + ' new' })); home.setAttribute('aria-label', 'Home, ' + unread + ' new'); }
+    n.appendChild(home);
     n.appendChild(a('Account', '#account', 'btn btn-ghost btn-small'));
     n.appendChild(btn('Log out', logout, 'btn-ghost btn-small'));
   }
@@ -238,11 +240,43 @@
     ];
     if (me.canRef) tiles.push(tile('Ref Screen', 'Run sessions and keep your campaigns: open one or start a new one.', '#campaigns', 'ref'));
     if (me.isAdmin) tiles.push(tile('Manage accounts', 'Mark accounts as players or Refs, send reset links, and more.', '#admin', 'admin'));
+    var news = el('div');
     show([
       el('h1', { text: 'Welcome, ' + me.username }),
+      news,
       el('p', { class: 'muted', text: 'What would you like to do?' }),
       el('div', { class: 'tiles' }, tiles)
     ]);
+    loadNews(news);
+  }
+
+  /* Notifications (a Ref answered a join request), kept on the home page until dismissed. */
+  function noteText(n) {
+    var d = n.detail || {}, crow = d.character || 'your crow', camp = d.campaign || 'their campaign';
+    if (n.kind === 'join_accepted') return d.ref + ' accepted ' + crow + ' into ' + camp + '. You\u2019ll see each other\u2019s changes live.';
+    if (n.kind === 'join_declined') return d.ref + ' declined ' + crow + '\u2019s request to join ' + camp + '. You can ask again from their invite link.';
+    return null;
+  }
+  function loadNews(box) {
+    api('GET', 'notes.list').then(function (j) {
+      var items = j.items.filter(noteText);
+      unread = j.items.length; nav();
+      box.innerHTML = '';
+      if (!items.length) return;
+      box.appendChild(el('div', { class: 'card news' }, [
+        el('div', { class: 'list-head' }, [el('h2', { text: 'News' }), items.length > 1 ? btn('Dismiss all', function () {
+          api('POST', 'notes.dismiss', { all: true }).then(function () { loadNews(box); }, function (e) { toast(e.message); });
+        }, 'btn-small btn-ghost') : null]),
+        el('ul', { class: 'rows' }, items.map(function (n) {
+          var ok = n.kind === 'join_accepted';
+          return el('li', { class: ok ? 'yes' : 'no' }, [
+            el('div', null, [el('div', { text: noteText(n) }), el('div', { class: 'meta', text: when(n.at) })]),
+            el('div', { class: 'btns' }, [
+              ok && n.detail.characterId ? a('Play ' + (n.detail.character || 'it'), GEN + '?id=' + n.detail.characterId + '&mode=play', 'btn btn-small btn-primary') : null,
+              btn('Dismiss', function () { api('POST', 'notes.dismiss', { id: n.id }).then(function () { loadNews(box); }, function (e) { toast(e.message); }); }, 'btn-small btn-ghost')])
+          ]);
+        }))]));
+    }, function () { /* nothing to show */ });
   }
 
   // ---------------------------------------------------------------- characters & campaigns
@@ -493,6 +527,7 @@
       el('p', { class: 'muted' }, ['You are a ', el('strong', { text: me.role === 'ref' ? 'Ref' : 'player' }), me.isAdmin ? ' and an admin' : '', '.',
         me.role !== 'ref' && !me.isAdmin ? ' An admin can make you a Ref if you run games.' : '']),
       el('div', { class: 'card' }, [el('h2', { text: 'Details' }), details]),
+      emailCard(),
       el('div', { class: 'card' }, [el('h2', { text: 'Devices' }),
         el('p', { class: 'muted', text: 'You stay logged in for 30 days on each device you use.' }),
         btn('Log out everywhere else', function () {
@@ -501,6 +536,26 @@
       el('div', { class: 'card' }, [el('h2', { text: 'Delete account' }),
         el('p', { class: 'muted', text: 'This removes your account and all its saved characters and campaigns. Download anything you want to keep first.' }), del])
     ])]);
+  }
+
+  /* Optional emails, saved as soon as a box is ticked or unticked. */
+  function emailCard() {
+    var box = el('div', { class: 'card' }, [el('h2', { text: 'Email notifications' }), el('p', { class: 'muted', text: 'Loading…' })]);
+    var opts = [['joinDecisions', 'When a Ref accepts or declines my request to join a campaign']];
+    if (me.isAdmin) opts.push(['newAccounts', 'When someone creates an account (admins)']);
+    api('GET', 'account.emailPrefs').then(function (j) {
+      box.innerHTML = '';
+      box.appendChild(el('h2', { text: 'Email notifications' }));
+      box.appendChild(el('p', { class: 'muted', text: 'Sent to ' + me.email + '. You\u2019ll still see these on your home page either way. Password and email-change messages are always sent.' }));
+      opts.forEach(function (o) {
+        var cb = el('input', { type: 'checkbox', checked: j.prefs[o[0]] ? true : null, onchange: function () {
+          var body = {}; body[o[0]] = this.checked; var c = this;
+          api('POST', 'account.setEmailPrefs', body).then(function () { toast(c.checked ? 'Emails on.' : 'Emails off.'); }, function (e) { c.checked = !c.checked; toast(e.message); });
+        } });
+        box.appendChild(el('label', { class: 'check-row' }, [cb, ' ' + o[1]]));
+      });
+    }, function (e) { box.lastChild.textContent = e.message; });
+    return box;
   }
 
   // ---------------------------------------------------------------- admin

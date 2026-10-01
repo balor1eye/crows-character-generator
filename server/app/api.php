@@ -123,8 +123,41 @@ function note_attempt(string $login): void {
 function send_mail(string $to, string $subject, string $text): bool {
     $c = config();
     $from = $c['mail_from'] ?? '';
+    // Subjects can carry names players typed: no line breaks (they'd start new headers), and encoded for UTF-8.
+    $subject = mb_encode_mimeheader(trim(preg_replace('/[\r\n\t]+/', ' ', $subject)), 'UTF-8', 'Q');
     $headers = "Content-Type: text/plain; charset=UTF-8\r\n" . ($from ? "From: Crows <$from>\r\n" : '');
-    return @mail($to, $subject, $text, $headers, $from ? '-f' . $from : '');
+    try { return @mail($to, $subject, $text, $headers, $from ? '-f' . $from : ''); }
+    catch (Throwable $e) { error_log('crows mail: ' . $e->getMessage()); return false; }
+}
+function site_link(string $path = ''): string { return rtrim(config()['site_url'], '/') . '/' . $path; }
+
+// Optional emails, each of which the user can turn off on their Account page (email_prefs; no row = all on).
+const EMAIL_PREFS = ['joinDecisions' => 'join_decisions', 'newAccounts' => 'new_accounts'];
+function email_prefs(int $userId): array {
+    $r = q('SELECT join_decisions, new_accounts FROM email_prefs WHERE user_id = ?', [$userId])->fetch();
+    $out = [];
+    foreach (EMAIL_PREFS as $k => $col) $out[$k] = $r ? (bool)$r[$col] : true;
+    return $out;
+}
+function wants_email(int $userId, string $pref): bool {
+    try { return email_prefs($userId)[$pref]; } catch (Throwable $e) { return true; }
+}
+function prefs_footer(): string {
+    return "\n--\nTo stop these emails, untick them on your Account page: " . site_link('#account') . "\n";
+}
+
+/** Tell the admins (who want it) that someone made an account. Never fails the registration. */
+function mail_admins_new_account(string $username, string $email): void {
+    try {
+        $total = (int)q('SELECT COUNT(*) FROM users')->fetchColumn();
+        foreach (q('SELECT id, username, email FROM users WHERE is_admin = 1')->fetchAll() as $a) {
+            if (!wants_email((int)$a['id'], 'newAccounts')) continue;
+            send_mail($a['email'], "New Crows account: $username",
+                "Hi {$a['username']},\n\nSomeone just created an account on the Crows site.\n\n" .
+                "Username: $username\nEmail: $email\nAccounts now: $total\n\n" .
+                "New accounts are players. To make one a Ref, or to remove it, use Manage accounts:\n" . site_link('#admin') . "\n" . prefs_footer());
+        }
+    } catch (Throwable $e) { error_log('crows admin mail: ' . $e->getMessage()); }
 }
 function reset_link(int $userId, int $hours): string {
     $tok = token();
@@ -136,7 +169,10 @@ function reset_link(int $userId, int $hours): string {
 // ---------------------------------------------------------------- auth actions
 function a_me(): array {
     $s = current_session();
-    return ['user' => $s ? public_user($s) : null, 'csrf' => $s ? $s['csrf'] : null, 'https' => is_https()];
+    $notes = 0;
+    try { if ($s) $notes = (int)q('SELECT COUNT(*) FROM notifications WHERE user_id = ? AND seen_at IS NULL', [$s['id']])->fetchColumn(); }
+    catch (Throwable $e) { /* table not there yet mid-deploy: never block logging in over it */ }
+    return ['user' => $s ? public_user($s) : null, 'csrf' => $s ? $s['csrf'] : null, 'https' => is_https(), 'notes' => $notes];
 }
 
 function a_register(): array {
@@ -151,6 +187,7 @@ function a_register(): array {
       [$username, $email, hash_password($pw), 'player', now()]);
     $id = (int)db()->lastInsertId();
     audit('register', $id, $username);
+    mail_admins_new_account($username, $email);
     $sess = start_session($id);
     $u = q('SELECT * FROM users WHERE id = ?', [$id])->fetch();
     return ['user' => public_user($u), 'csrf' => $sess['csrf']];
@@ -238,6 +275,18 @@ function a_account_update(): array {
             "If you didn't do this, reset your password and contact the site admin.\n");
     }
     return ['user' => public_user(q('SELECT * FROM users WHERE id = ?', [$s['id']])->fetch())];
+}
+
+function a_account_email_prefs(): array {
+    $s = need_login();
+    return ['prefs' => email_prefs($s['id'])];
+}
+function a_account_set_email_prefs(): array {
+    $s = need_login();
+    $cur = email_prefs($s['id']);
+    foreach (EMAIL_PREFS as $k => $col) if (array_key_exists($k, body())) $cur[$k] = (bool)body()[$k];
+    q('REPLACE INTO email_prefs (user_id, join_decisions, new_accounts) VALUES (?,?,?)', [$s['id'], (int)$cur['joinDecisions'], (int)$cur['newAccounts']]);
+    return ['prefs' => $cur];
 }
 
 function a_account_logout_others(): array {
@@ -761,7 +810,7 @@ function a_join_cancel(): array {
 
 /** The Ref's pending request $id for one of their campaigns, or a clear error. */
 function pending_request(array $s, int $id): array {
-    $r = q("SELECT j.id, j.campaign_id, j.character_id, c.user_id AS player_id FROM join_requests j
+    $r = q("SELECT j.id, j.campaign_id, j.character_id, c.user_id AS player_id, c.name AS character_name, p.name AS campaign_name FROM join_requests j
             JOIN campaigns p ON p.id = j.campaign_id JOIN characters c ON c.id = j.character_id
             WHERE j.id = ? AND p.user_id = ? AND j.status = 'pending'", [$id, $s['id']])->fetch();
     if (!$r) fail('That request was withdrawn or already answered.', 404);
@@ -776,6 +825,7 @@ function a_join_accept(): array {
     $aid = (int)q('SELECT id FROM character_access WHERE character_id = ? AND ref_user_id = ?', [$r['character_id'], $s['id']])->fetchColumn();
     q("UPDATE join_requests SET status = 'accepted', decided_at = ? WHERE id = ?", [now(), $r['id']]);
     audit('join_accepted', (int)$r['player_id'], 'campaign ' . $r['campaign_id'] . ', character ' . $r['character_id'], $s['id']);
+    notify_decision($s, $r, true);
     return ['item' => linked_out(access_row($s, $aid), true)];
 }
 
@@ -784,6 +834,60 @@ function a_join_decline(): array {
     $r = pending_request($s, record_id());
     q("UPDATE join_requests SET status = 'declined', decided_at = ? WHERE id = ?", [now(), $r['id']]);
     audit('join_declined', (int)$r['player_id'], 'campaign ' . $r['campaign_id'] . ', character ' . $r['character_id'], $s['id']);
+    notify_decision($s, $r, false);
+    return [];
+}
+
+// ---------------------------------------------------------------- notifications
+/*
+ * Short messages for a user, kept until they dismiss them: the home page lists them, and any open app page
+ * (Character Generator or Ref Screen) pops them up within a second or two through the change signal for
+ * ('notes', user id), whose version is the user's newest notification id.
+ */
+function notify(int $userId, string $kind, array $detail): void {
+    try {
+        q('DELETE FROM notifications WHERE user_id = ? AND seen_at IS NOT NULL AND seen_at < ?', [$userId, now(-90 * 86400)]);
+        q('INSERT INTO notifications (user_id, kind, detail, created_at) VALUES (?,?,?,?)', [$userId, $kind, enc($detail), now()]);
+        signal('notes', $userId, (int)db()->lastInsertId());
+    } catch (Throwable $e) { error_log('crows notify: ' . $e->getMessage()); }   // never fails the action itself
+}
+function notify_decision(array $ref, array $r, bool $accepted): void {
+    $pid = (int)$r['player_id'];
+    notify($pid, $accepted ? 'join_accepted' : 'join_declined', ['character' => $r['character_name'], 'characterId' => (int)$r['character_id'],
+        'campaign' => $r['campaign_name'], 'ref' => $ref['username']]);
+    try {
+        if (!wants_email($pid, 'joinDecisions')) return;
+        $p = q('SELECT username, email FROM users WHERE id = ?', [$pid])->fetch();
+        if (!$p) return;
+        $crow = $r['character_name'] !== '' ? $r['character_name'] : 'your crow';
+        $camp = $r['campaign_name'] !== '' ? $r['campaign_name'] : 'their campaign';
+        if ($accepted) send_mail($p['email'], "$crow joined $camp",
+            "Hi {$p['username']},\n\n{$ref['username']} accepted $crow into $camp. Your Ref can now see the sheet and change its vitals, " .
+            "equipment, and notes, and you'll both see each other's changes live.\n\nPlay $crow:\n" .
+            site_link('Crows_Character_Generator.html?id=' . (int)$r['character_id'] . '&mode=play') . "\n\n" .
+            "You can take the Ref's access away any time from the crow's Share button in My characters.\n" . prefs_footer());
+        else send_mail($p['email'], "Your request to join $camp",
+            "Hi {$p['username']},\n\n{$ref['username']} declined $crow's request to join $camp.\n" .
+            "You can ask again (with this crow or another) from the invite link your Ref sent you.\n" . prefs_footer());
+    } catch (Throwable $e) { error_log('crows decision mail: ' . $e->getMessage()); }
+}
+
+/** The user's notifications not yet dismissed (newest first), and where to watch for new ones. */
+function a_notes_list(): array {
+    $s = need_login();
+    $rows = q('SELECT id, kind, detail, created_at FROM notifications WHERE user_id = ? AND seen_at IS NULL ORDER BY id DESC LIMIT 50', [$s['id']])->fetchAll();
+    $latest = (int)q('SELECT MAX(id) FROM notifications WHERE user_id = ?', [$s['id']])->fetchColumn();
+    $w = with_watch(['version' => $latest], 'notes', $s['id']);
+    return ['latest' => $latest, 'watch' => $w['watch'] ?? null, 'items' => array_map(function ($r) {
+        return ['id' => (int)$r['id'], 'kind' => $r['kind'], 'detail' => json_decode($r['detail']), 'at' => $r['created_at'] . 'Z'];
+    }, $rows)];
+}
+
+/** Dismiss one notification ({id}) or all of them ({all: true}). */
+function a_notes_dismiss(): array {
+    $s = need_login();
+    if (!empty(body()['all'])) q('UPDATE notifications SET seen_at = ? WHERE user_id = ? AND seen_at IS NULL', [now(), $s['id']]);
+    else q('UPDATE notifications SET seen_at = ? WHERE id = ? AND user_id = ? AND seen_at IS NULL', [now(), record_id(), $s['id']]);
     return [];
 }
 
@@ -865,6 +969,8 @@ const ACTIONS = [
     'logout' => ['POST', 'a_logout', true],
     'account.update' => ['POST', 'a_account_update', true],
     'account.logoutOthers' => ['POST', 'a_account_logout_others', true],
+    'account.emailPrefs' => ['GET', 'a_account_email_prefs', false],
+    'account.setEmailPrefs' => ['POST', 'a_account_set_email_prefs', true],
     'account.delete' => ['POST', 'a_account_delete', true],
     'list' => ['GET', 'a_list', false],
     'get' => ['GET', 'a_get', false],
@@ -889,6 +995,8 @@ const ACTIONS = [
     'join.cancel' => ['POST', 'a_join_cancel', true],
     'join.accept' => ['POST', 'a_join_accept', true],
     'join.decline' => ['POST', 'a_join_decline', true],
+    'notes.list' => ['GET', 'a_notes_list', false],
+    'notes.dismiss' => ['POST', 'a_notes_dismiss', true],
     'admin.users' => ['GET', 'a_admin_users', false],
     'admin.audit' => ['GET', 'a_admin_audit', false],
     'admin.setRole' => ['POST', 'a_admin_set_role', true],

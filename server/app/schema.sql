@@ -128,3 +128,24 @@ CREATE TABLE IF NOT EXISTS join_requests (
   CONSTRAINT fk_join_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
   CONSTRAINT fk_join_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Messages for a user, shown in the apps and on the home page until dismissed (e.g. "your crow was accepted
+-- into a campaign"). `detail` is JSON the pages turn into text. Seen ones are cleared after 90 days.
+CREATE TABLE IF NOT EXISTS notifications (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  kind VARCHAR(30) NOT NULL,
+  detail TEXT NOT NULL,
+  created_at DATETIME NOT NULL,
+  seen_at DATETIME NULL,
+  KEY k_user (user_id, seen_at),
+  CONSTRAINT fk_notes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Which emails a user wants. No row means the defaults (all on). new_accounts only matters for admins.
+CREATE TABLE IF NOT EXISTS email_prefs (
+  user_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  join_decisions TINYINT(1) NOT NULL DEFAULT 1,
+  new_accounts TINYINT(1) NOT NULL DEFAULT 1,
+  CONSTRAINT fk_prefs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

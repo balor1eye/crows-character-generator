@@ -25,8 +25,12 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
   The request shows up in the Ref Screen within a second or two, with a count on the Party tab. **Accept**
   gives the Ref the same access a character link would and adds the crow to the party; **Decline** lets the
   player ask again. A campaign holds at most 30 waiting requests.
+  Either way the player is told: a notice pops up within a second or two on any app page they have open (with a
+  button to open the accepted crow), and it stays in **News** on their home page, with a count on Home, until
+  they dismiss it. They're also emailed, unless they untick that under **Email notifications** on their Account page.
 - **Admins** mark accounts as players or Refs, make other admins, make one-time password reset links (useful
   if email doesn't arrive), and delete accounts.
+  Admins are emailed when someone creates an account (each admin can turn that off on their Account page).
 
 ## Layout on the server
 
