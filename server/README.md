@@ -10,11 +10,11 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
   recommended) or a code emailed at each login, confirm it with a code, and save ten one-time recovery codes.
   Accounts made before this set it up at their next login. The Account page shows the method, switches it, and
   makes new recovery codes; an admin can reset it for someone who lost their phone and codes.
-- **Home page** (after login): Create a character, My characters, Play, and for Refs the Ref Screen
+- **Home page** (after login): My characters (where new characters are created), Play, and for Refs the Ref Screen
   (campaigns), plus Manage accounts for admins.
 - **Players** keep characters in their account (open, play, copy, download as .json, upload .json, delete).
   The Character Generator loads the character from the account and autosaves every change about a second
-  later. A new character (Create a character, Random crow, Start over, Load file) isn't saved until the player
+  later. A new character (Create a character in My characters, Random crow, Start over, Load file) isn't saved until the player
   presses **Save character** in the right column; from then on it autosaves too. Save file / Load file still work.
 - **Refs** do the same with campaigns in the Ref Screen. `ref.php` only serves the Ref Screen to Refs and admins.
 - **Sharing with a Ref:** a player opens **Share** on a character and sends the link to their Ref. The Ref opens

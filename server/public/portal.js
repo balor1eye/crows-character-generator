@@ -378,8 +378,7 @@
   }
   function viewHome() {
     var tiles = [
-      tile('Create a character', 'Roll up a new crow, then save it to your account. After that, changes save as you go.', GEN + '?new=1&mode=build'),
-      tile('My characters', 'Open, edit, copy, download, upload, or delete your saved crows.', '#characters'),
+      tile('My characters', 'Create a new crow, or open, edit, copy, download, upload, or delete your saved ones.', '#characters'),
       tile('Play', 'Take one of your crows to the table: vitals, dice, rests, and XP.', '#play')
     ];
     if (me.canRef) tiles.push(tile('Ref Screen', 'Run sessions and keep your campaigns: open one or start a new one.', '#campaigns', 'ref'));
@@ -486,7 +485,7 @@
     var head = el('div', { class: 'list-head' }, [
       el('h1', { text: opts.title }),
       el('div', { class: 'btns' }, opts.manage ? [
-        a('New ' + K.one, K.app + '?new=1' + (kind === 'characters' ? '&mode=build' : ''), 'btn btn-primary'),
+        a(kind === 'characters' ? 'Create a character' : 'New ' + K.one, K.app + '?new=1' + (kind === 'characters' ? '&mode=build' : ''), 'btn btn-primary'),
         el('label', { class: 'btn file-btn', title: 'Add .json save files from this device to your account' }, ['Upload file',
           el('input', { type: 'file', accept: '.json,application/json', multiple: true, onchange: function () { upload(this); } })])
       ] : [])
@@ -592,10 +591,9 @@
       box.appendChild(el('p', { text: 'Pick the crow you want to play. ' + j.ref + ' will see your request in the Ref Screen. If they accept, ' +
         'the crow joins the party: they can see its sheet and change its vitals (Stamina, wounds, conditions…), equipment, and notes, ' +
         'and you both see each other\u2019s changes live. You can take that access away later from the crow\u2019s Share button.' }));
-      var NEW = GEN + '?new=1&mode=build';
       if (!j.characters.length) {
-        box.appendChild(el('p', { class: 'muted', text: 'You have no characters yet. Make one, then open this link again.' }));
-        box.appendChild(a('Create a character', NEW, 'btn btn-primary'));
+        box.appendChild(el('p', { class: 'muted', text: 'You have no characters yet. Create one in My characters, then open this link again.' }));
+        box.appendChild(a('Go to My characters', '#characters', 'btn btn-primary'));
         return;
       }
       box.appendChild(el('ul', { class: 'rows' }, j.characters.map(function (c) {
@@ -613,7 +611,7 @@
         return el('li', null, [el('div', null, [el('div', { class: 'name', text: c.name || 'Unnamed crow' }), el('div', { class: 'meta', text: c.summary || '' })]),
           el('div', { class: 'btns' }, [state, act])]);
       })));
-      box.appendChild(el('p', { class: 'fine' }, ['Want a new crow for this campaign? ', a('Create one', NEW, ''), ', then open this link again.']));
+      box.appendChild(el('p', { class: 'fine' }, ['Want a new crow for this campaign? Create one in ', a('My characters', '#characters', ''), ', then open this link again.']));
     }
     load();
   }
@@ -621,7 +619,8 @@
   function viewCharacters() {
     listPage('characters', {
       title: 'My characters', manage: true,
-      empty: 'No characters yet. Create one, or upload a save file from the character generator.',
+      intro: 'Create a character to roll up a new crow; it goes into your account when you press Save character. Saved crows save changes as you go.',
+      empty: 'No characters yet. Use Create a character above, or upload a save file from the character generator.',
       buttons: function (it) { return [a('Edit', GEN + '?id=' + it.id + '&mode=build', 'btn btn-small btn-primary'), a('Play', GEN + '?id=' + it.id + '&mode=play', 'btn btn-small')]; }
     });
   }
@@ -629,7 +628,7 @@
     listPage('characters', {
       title: 'Play', manage: false,
       intro: 'Pick a crow to open in Play mode. Everything you change at the table is saved to your account as you go.',
-      empty: 'You have no characters yet. Create one from the home page first.',
+      empty: 'You have no characters yet. Create one in My characters first.',
       buttons: function (it) { return [a('Play', GEN + '?id=' + it.id + '&mode=play', 'btn btn-small btn-primary')]; }
     });
   }
