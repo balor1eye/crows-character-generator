@@ -448,6 +448,8 @@
       var panel = el('div', { class: 'share-panel', hidden: true });
       var btns = opts.buttons(it).concat(opts.manage && kind === 'characters' ? [
         btn('Share', function () { if (panel.hidden) sharePanel(it, panel); else panel.hidden = true; }, 'btn-small btn-ghost', 'Send your Ref a link to this character')
+      ] : []).concat(opts.manage && kind === 'campaigns' ? [
+        btn('Rename', function () { if (panel.hidden) renamePanel(it, panel, load); else panel.hidden = true; }, 'btn-small btn-ghost', 'Change this campaign\'s name')
       ] : []).concat(opts.manage ? [
         btn('Download', function () {
           api('GET', 'get', undefined, 'kind=' + kind + '&id=' + it.id).then(function (j) {
@@ -513,6 +515,31 @@
    * Sharing one character with a Ref: make (or replace) the link, see which Refs have it, take access away.
    * Only the link's hash is stored, so a link can be shown once; "New link" makes another and retires the old.
    */
+  /* Rename a campaign: sets its name in the save itself (as the Ref Screen's Campaign name field does), so an open Ref Screen picks it up. */
+  function renamePanel(it, panel, done) {
+    panel.hidden = false; panel.innerHTML = '';
+    panel.appendChild(el('p', { class: 'muted', text: 'Loading…' }));
+    api('GET', 'get', undefined, 'kind=campaigns&id=' + it.id).then(function (j) {
+      var rec = j.item;
+      var name = input('text', 'name', { value: rec.data.name || '', maxlength: 120, placeholder: (rec.data.village && rec.data.village.name) || 'Untitled campaign' });
+      panel.innerHTML = '';
+      panel.appendChild(el('h3', { text: 'Rename campaign' }));
+      panel.appendChild(form([field('Campaign name', name, 'Leave it blank to use the village name.')], 'Save name', function (v) {
+        var data = rec.data;
+        data.name = v.name.trim();
+        return api('POST', 'save', { id: it.id, version: rec.version, data: data, name: KINDS.campaigns.name(data), summary: rec.summary }, 'kind=campaigns').then(function () {
+          panel.hidden = true; toast('Renamed.'); done();
+        }, function (e) {
+          if (e.status !== 409) throw e;
+          // Changed in the Ref Screen meanwhile: rename the latest copy on the next try.
+          return api('GET', 'get', undefined, 'kind=campaigns&id=' + it.id).then(function (k) { rec = k.item; }, function () { /* keep the old copy */ }).then(function () {
+            throw new Error('The campaign was just changed in the Ref Screen. Save again to rename it.');
+          });
+        });
+      }));
+      name.focus(); name.select();
+    }, function (e) { panel.innerHTML = ''; panel.appendChild(el('div', { class: 'msg err', text: e.message })); });
+  }
   function sharePanel(it, panel) {
     panel.hidden = false; panel.innerHTML = '';
     panel.appendChild(el('p', { class: 'muted', text: 'Loading…' }));
