@@ -8,10 +8,10 @@
 
   var STORAGE_KEY = 'crows-pt2-ref-campaign';
   var TAB_KEY = 'crows-pt2-ref-tab';
-  var TABS = [['session', 'Session'], ['travel', 'Travel'], ['village', 'Village'], ['party', 'Party'], ['world', 'World'], ['bestiary', 'Bestiary'], ['tables', 'Tables'], ['rules', 'Rules']];
+  var TABS = [['session', 'Session'], ['encounters', 'Encounters'], ['travel', 'Travel'], ['village', 'Village'], ['party', 'Party'], ['world', 'World'], ['bestiary', 'Bestiary'], ['tables', 'Tables'], ['rules', 'Rules']];
   var EB_LABELS = [[-2, 'DB'], [-1, 'Bane'], [0, '—'], [1, 'Edge'], [2, 'DE']];
   var state, tab, uid = 1;
-  var ui = { dice: null, tables: {}, beastQ: '', beastType: '', rulesQ: '', lastEnc: null, travelEnc: null, alarmFired: false };
+  var ui = { dice: null, tables: {}, beastQ: '', beastType: '', rulesQ: '', lastEnc: null, travelEnc: null, alarmFired: false, encSrc: '', encDraft: null, encFilter: 'open', encOpen: {}, encFocus: null };
 
   // ------------------------------------------------------------------ helpers
   function $(id) { return document.getElementById(id); }
@@ -104,7 +104,7 @@
       travel: { day: 1, pace: 'Normal', speed: 5, road: false, water: 'none', weather: '', beacon: false, strong: false, hexAdj: 0, enAdj: 0, restEnAdj: 0,
         climate: 'Fall & Spring', habitat: 'Forest', nearby: 'Undead', lost: false, miasmaMod: 0, inMiasma: true },
       village: freshVillage(),
-      party: [], xpLog: [], hirelings: [], ledger: [], places: [], npcs: [], notes: '', hooks: '', history: [],
+      party: [], xpLog: [], hirelings: [], ledger: [], places: [], npcs: [], encounters: [], notes: '', hooks: '', history: [],
       dice: { mod: 0, net: 0, expr: '3d6', ud: 1 }
     };
   }
@@ -319,6 +319,8 @@
       if (res.enc) line += ' ' + table + ' d' + res.enc.die + ' = ' + res.enc.roll + ': ' + res.enc.text + ' → ' + addsText(res.enc.adds) + '.';
       if (res.travel) line += ' ' + res.travel.summary;
       if (!res.enc && !res.travel) line += ' (Roll on the monster table of the dungeon type.)';
+      res.encId = saveCheckEncounter(res).id;
+      line += ' Saved to Encounters.';
     }
     log(hit ? 'enc' : '', line);
     return res;
@@ -333,6 +335,12 @@
     }
     if (res.travel) kids.push(travelResultBox(res.travel));
     if (res.hit && !res.enc && !res.travel) kids.push(el('div', { class: 'muted', text: 'No table picked: choose creatures from the Bestiary.' }));
+    if (res.encId && findEncounter(res.encId)) kids.push(el('div', null, [encLink(res.encId, 'Open in Encounters')]));
+    else if (res.enc || res.travel) kids.push(btn('Save to Encounters', function () {
+      var e = newEncounter({ name: encName(res.reason, res), src: res.table || 'Travel', roll: res.reason, text: res.enc ? res.table + ' (d' + res.enc.die + ' = ' + res.enc.roll + '): ' + res.enc.text : res.travel.summary.replace(/\*\*/g, ''),
+        adds: res.enc ? res.enc.adds : res.travel.adds });
+      res.encId = e.id; save(); render(); toast('Saved to Encounters.');
+    }, 'btn-small'));
     if (onResolve) kids.push(btn('Dismiss', onResolve, 'btn-small btn-ghost'));
     return el('div', { class: 'result' }, kids);
   }
@@ -344,6 +352,67 @@
       toast('Added to the combat tracker.');
       setTab('session');
     }, 'btn-small btn-primary');
+  }
+
+  // ------------------------------------------------------------------ saved encounters (Encounters tab)
+  /*
+   * A saved encounter: creatures [{ n: bestiary name, k: count, side: 'foe' | 'ally' }] plus text the Ref can edit.
+   * Every encounter check that hits saves one, and the Dungeon Turn notice links to it.
+   */
+  function newEncounter(o) {
+    var place = currentPlace();
+    var e = { id: nid(), name: o.name || 'New encounter', src: o.src || 'Manual', made: today() + ' ' + nowStamp(), session: S().n, dt: S().dt,
+      where: o.where != null ? o.where : place ? place.name : '', roll: o.roll || '', text: o.text || '',
+      creatures: (o.adds || []).map(function (a) { return { n: a[0], k: a[1], side: 'foe' }; }), notes: '', done: false };
+    state.encounters.unshift(e);
+    return e;
+  }
+  function findEncounter(id) { for (var i = 0; i < state.encounters.length; i++) if (state.encounters[i].id === id) return state.encounters[i]; return null; }
+  function encName(reason, res) { return reason + ': ' + (res.enc ? addsText(res.enc.adds) : res.travel ? res.travel.kind : 'Ref\'s choice'); }
+  function encSummary(e) { return e.creatures.map(function (c) { return c.k + ' × ' + c.n + (c.side === 'ally' ? ' (ally)' : ''); }).join(', '); }
+  function saveCheckEncounter(res) {
+    return newEncounter({ name: encName(res.reason, res), src: res.table || 'Ref\'s choice', where: res.table === 'Travel' ? 'Travel day ' + state.travel.day : undefined,
+      roll: res.reason + ': 1d10 = ' + res.roll + ' vs EN ' + res.en + (res.immediate ? ' (right now)' : ' (sign now, arrives during the next DT)'),
+      text: res.enc ? res.table + ' (d' + res.enc.die + ' = ' + res.enc.roll + '): ' + res.enc.text : res.travel ? res.travel.summary.replace(/\*\*/g, '') : 'No table picked: choose creatures from the Bestiary.',
+      adds: res.enc ? res.enc.adds : res.travel ? res.travel.adds : [] });
+  }
+  function pendingFrom(res) {
+    if (!res.hit || res.immediate) return null;
+    return { dt: S().dt, text: res.enc ? addsText(res.enc.adds) : res.travel ? res.travel.kind : 'Ref\'s choice', adds: res.enc ? res.enc.adds : res.travel ? res.travel.adds : [], encId: res.encId || null };
+  }
+  function pendingEnc() { var p = S().pending; return p && p.encId ? findEncounter(p.encId) : null; }
+  /* The pending encounter's description, as a link to it in the Encounters tab when it's saved there. */
+  function pendingText(p) { var e = p.encId && findEncounter(p.encId); return e ? encLink(e.id, encSummary(e) || e.name) : p.text; }
+  function encLink(id, text) {
+    return el('a', { href: '#enc-' + id, class: 'enc-link', title: 'Open in the Encounters tab', onclick: function (ev) { ev.preventDefault(); openEncounter(id); } }, [text]);
+  }
+  function openEncounter(id, editName) {
+    var e = findEncounter(id);
+    if (!e) { toast('That encounter was deleted.'); return; }
+    ui.encOpen[id] = true; ui.encFocus = id;
+    if (ui.encFilter !== 'all' && (ui.encFilter === 'done') !== !!e.done) ui.encFilter = 'all';
+    setTab('encounters');
+    var n = $('enc-' + id);
+    if (n) { n.scrollIntoView({ block: 'start' }); if (editName) { var i = n.querySelector('input'); if (i) i.select(); } }
+    clearTimeout(openEncounter._t); openEncounter._t = setTimeout(function () { ui.encFocus = null; }, 2000);
+  }
+  function encCombatBtn(e) {
+    return btn('Add to combat', function () {
+      if (!e.creatures.length) { toast('This encounter has no creatures yet.'); return; }
+      e.creatures.forEach(function (c) { addCombatant(c.n, clamp(int(c.k, 1), 1, 30), c.side); });
+      log('', 'Encounter **' + (e.name || 'untitled') + '** joins combat: ' + encSummary(e) + '.');
+      toast('Added to the combat tracker.');
+      setTab('session');
+    }, 'btn-small btn-primary');
+  }
+  function beastSelect(value, onchange) {
+    var groups = {};
+    REF.BESTIARY.forEach(function (b) { (groups[b.t] = groups[b.t] || []).push(b.n); });
+    var n = el('select', { class: 'in', 'aria-label': 'Creature', onchange: function () { onchange(this.value); } },
+      Object.keys(groups).map(function (g) { return el('optgroup', { label: g }, groups[g].map(function (b) { return el('option', { value: b, text: b }); })); }));
+    if (value && !beast(value)) n.insertBefore(el('option', { value: value, text: value }), n.firstChild);
+    n.value = value;
+    return n;
   }
 
   function rollTravelEncounter() {
@@ -429,10 +498,10 @@
     s.combat.list.forEach(function (c) { REF.END_OF_DT_CONDITIONS.forEach(function (k) { if (c.conds[k]) { delete c.conds[k]; cleared.push(c.name + ' ' + k.toLowerCase()); } }); });
     if (cleared.length) log('', 'Conditions ended: ' + cleared.join(', ') + '.');
     activePCs().forEach(function (p) { sheetOp(p, { endDT: s.dt }); });   // linked crows: lights, conditions, overloaded slots on their sheets
-    if (s.pending) log('enc', '**Reminder:** the encounter signalled during DT ' + s.pending.dt + ' was due this DT (' + s.pending.text + ').');
+    if (s.pending) log('enc', '**Reminder:** the encounter signalled during DT ' + s.pending.dt + ' was due this DT (' + (pendingEnc() ? pendingEnc().name : s.pending.text) + ').');
     var res = encounterCheck('End of DT ' + s.dt, dungeonEN(), s.table === 'none' ? null : s.table);
     ui.lastEnc = res;
-    s.pending = res.hit && !res.immediate ? { dt: s.dt, text: res.enc ? addsText(res.enc.adds) : res.travel ? res.travel.kind : 'Ref\'s choice', adds: res.enc ? res.enc.adds : res.travel ? res.travel.adds : [] } : null;
+    s.pending = pendingFrom(res);
     if (place) place.visited = true;
     var wasRunning = s.running;
     s.dt += 1;
@@ -730,7 +799,7 @@
   function render() {
     renderTabbar();
     renderSide();
-    ({ session: renderSession, travel: renderTravel, village: renderVillage, party: renderParty, world: renderWorld, bestiary: renderBestiary, tables: renderTables, rules: renderRules })[tab]();
+    ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, world: renderWorld, bestiary: renderBestiary, tables: renderTables, rules: renderRules })[tab]();
     tick();
   }
 
@@ -744,7 +813,7 @@
         s.mode === 'timer' ? (s.running ? btn('Pause', pauseTimer, 'btn-small') : btn('Start', startTimer, 'btn-small btn-primary')) : btn('+1 room', function () { s.roomsDone++; save(); render(); }, 'btn-small'),
         btn('End DT', endDT, 'btn-small', 'Roll usage dice, end DT conditions, and make the encounter check')]),
       el('div', { class: 'meter', 'data-meter': '1' }, [el('span')]),
-      s.pending ? el('div', { class: 'pending' }, [el('b', { text: 'Encounter due this DT: ' }), s.pending.text]) : null
+      s.pending ? el('div', { class: 'pending' }, [el('b', { text: 'Encounter due this DT: ' }), pendingText(s.pending)]) : null
     ]));
 
     var dc = state.dice, box = $('side-dice'); box.innerHTML = '';
@@ -850,15 +919,15 @@
       el('div', { class: 'dt-grid' }, [clock, settings]),
       el('div', { class: 'row', style: 'margin-top:.8rem' }, [
         btn('End dungeon turn', endDT, 'btn-primary', 'Usage dice, end-of-DT conditions, encounter check'),
-        btn('Encounter check (loud noise)', function () { var res = encounterCheck('Loud noise', dungeonEN(), s.table === 'none' ? null : s.table); ui.lastEnc = res; if (res.hit && !res.immediate) s.pending = { dt: s.dt, text: res.enc ? addsText(res.enc.adds) : res.travel ? res.travel.kind : 'Ref\'s choice', adds: res.enc ? res.enc.adds : [] }; save(); render(); }),
+        btn('Encounter check (loud noise)', function () { var res = encounterCheck('Loud noise', dungeonEN(), s.table === 'none' ? null : s.table); ui.lastEnc = res; if (res.hit && !res.immediate) s.pending = pendingFrom(res); save(); render(); }),
         btn('Roll on monster table', function () {
           if (!REF.DUNGEON_TABLES[s.table]) { toast('Pick the blood creature or undead table first.'); return; }
           var e = rollDungeonTable(s.table); ui.lastEnc = { reason: 'Monster table', roll: '—', en: '—', hit: true, immediate: false, table: s.table, enc: e, t: nowStamp() };
           log('', s.table + ' table d' + e.die + ' = ' + e.roll + ': ' + addsText(e.adds) + '.'); render();
         }, 'btn-ghost')
       ]),
-      s.pending ? el('div', { class: 'pending' }, [el('b', { text: 'Encounter signalled during DT ' + s.pending.dt + ': ' }), s.pending.text + '. It arrives any time this DT.',
-        el('div', { class: 'row' }, [addToCombatBtn(s.pending.adds), btn('It happened / cancel', function () { s.pending = null; save(); render(); }, 'btn-small btn-ghost')])]) : null,
+      s.pending ? el('div', { class: 'pending' }, [el('b', { text: 'Encounter signalled during DT ' + s.pending.dt + ': ' }), pendingText(s.pending), '. It arrives any time this DT.',
+        el('div', { class: 'row' }, [pendingEnc() ? encCombatBtn(pendingEnc()) : addToCombatBtn(s.pending.adds), btn('It happened / cancel', function () { s.pending = null; save(); render(); }, 'btn-small btn-ghost')])]) : null,
       ui.lastEnc ? encounterResultBox(ui.lastEnc, function () { ui.lastEnc = null; render(); }) : null,
       more('End of each DT (checklist)', [el('ol', null, [
         el('li', { text: 'Roll usage dice for lights and anything tagged DT; spell and backlash durations in UD.' }),
@@ -877,11 +946,7 @@
 
   function renderCombat() {
     var s = S(), c = s.combat, addSel = { name: ui.addName || 'Blood Creature A', n: ui.addN || 1, side: ui.addSide || 'foe' };
-    var groups = {};
-    REF.BESTIARY.forEach(function (b) { (groups[b.t] = groups[b.t] || []).push(b.n); });
-    var select = el('select', { class: 'in', 'aria-label': 'Creature', onchange: function () { ui.addName = this.value; } },
-      Object.keys(groups).map(function (g) { return el('optgroup', { label: g }, groups[g].map(function (n) { return el('option', { value: n, text: n }); })); }));
-    select.value = addSel.name;
+    var select = beastSelect(addSel.name, function (v) { ui.addName = v; });
     var count = el('input', { type: 'number', class: 'tiny', min: 1, max: 30, value: addSel.n, 'aria-label': 'How many', onchange: function () { ui.addN = clamp(int(this.value, 1), 1, 30); } });
     var side = el('select', { class: 'in mini', 'aria-label': 'Side', onchange: function () { ui.addSide = this.value; } }, [el('option', { value: 'foe', text: 'Foe' }), el('option', { value: 'ally', text: 'Ally' })]);
     side.value = addSel.side;
@@ -992,6 +1057,105 @@
   }
   function logText(n, title, date, entries) {
     return 'Crows session ' + n + (title ? ': ' + title : '') + (date ? ' (' + date + ')' : '') + '\n\n' + entries.map(function (e) { return e.t + '  ' + e.s.replace(/\*\*/g, ''); }).join('\n') + '\n';
+  }
+
+  // ------------------------------------------------------------------ Encounters tab
+  var ENC_SOURCES = [['Blood Creatures', 'Blood creatures (d6)'], ['Undead', 'Undead (d10)'], ['Any', 'Any monster type (d10)'], ['Travel', 'Travel encounter (d100)'],
+    ['Animal', 'Wild animal (habitat + reaction)'], ['Travelers', 'Travelers'], ['Miasma-touched', 'Miasma-touched humans'], ['Merchant', 'Merchant caravan']];
+  function rollEncounterDraft(src) {
+    var t = state.travel, r;
+    if (REF.DUNGEON_TABLES[src]) { r = rollDungeonTable(src); return { name: src + ': ' + addsText(r.adds), roll: src + ' d' + r.die + ' = ' + r.roll, lines: [r.text], adds: r.adds }; }
+    if (src === 'Any') {
+      var m = d(10), row = lookup(REF.ANY_MONSTER, m), e = row[3] ? rollDungeonTable(row[3]) : null;
+      return { name: e ? row[2] + ': ' + addsText(e.adds) : row[2].replace(/ \(.*$/, ''), roll: 'Any monster d10 = ' + m + (e ? ', ' + row[3] + ' d' + e.die + ' = ' + e.roll : ''),
+        lines: [row[2] + (e ? ': ' + e.text : '')], adds: e ? e.adds : [] };
+    }
+    if (src === 'Travel') { r = rollTravelEncounter(); return { name: 'Travel: ' + r.kind, roll: 'Travel d100 = ' + r.roll + ' (' + t.habitat + ', ' + t.climate + ')', lines: r.lines, adds: r.adds }; }
+    if (src === 'Animal') { r = rollWildAnimal(t.habitat); return { name: 'Wild animal: ' + addsText(r.adds), roll: t.habitat, lines: r.lines, adds: r.adds }; }
+    r = src === 'Travelers' ? rollTravelers() : src === 'Merchant' ? rollMerchant() : rollMiasmaTouched();
+    return { name: src === 'Travelers' ? 'Travelers' : src === 'Merchant' ? 'Merchant caravan' : 'Miasma-touched humans', roll: src, lines: r.lines, adds: r.adds };
+  }
+  function renderEncounters() {
+    if (!ui.encSrc) ui.encSrc = REF.DUNGEON_TABLES[S().table] ? S().table : 'Travel';
+    var dr = ui.encDraft;
+    function srcLabel() { return ENC_SOURCES.filter(function (o) { return o[0] === ui.encSrc; })[0][1]; }
+    function roll() { var r = rollEncounterDraft(ui.encSrc); r.src = srcLabel(); ui.encDraft = r; log('', 'Rolled an encounter (' + r.src + '): ' + r.name + '. ' + r.lines.join(' ')); render(); }
+    card('sec-enc-new', el('h2', null, ['New Encounter', el('small', { text: 'roll one or build your own' })]), [
+      el('p', { class: 'hint', text: 'Roll on a table, look it over, and save the ones you want to keep and edit. Travel, wild animal, and nearest-dungeon rolls use the Travel tab\'s climate, habitat, and nearest dungeon. Encounter checks that hit (End DT, loud noise, rests, travel) are saved here on their own.' }),
+      el('div', { class: 'row' }, [field('Table', sel(ui, 'encSrc', ENC_SOURCES, { label: 'Encounter table' }), 'grow'),
+        btn('Roll encounter', roll, 'btn-primary'),
+        btn('Create encounter manually', function () { var e = newEncounter({ src: 'Manual', where: '' }); save(); openEncounter(e.id, true); }, 'btn-ghost')]),
+      dr ? el('div', { class: 'result' }, [
+        el('div', { class: 'r-head', text: dr.name }), el('div', { class: 'r-roll', text: dr.roll }),
+        el('ul', null, dr.lines.map(function (l) { return el('li', { text: l }); })),
+        dr.adds.length ? el('div', null, ['Creatures: ', el('b', { text: addsText(dr.adds) })]) : el('div', { class: 'muted', text: 'No creatures from this roll; add them after saving if you need any.' }),
+        el('div', { class: 'row' }, [
+          btn('Save encounter', function () {
+            var e = newEncounter({ name: dr.name, src: dr.src, roll: dr.roll, text: dr.lines.join('\n'), adds: dr.adds });
+            ui.encDraft = null; log('', 'Saved encounter: ' + e.name + '.'); save(); openEncounter(e.id);
+          }, 'btn-small btn-primary'),
+          btn('Reroll', roll, 'btn-small'),
+          btn('Discard', function () { ui.encDraft = null; render(); }, 'btn-small btn-ghost')])
+      ]) : null
+    ]);
+
+    var open = state.encounters.filter(function (e) { return !e.done; }).length, resolved = state.encounters.length - open;
+    var list = state.encounters.filter(function (e) { return ui.encFilter === 'all' || (ui.encFilter === 'done') === !!e.done; });
+    card('sec-enc-list', el('h2', null, ['Saved Encounters', el('small', { text: open + ' open · ' + resolved + ' resolved' })]), [
+      el('div', { class: 'row center' }, [
+        el('div', { class: 'seg' }, [['open', 'Open'], ['all', 'All'], ['done', 'Resolved']].map(function (o) {
+          return el('button', { type: 'button', class: ui.encFilter === o[0] ? 'on' : '', 'aria-pressed': ui.encFilter === o[0] ? 'true' : 'false', text: o[1], onclick: function () { ui.encFilter = o[0]; render(); } });
+        })),
+        el('span', { class: 'spacer' }),
+        resolved ? btn('Delete resolved', function () {
+          if (!confirm('Delete ' + plural(resolved, 'resolved encounter') + '?')) return;
+          state.encounters = state.encounters.filter(function (e) { return !e.done; }); save(); render();
+        }, 'btn-small btn-ghost btn-danger') : null]),
+      list.length ? el('div', { class: 'enc-list' }, list.map(encCard))
+        : el('p', { class: 'hint', text: state.encounters.length ? 'No ' + (ui.encFilter === 'done' ? 'resolved' : 'open') + ' encounters.' : 'No saved encounters yet. Roll or create one above, or make an encounter check in the Session tab.' })
+    ]);
+  }
+  function encCard(e) {
+    var s = S(), due = !!(s.pending && s.pending.encId === e.id);
+    var creatures = e.creatures.map(function (c) {
+      return el('div', { class: 'li-row' }, [beastSelect(c.n, function (v) { c.n = v; save(); }),
+        inp(c, 'k', { type: 'number', min: 1, max: 30, class: 'tiny', 'aria-label': 'How many' }, { dflt: 1 }),
+        sel(c, 'side', [['foe', 'Foe'], ['ally', 'Ally']], { class: 'in mini', label: 'Side', re: false }),
+        el('button', { type: 'button', class: 'x', text: '×', 'aria-label': 'Remove ' + c.n, onclick: function () { e.creatures = e.creatures.filter(function (x) { return x !== c; }); save(); render(); } })]);
+    });
+    return el('details', { class: 'enc' + (e.done ? ' done' : '') + (due ? ' due' : '') + (ui.encFocus === e.id ? ' focus' : ''), id: 'enc-' + e.id, open: ui.encOpen[e.id] || null,
+      ontoggle: function () { ui.encOpen[e.id] = this.open; } }, [
+      el('summary', null, [
+        el('span', { class: 'enc-name', text: e.name || 'Untitled encounter' }),
+        due ? el('span', { class: 'chip accent', text: 'due this DT' }) : null,
+        e.done ? el('span', { class: 'chip ok', text: 'resolved' }) : null,
+        el('span', { class: 'enc-sum', text: [encSummary(e), e.where, 'session ' + e.session + (e.dt ? ', DT ' + e.dt : '')].filter(Boolean).join(' · ') })]),
+      el('div', { class: 'enc-body' }, [
+        el('div', { class: 'li-row' }, [inp(e, 'name', { placeholder: 'Name', 'aria-label': 'Encounter name' }, { re: true }), inp(e, 'where', { placeholder: 'Where (place, hex, room)', 'aria-label': 'Where' }, { re: true })]),
+        el('div', { class: 'fine', text: e.src + ' · ' + (e.roll || 'made ' + e.made) }),
+        field('What happens', area(e, 'text', { rows: 3, placeholder: 'Set-up, signs of their approach, what they want…' })),
+        el('h4', { text: 'Creatures' }),
+        creatures.length ? el('div', { class: 'enc-cre' }, creatures) : el('p', { class: 'fine', text: 'No creatures yet.' }),
+        el('div', { class: 'row' }, [btn('Add creature', function () { e.creatures.push({ n: ui.addName || 'Blood Creature A', k: 1, side: 'foe' }); save(); render(); }, 'btn-small btn-ghost')]),
+        field('Ref notes', area(e, 'notes', { rows: 2, placeholder: 'Tactics, loot, how it went…' })),
+        el('div', { class: 'row' }, [encCombatBtn(e),
+          due || e.done ? null : btn('Make it due this DT', function () {
+            s.pending = { dt: s.dt, text: encSummary(e) || e.name, adds: e.creatures.map(function (c) { return [c.n, c.k, null]; }), encId: e.id };
+            log('enc', 'Encounter due this DT: **' + (e.name || 'untitled') + '**.'); save(); render(); toast('Shown in the Dungeon Turn block.');
+          }, 'btn-small', 'Show it in the Dungeon Turn block as the encounter due this DT'),
+          btn(e.done ? 'Reopen' : 'Mark resolved', function () {
+            e.done = !e.done; if (e.done && due) s.pending = null; save(); render();
+          }, 'btn-small btn-ghost'),
+          btn('Duplicate', function () {
+            var c = clone(e); c.id = nid(); c.name = (e.name || 'Encounter') + ' (copy)'; c.done = false; c.made = today() + ' ' + nowStamp();
+            state.encounters.splice(state.encounters.indexOf(e), 0, c); ui.encOpen[c.id] = true; save(); render();
+          }, 'btn-small btn-ghost'),
+          btn('Delete', function () {
+            if (!confirm('Delete ' + (e.name || 'this encounter') + '?')) return;
+            state.encounters = state.encounters.filter(function (x) { return x !== e; }); if (due) s.pending.encId = null; save(); render();
+          }, 'btn-small btn-ghost btn-danger')])
+      ])
+    ]);
   }
 
   // ------------------------------------------------------------------ Travel tab
