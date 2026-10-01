@@ -54,8 +54,9 @@ function logHas(s) { return saved().log.some(function (e) { return e.s.indexOf(s
 function pc(name) { return saved().party.filter(function (p) { return p.name === name; })[0]; }
 function encState() { return saved().encounters[0]; }
 
-/* Seeded dice (mulberry32), so a run can be repeated exactly. */
-Math.random = (function (a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; })(seed);
+/* Seeded dice (mulberry32), so a run can be repeated exactly. It replaces the page's own Math.random: a WebDriver
+   script has its own copy of the JS built-ins, so plain `Math.random =` would only seed this script's. */
+window.Math.random = (function (a) { return function () { a |= 0; a = a + 0x6D2B79F5 | 0; var t = Math.imul(a ^ a >>> 15, 1 | a); t = t + Math.imul(t ^ t >>> 7, 61 | t) ^ t; return ((t ^ t >>> 14) >>> 0) / 4294967296; }; })(seed);
 window.confirm = function (m) { confirms.push(m); return true; };
 
 /* Four players' crows, as Character Generator save files: [name, background index, two-point characteristic, Stamina]. */
