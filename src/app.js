@@ -1109,6 +1109,7 @@
       : s === 'conflict' ? 'Changed elsewhere: choose which version to keep.' : '' }));
   }
 
+  function refOps(fn) { return function (a) { var q = window.CrowsPlay && window.CrowsPlay.refOps; return q ? q[fn](a) : null; }; }
   function init() {
     bind();
     var s = load();
@@ -1121,6 +1122,8 @@
       getData: exportState,
       valid: validState,
       apply: function (data) { selectedId = null; adopt(clone(data)); render(); },
+      // Changes the Ref Screen sent to a linked sheet (play.js), redone on top if the player saved meanwhile.
+      refOps: { start: refOps('start'), saved: refOps('saved'), canRedo: refOps('canRedo'), redo: refOps('redo') },
       fresh: function () { selectedId = null; randomCrow(); render(); },
       name: function (c) { return c.name || 'Unnamed crow'; },
       summary: function (c) {

@@ -458,13 +458,15 @@ function a_delete(): array {
  * A player makes a link for one of their characters and sends it to their Ref. A Ref who opens it adds the
  * character to a campaign, which creates a character_access row. With it the Ref can read the whole
  * character and change only what a Ref runs at the table: the Play mode vitals (Stamina, wounds, conditions,
- * cruelty, coins, and the log those buttons write to), equipment (which carries armor damage), and notes.
+ * cruelty, coins, and the log those buttons write to), equipment (which carries armor damage), notes, and XP
+ * (the treasure XP the Ref awards, its history, and total XP when pending XP is applied).
  * link.save merges just those fields. The player sees who has access and can remove it; deleting the
  * character removes it too.
  */
 // Field name => path in the character (must match LINK_FIELDS in src/cloud.js).
 const SHARED_FIELDS = ['inv' => ['inv'], 'notes' => ['notes'], 'coins' => ['coins'], 'conds' => ['play', 'conds'],
-    'stamina' => ['play', 'stamina'], 'cruelty' => ['play', 'cruelty'], 'wounds' => ['play', 'wounds'], 'log' => ['play', 'log']];
+    'stamina' => ['play', 'stamina'], 'cruelty' => ['play', 'cruelty'], 'wounds' => ['play', 'wounds'], 'log' => ['play', 'log'],
+    'txp' => ['txp'], 'pendingXP' => ['play', 'pendingXP'], 'xpLog' => ['play', 'xpLog']];
 
 function own_character(array $s, int $id): array {
     $r = q('SELECT id, name FROM characters WHERE id = ? AND user_id = ?', [$id, $s['id']])->fetch();
@@ -622,15 +624,29 @@ function clean_log($l): array {
     }
     return $out;
 }
+function clean_xplog($l): array {
+    if (!is_array($l) || count($l) > 100) fail('Bad XP history.');
+    $out = [];
+    foreach ($l as $e) {
+        if (!is_object($e) || !is_string($e->desc ?? null) || mb_strlen($e->desc) > 200) fail('Bad XP history entry.');
+        $out[] = (object)['t' => clean_int($e->t ?? 0, 0, PHP_INT_MAX, 'XP time'), 'desc' => $e->desc, 'gc' => clean_int($e->gc ?? 0, 0, 999999999, 'treasure value'),
+            'n' => clean_int($e->n ?? 1, 0, 99, 'players'), 'xp' => clean_int($e->xp ?? 0, -9999999, 9999999, 'XP')];
+    }
+    return $out;
+}
 /** The current log plus the entries the Ref added since $base (both sides add entries, so they're combined, not compared). */
-function merge_log($cur, array $mine, $base): array {
-    $key = function ($e) { return is_object($e) && is_scalar($e->t ?? null) && is_string($e->m ?? null) ? $e->t . '|' . $e->m : null; };
+function merge_log($cur, array $mine, $base, int $max = 200): array {
+    $key = function ($e) {
+        if (!is_object($e) || !is_scalar($e->t ?? null)) return null;
+        if (is_string($e->m ?? null)) return $e->t . '|' . $e->m;                                   // the log
+        return is_string($e->desc ?? null) ? $e->t . '|' . $e->desc . '|' . ($e->xp ?? '') : null;   // the XP history
+    };
     $cur = is_array($cur) ? $cur : [];
     $seen = [];
     foreach (array_merge($cur, is_array($base) ? $base : []) as $e) if ($key($e) !== null) $seen[$key($e)] = true;
     foreach ($mine as $e) if (!isset($seen[$key($e)])) { $cur[] = $e; $seen[$key($e)] = true; }
     usort($cur, function ($a, $b) { return ($b->t ?? 0) <=> ($a->t ?? 0); });
-    return array_slice($cur, 0, 200);
+    return array_slice($cur, 0, $max);
 }
 function field_get(object $d, string $f) {
     foreach (SHARED_FIELDS[$f] as $k) { if (!is_object($d) || !isset($d->$k)) return null; $d = $d->$k; }
@@ -663,9 +679,9 @@ function a_link_save(): array {
         if (!is_object($data)) fail('That character could not be read.', 500);
         $changed = [];
         foreach (get_object_vars($b->fields) as $f => $v) {
-            if (!isset(SHARED_FIELDS[$f])) fail('A Ref can only change the vitals, equipment, and notes.', 403);
+            if (!isset(SHARED_FIELDS[$f])) fail('A Ref can only change the vitals, equipment, notes, and XP.', 403);
             if (!property_exists($b->base, $f)) fail('Nothing to save.');
-            if ($f !== 'log' && canon(field_get($data, $f)) !== canon($b->base->$f)) {
+            if ($f !== 'log' && $f !== 'xpLog' && canon(field_get($data, $f)) !== canon($b->base->$f)) {
                 fail('The player changed this character at the same time.', 409, ['item' => linked_out($r, true)]);
             }
             switch ($f) {
@@ -677,6 +693,9 @@ function a_link_save(): array {
                 case 'cruelty': $v = clean_int($v, 0, 999, 'cruelty'); break;
                 case 'wounds': $v = clean_wounds($v); break;
                 case 'log': $v = merge_log(field_get($data, 'log'), clean_log($v), $b->base->log); break;
+                case 'txp': $v = clean_int($v, 0, 999999, 'total XP'); break;
+                case 'pendingXP': $v = clean_int($v, 0, 99999999, 'pending XP'); break;
+                case 'xpLog': $v = merge_log(field_get($data, 'xpLog'), clean_xplog($v), $b->base->xpLog, 100); break;
             }
             field_set($data, $f, $v);
             $changed[] = $f;

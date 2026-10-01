@@ -9,7 +9,7 @@
  * URL parameters: ?id=<n> opens that saved record, ?new=1 starts a new one; with neither, the record
  * last open in this browser is reopened (or the current local state is saved as a new one).
  * ?link=<n> is the Ref's view of a character a player shared: only the Play mode vitals (Stamina, wounds,
- * conditions, cruelty, coins, and their log), equipment, and notes are sent back, and the server applies just those.
+ * conditions, cruelty, coins, and their log), equipment, notes, and XP are sent back, and the server applies just those.
  *
  * Several windows (or a player and their Ref) can have the same character open. Each checks about once a
  * second for a newer version (a tiny static file the server rewrites on every save, see signal() in
@@ -33,11 +33,13 @@
   var SLOW_POLL = 60000;       // ...and as a safety net when there is
   var TYPING = 1500;           // hold off bringing in changes for this long after a keystroke in a text field
   // What a Ref may change on a shared character (must match SHARED_FIELDS in server/app/api.php).
-  // Both sides add to the log, so it's combined rather than compared (union).
+  // Both sides add to the log and the XP history, so those are combined rather than compared (union).
   var LINK_FIELDS = [{ name: 'inv', path: ['inv'], label: 'equipment' }, { name: 'notes', path: ['notes'], label: 'notes' },
     { name: 'coins', path: ['coins'], label: 'coins' }, { name: 'conds', path: ['play', 'conds'], label: 'conditions' },
     { name: 'stamina', path: ['play', 'stamina'], label: 'Stamina' }, { name: 'cruelty', path: ['play', 'cruelty'], label: 'cruelty' },
-    { name: 'wounds', path: ['play', 'wounds'], label: 'wounds' }, { name: 'log', path: ['play', 'log'], label: 'log', union: true }];
+    { name: 'wounds', path: ['play', 'wounds'], label: 'wounds' }, { name: 'log', path: ['play', 'log'], label: 'log', union: true },
+    { name: 'txp', path: ['txp'], label: 'total XP' }, { name: 'pendingXP', path: ['play', 'pendingXP'], label: 'pending XP' },
+    { name: 'xpLog', path: ['play', 'xpLog'], label: 'XP history', union: true, max: 100 }];
 
   var cfg = null;              // attach() options
   var user = null, csrf = null;
@@ -129,13 +131,13 @@
     o[p[p.length - 1]] = copy(v);
   }
   /* The player's log plus the entries added here since `b`, newest first (as server/app/api.php merge_log does). */
-  function unionLog(b, l, r) {
-    function key(e) { return e && e.t + '|' + e.m; }
+  function unionLog(b, l, r, max) {
+    function key(e) { return e && e.t + '|' + (e.m != null ? e.m : e.desc + '|' + e.xp); }   // a log entry, or an XP history entry
     var out = (Array.isArray(r) ? r : []).slice(), seen = {};
     out.concat(Array.isArray(b) ? b : []).forEach(function (e) { seen[key(e)] = true; });
     (Array.isArray(l) ? l : []).forEach(function (e) { if (!seen[key(e)]) { out.push(e); seen[key(e)] = true; } });
     out.sort(function (x, y) { return (y.t || 0) - (x.t || 0); });
-    return out.slice(0, 200);
+    return out.slice(0, max || 200);
   }
   /* In the Ref's view only the shared fields are theirs; everything else always follows the player. */
   function mergeLinked(b, l, r) {
@@ -143,7 +145,7 @@
     LINK_FIELDS.forEach(function (f) {
       var bv = getPath(b, f.path), lv = getPath(l, f.path), rv = getPath(r, f.path);
       if (same(lv, bv) || same(lv, rv)) return;              // the Ref didn't change it: take the player's
-      if (f.union) { setPath(value, f.path, unionLog(bv, lv, rv)); return; }
+      if (f.union) { setPath(value, f.path, unionLog(bv, lv, rv, f.max)); return; }
       if (!same(rv, bv)) clashes.push(f.label);              // both changed it
       setPath(value, f.path, lv);
     });
@@ -198,7 +200,7 @@
     if (!chip) return;
     chip.setAttribute('data-s', s);
     chip.querySelector('.txt').textContent = (linkId && owner ? owner + '’s crow · ' : '') + text;
-    chip.title = title || (linkId ? 'Ref view: you can change the vitals, equipment, and notes' : user ? 'Account: ' + user.username : '');
+    chip.title = title || (linkId ? 'Ref view: you can change the vitals, equipment, notes, and XP' : user ? 'Account: ' + user.username : '');
   }
   function closeBar() { if (bar) { bar.remove(); bar = null; } }
   function showBar(msg, buttons) {
@@ -327,7 +329,7 @@
 
   /* The Ref's save: just the shared fields that differ from what the server last had. */
   function flushLinked(data, json) {
-    var fields = {}, from = {}, n = 0;
+    var fields = {}, from = {}, n = 0, snap = cfg.refOps ? cfg.refOps.start() : null;
     LINK_FIELDS.forEach(function (f) {
       var lv = getPath(data, f.path), bv = getPath(base, f.path);
       if (!same(lv, bv)) { fields[f.name] = lv === undefined ? null : lv; from[f.name] = bv === undefined ? null : bv; n++; }
@@ -339,6 +341,7 @@
       retryMs = 0;
       var item = j.item;
       rec.version = item.version;
+      if (snap) cfg.refOps.saved(snap);
       // Show the player's latest too, unless the Ref has changed something new meanwhile.
       if (JSON.stringify(cfg.getData()) === json) adoptRemote(item, item.data);
       else base = item.data;
@@ -378,6 +381,15 @@
    */
   function mergeIn(item, thenSave) {
     if (!cfg.valid(item.data)) return;
+    // Unsaved here are only changes sent from the Ref Screen, which are steps (Stamina -1, XP +130): take the
+    // player's version and redo them on top. (A value merge would drop one of two equal hits as "the same".)
+    if (linkId && cfg.refOps && cfg.refOps.canRedo()) {
+      adoptRemote(item, item.data);
+      cfg.refOps.redo();
+      if (cfg.onRemote) cfg.onRemote();
+      flush();
+      return;
+    }
     var local = cfg.getData();
     var m = linkId ? mergeLinked(base, local, item.data) : merge3(base, local, item.data);
     if (m.clashes.length) return clash(item, m.clashes);

@@ -4,7 +4,7 @@
  * The whole sheet is shown, Build and Play, but only the Play mode vitals (Stamina, AD, wounds, conditions,
  * cruelty, coins), equipment, and notes can be changed: every other control is disabled and clicks/keys/drags
  * on it are stopped before the app sees them. The server enforces the same rule (it applies only those fields
- * from a Ref), so this is about a clear UI, not trust.
+ * from a Ref, plus the XP the Ref Screen awards through CrowsPlay.refChange), so this is about a clear UI, not trust.
  * The Ref's own character in this browser is left alone (app.js skips its local autosave here).
  *
  * &view=status is the condensed form the Ref Screen's Party tab embeds for each linked crow: just the Vitals
@@ -91,20 +91,24 @@
     Array.prototype.forEach.call(document.body.children, function (sib) { if (sib !== n && sib.id !== 'toast' && sib.tagName !== 'SCRIPT') sib.classList.add('st-hide'); });
     document.body.classList.add('st-path');
     var sent = 0;
-    var tell = function () {
+    var tell = function (always) {
       var h = Math.ceil(vit.getBoundingClientRect().height) + 2;
-      if (h !== sent && window.parent !== window) { sent = h; window.parent.postMessage({ crowsStatus: true, h: h }, location.origin); }
+      if ((h !== sent || always === true) && window.parent !== window) { sent = h; window.parent.postMessage({ crowsStatus: true, h: h, loaded: loaded }, location.origin); }
     };
     if (window.ResizeObserver) new ResizeObserver(tell).observe(vit);
     window.addEventListener('load', tell);
   }
 
+  var loaded = false;
   window.CrowsRefView = {
     /* True in the condensed view embedded in the Ref Screen (&view=status). */
     status: STATUS,
+    /* True once the player's character is in (before that the page holds this browser's own character). */
+    get loaded() { return loaded; },
     /* The character is loaded: show it with a banner saying what the Ref can do. */
     ready: function (name, owner) {
-      if (STATUS) { document.body.classList.remove('ref-loading'); return; }
+      loaded = true;
+      if (STATUS) { document.body.classList.remove('ref-loading'); tell(true); return; }   // the Ref Screen may have changes waiting
       var b = document.getElementById('ref-banner');
       if (!b) {
         b = document.createElement('div'); b.id = 'ref-banner'; b.className = 'ref-banner';

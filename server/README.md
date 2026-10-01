@@ -23,8 +23,9 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
   it (or pastes it into the Ref Screen's Party tab) to add the crow to a campaign. The crow stays tied to the
   player's sheet. The Party tab's **Party status** shows each linked crow's live Play mode vitals, using the
   sheet's own buttons (Stamina, AD, damage and healing, wounds, conditions, cruelty, coins), and **Open sheet**
-  shows the whole character. Either way the Ref can change only those vitals, equipment, and notes. The server
-  applies just those fields, and only if they haven't changed underneath (log entries from both sides are combined).
+  shows the whole character. Either way the Ref can change only those vitals, equipment, notes, and XP (pending
+  XP the Ref Screen awards, its history, and total XP when it's applied). The server applies just those fields,
+  and only if they haven't changed underneath (log and XP history entries from both sides are combined).
   The player sees which Refs have access and can remove any of them, or turn the link off or replace it.
 - **Inviting players to a campaign:** it also works the other way. On the Ref Screen's Party tab, **Invite players**
   makes a link to the campaign (replace it or turn it off there too). A player who opens it, logging in or signing

@@ -39,7 +39,21 @@
     l.unshift({ t: Date.now(), m: msg });
     if (l.length > 200) l.length = 200;
   }
-  function commit(msg) { if (msg) log(msg); C.render(); }
+  function commit(msg) { if (msg) log(msg); if (!applyingRef) handEdits++; C.render(); }
+
+  /*
+   * Changes the Ref Screen sends (refChange) are steps (Stamina -1, XP +130), not final values. Until saved they're
+   * kept here, so if the player saved at the same moment, they're replayed on top of the player's version instead
+   * of asking which one to keep. Only when nothing was changed by hand here meanwhile (handEdits), since a hand
+   * change is a final value that can't be replayed.
+   */
+  var refOps = [], applyingRef = false, handEdits = 0, handSaved = 0;
+  var refQueue = {
+    start: function () { return { n: refOps.length, hand: handEdits }; },   // a save is being sent
+    saved: function (snap) { refOps.splice(0, snap.n); handSaved = snap.hand; },   // ...and it went through
+    canRedo: function () { return refOps.length > 0 && handEdits === handSaved; },
+    redo: function () { var ops = refOps; refOps = []; ops.forEach(refChange); }
+  };
 
   // ------------------------------------------------------------------ mode switch
   // The Ref Screen's condensed status view is always Play mode, without changing this browser's choice.
@@ -892,5 +906,35 @@
   applyMode(mode());
   window.CrowsPlay = { render: render, setMode: setMode,
     /* Back to full Stamina, as the Full button does (the Ref Screen's "Everyone to full Stamina"). */
-    fullStamina: function () { if (C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); commit('Back to full Stamina.'); } } };
+    fullStamina: function () { if (C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); commit('Back to full Stamina.'); } },
+    /*
+     * A change the Ref Screen made to this crow (combat, rests, Miasma, XP), applied as changes rather than
+     * overwritten values, so it adds to whatever the player did meanwhile. Any of:
+     * xp (+ desc, gc, n): pending XP · apply: pending XP into TXP · full: full Stamina · st: Stamina +/- ·
+     * wounds: ordinary wounds +/- · cruelty: +/- · setCruelty: a new value.
+     */
+    refChange: refChange, refOps: refQueue };
+
+  function refChange(o) {
+    var p = P(), msgs = [], n;
+    if (o.xp) {
+      p.pendingXP = Math.max(0, p.pendingXP + o.xp);
+      p.xpLog.unshift({ t: Date.now(), desc: o.desc || 'Treasure', gc: o.gc | 0, n: o.n | 0 || 1, xp: o.xp });
+      if (p.xpLog.length > 100) p.xpLog.length = 100;
+      msgs.push((o.desc || 'Treasure') + (o.gc ? ' worth ' + fmt(o.gc) + ' gc' : '') + ': ' + fmt(o.xp) + ' XP (applies after the next rest).');
+    }
+    if (o.apply && p.pendingXP) msgs.push(applyXP());
+    if (o.full && C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); msgs.push('Back to full Stamina.'); }
+    if (o.st) {
+      n = C.curStamina(); setStamina(n + o.st); n = C.curStamina() - n;
+      if (n) msgs.push((n > 0 ? 'Regained ' : 'Lost ') + Math.abs(n) + ' Stamina (' + C.curStamina() + '/' + C.staminaMax() + ').');
+    }
+    if (o.wounds > 0 && (n = addWounds(o.wounds, 'w'))) msgs.push(n + ' wound' + (n === 1 ? '' : 's') + (C.woundCount() >= 10 ? ': all 10 backpack slots are wounded, your crow is dead.' : '.'));
+    if (o.wounds < 0 && (n = healWounds(-o.wounds))) msgs.push('Healed ' + n + ' wound' + (n === 1 ? '' : 's') + '.');
+    if (o.cruelty) { p.cruelty = Math.max(0, p.cruelty + o.cruelty); msgs.push('Cruelty ' + p.cruelty + '.'); }
+    if (typeof o.setCruelty === 'number' && p.cruelty !== o.setCruelty) { p.cruelty = Math.max(0, o.setCruelty); msgs.push('Cruelty ' + p.cruelty + '.'); }
+    refOps.push(o);
+    applyingRef = true;
+    try { if (msgs.length) commit(msgs.join(' ')); } finally { applyingRef = false; }
+  }
 })();

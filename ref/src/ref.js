@@ -179,7 +179,7 @@
   }
   function sel(obj, key, options, opts) {
     opts = opts || {};
-    var n = el('select', { class: opts.class || 'in', 'aria-label': opts.label || null }, options.map(function (o) {
+    var n = el('select', { class: opts.class || 'in', 'aria-label': opts.label || null, disabled: opts.disabled || null }, options.map(function (o) {
       var v = Array.isArray(o) ? o[0] : o, l = Array.isArray(o) ? o[1] : o;
       return el('option', { value: String(v), text: l });
     }));
@@ -470,7 +470,7 @@
   }
   function slotsOf(c) { var b = beast(c.cref); return c.kind === 'pc' ? 10 : b && (b.t === 'Human' || b.t === 'Animal') ? b.sl : 0; }
   function damage(c, amount, piercing) {
-    var parts = [], total = amount;
+    var parts = [], total = amount, st0 = c.st, w0 = c.wounds;
     if (c.conds.Vulnerable) { var v = d(6); total += v; parts.push('vulnerable +' + v); }
     var left = total;
     if (!piercing && c.ad > 0) { var absorbed = Math.min(c.ad, left); c.ad -= absorbed; left -= absorbed; parts.push(absorbed + ' to AD'); }
@@ -485,12 +485,16 @@
       else if (c.wounds >= slots) { c.dead = true; fate = ' — dead (every slot wounded).'; }
       else fate = b && b.t === 'Human' ? ' — at 0 Stamina: a lone human flees; a group reduced by half flees.' : ' — at 0 Stamina: animals flee.';
     }
-    if (c.kind === 'pc') syncPC(c);
+    if (c.kind === 'pc') syncPC(c, st0, w0);
     log('', '**' + c.name + '** takes ' + total + (piercing ? ' piercing' : '') + ' damage (' + (parts.join(', ') || 'no effect') + ')' + fate);
     save(); render();
   }
-  function heal(c, amount) { c.st = Math.min(c.stMax, c.st + amount); if (c.st > 0 && c.kind !== 'pc' && !slotsOf(c)) c.dead = false; if (c.kind === 'pc') syncPC(c); log('', c.name + ' regains ' + amount + ' Stamina (' + c.st + '/' + c.stMax + ').'); save(); render(); }
-  function syncPC(c) { var p = state.party.filter(function (x) { return x.id === c.pcId; })[0]; if (p) { p.st = c.st; p.wounds = c.wounds; } }
+  function heal(c, amount) { var st0 = c.st; c.st = Math.min(c.stMax, c.st + amount); if (c.st > 0 && c.kind !== 'pc' && !slotsOf(c)) c.dead = false; if (c.kind === 'pc') syncPC(c, st0, c.wounds); log('', c.name + ' regains ' + amount + ' Stamina (' + c.st + '/' + c.stMax + ').'); save(); render(); }
+  /* A crow's combat entry changed from (st0, w0): pass the change on to the party entry and its sheet. */
+  function syncPC(c, st0, w0) {
+    var p = state.party.filter(function (x) { return x.id === c.pcId; })[0];
+    if (p && (c.st !== st0 || c.wounds !== w0)) sheetOp(p, { st: c.st - st0, wounds: c.wounds - w0 });
+  }
   function monsterAttack(c, a) {
     var b = beast(c.cref), dice = state.dice, edges = 0, banes = 0, why = [];
     if (dice.net > 0) edges += dice.net; if (dice.net < 0) banes -= dice.net;
@@ -525,8 +529,9 @@
   function finishRest() {
     var s = S(), applied = [];
     activePCs().forEach(function (p) {
-      p.st = p.stMax; if (p.wounds > 0) p.wounds -= 1;
-      if (s.rest.applyXP && p.pending) { applied.push((p.name || 'Crow') + ' +' + fmt(p.pending)); p.txp += p.pending; p.pending = 0; }
+      var xp = s.rest.applyXP && p.pending;
+      if (xp) applied.push((p.name || 'Crow') + ' +' + fmt(p.pending));
+      sheetOp(p, { full: true, wounds: p.wounds > 0 ? -1 : 0, apply: !!xp });
     });
     s.combat.list.forEach(function (c) { c.used = {}; if (c.kind === 'pc') { var p = state.party.filter(function (x) { return x.id === c.pcId; })[0]; if (p) { c.st = p.st; c.wounds = p.wounds; } } });
     log('dt', '**Rest complete.** Crows regain all Stamina, heal 1 wound, and regain expertise uses' + (s.rest.where === 'outdoors' && state.travel.inMiasma ? ' (NOT in the Miasma: no expertise uses; roll Miasma RRs)' : '') +
@@ -540,7 +545,7 @@
   function miasmaOutcome(p, tier, detail) {
     var msg = (p.name || 'Crow') + ' Miasma RR' + (detail ? ' ' + detail : '') + ': T' + tier;
     if (tier === 1) {
-      p.cruelty = (p.cruelty || 0) + 1;
+      sheetOp(p, { cruelty: 1 });
       var tries = 0, n, row;
       do { n = d(10) + p.cruelty; row = lookup(REF.MIASMA_EFFECTS, n); tries++; } while (tries < 20 && row[0] < 13 && p.miasma.indexOf(row[0]) >= 0);
       if (p.miasma.indexOf(row[0]) < 0) p.miasma.push(row[0]);
@@ -551,7 +556,7 @@
     log(tier === 1 ? 'enc' : '', msg);
     save(); render();
   }
-  function clearCruelty(p) { p.cruelty = 0; p.miasma = []; log('', (p.name || 'Crow') + ' loses all cruelty and Miasma effects.'); save(); render(); }
+  function clearCruelty(p) { sheetOp(p, { setCruelty: 0 }); p.miasma = []; log('', (p.name || 'Crow') + ' loses all cruelty and Miasma effects.'); save(); render(); }
 
   // ------------------------------------------------------------------ village cycle
   function instDef(type) { return REF.INSTITUTIONS[type] || { found: 0, up: [], roles: '', txt: '' }; }
@@ -620,7 +625,7 @@
    * A player can share a character with a link (from their character list). Added here, the crow stays tied
    * to the player's sheet: Party status shows its live vitals, "Open sheet" shows the whole thing, where the Ref
    * can change the vitals, equipment, and notes, and the party entry refreshes from the sheet about a second
-   * after the player changes it.
+   * after the player changes it. Combat, rests, Miasma RRs, and XP awards here reach the sheet too (sheetOp).
    * Needs the Ref to be logged in on the hosted site.
    */
   function cloudOn() { return !!(window.CrowsCloud && window.CrowsCloud.active); }
@@ -630,7 +635,10 @@
     var pc = pcFromSave(item.data), existing = state.party.filter(function (p) { return p.link === item.id; })[0];
     pc.link = item.id; pc.owner = item.owner || '';
     if (existing) {
-      ['id', 'status', 'ad', 'miasma', 'notes', 'pending'].forEach(function (k) { if (k in existing) pc[k] = existing[k]; });
+      ['id', 'status', 'ad', 'miasma', 'notes', 'owed'].forEach(function (k) { if (k in existing) pc[k] = existing[k]; });
+      (pc.owed || []).forEach(function (o) { applyOp(pc, o); });
+      // A crow already in the combat tracker picks up the sheet's Stamina and wounds.
+      if (S() && S().combat) S().combat.list.forEach(function (c) { if (c.kind === 'pc' && c.pcId === pc.id) { c.st = Math.min(pc.st, c.stMax); c.wounds = pc.wounds; } });
       state.party[state.party.indexOf(existing)] = pc;
     } else state.party.push(pc);
     watchLinked(item);
@@ -669,6 +677,38 @@
     if (window.CrowsCloud) window.CrowsCloud.watch('link-' + id, null);
     delete p.link; delete p.owner; save(); render();
     if (cloudOn()) window.CrowsCloud.api('POST', 'link.remove', '', { id: id }).then(function () { if (!quietly) toast('Unlinked. The crow stays in the party as a copy.'); }, function () { /* already gone */ });
+  }
+  /*
+   * The Ref changing a crow's sheet numbers (XP, Stamina, wounds, cruelty; see CrowsPlay.refChange): the party
+   * entry changes at once, and a linked crow's change goes onto the player's sheet through its Party status frame.
+   * If that frame isn't loaded yet, the change waits in p.owed and is delivered as soon as the frame reports in;
+   * until then it's replayed over each refresh from the sheet, so it doesn't flicker away.
+   */
+  function applyOp(p, o) {
+    if (o.xp) p.pending = (p.pending || 0) + o.xp;
+    if (o.apply) { p.txp = (p.txp || 0) + (p.pending || 0); p.pending = 0; }
+    if (o.full) p.st = p.stMax;
+    if (o.st) p.st = clamp((p.st || 0) + o.st, 0, p.stMax);
+    if (o.wounds) p.wounds = clamp((p.wounds || 0) + o.wounds, 0, 10);
+    if (o.cruelty) p.cruelty = Math.max(0, (p.cruelty || 0) + o.cruelty);
+    if (typeof o.setCruelty === 'number') p.cruelty = o.setCruelty;
+  }
+  function sheetWin(p) {
+    var f = p.link && statusFrames[p.link];
+    // Only once the player's character is in the frame (before that it holds this browser's own character).
+    try { var w = f && f.frame.contentWindow; return w && w.CrowsPlay && w.CrowsPlay.refChange && w.CrowsRefView && w.CrowsRefView.loaded ? w : null; } catch (e) { return null; }
+  }
+  function sheetOp(p, o) {
+    applyOp(p, o);
+    if (!p.link || !cloudOn()) return;
+    (p.owed = p.owed || []).push(o);
+    flushOps(p);
+  }
+  function flushOps(p) {
+    var w = sheetWin(p);
+    if (!w || !p.owed || !p.owed.length) return;
+    p.owed.forEach(function (o) { w.CrowsPlay.refChange(o); });
+    delete p.owed; save();
   }
   function openSheet(p) { window.open('Crows_Character_Generator.html?link=' + encodeURIComponent(p.link) + '&mode=play', '_blank', 'noopener'); }
   function newPC() { return { id: nid(), name: '', player: '', bg: '', feature: '', A: 0, M: 0, S: 0, stMax: 7, st: 7, ad: 0, wounds: 0, cruelty: 0, txp: 0, pending: 0, status: 'active', conn: '', rel: '', benefit: '', miasma: [], notes: '' }; }
@@ -871,9 +911,9 @@
     var head = el('div', { class: 'cbt-top' }, [
       el('div', { class: 'cbt-name' }, [inp(c, 'name', { 'aria-label': 'Name' }),
         el('div', { class: 'cbt-meta', text: c.kind === 'pc' ? 'Crow' : b ? b.t + ' · ' + b.sz + ' · P' + b.p + ' · speed ' + b.spd + ' · A ' + signed(b.c[0]) + ' M ' + signed(b.c[1]) + ' S ' + signed(b.c[2]) + (b.rx > 1 ? ' · ' + b.rx + ' reactions' : '') : '' })]),
-      el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Stam' }), btnPM('−', function () { c.st = Math.max(0, c.st - 1); if (c.kind === 'pc') syncPC(c); save(); render(); }), el('b', { text: String(c.st) }), el('span', { class: 'of', text: '/' + c.stMax }), btnPM('+', function () { c.st = Math.min(c.stMax, c.st + 1); if (c.kind === 'pc') syncPC(c); save(); render(); })]),
+      el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Stam' }), btnPM('−', function () { var s0 = c.st; c.st = Math.max(0, c.st - 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); }), el('b', { text: String(c.st) }), el('span', { class: 'of', text: '/' + c.stMax }), btnPM('+', function () { var s0 = c.st; c.st = Math.min(c.stMax, c.st + 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); })]),
       el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'AD' }), btnPM('−', function () { c.ad = Math.max(0, c.ad - 1); save(); render(); }), el('b', { text: String(c.ad) }), el('span', { class: 'of', text: '/' + c.adMax }), btnPM('+', function () { c.ad = c.ad + 1; c.adMax = Math.max(c.adMax, c.ad); save(); render(); })]),
-      slots ? el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Wounds' }), btnPM('−', function () { c.wounds = Math.max(0, c.wounds - 1); if (c.kind === 'pc') syncPC(c); save(); render(); }), el('b', { text: String(c.wounds) }), el('span', { class: 'of', text: '/' + slots })]) : null,
+      slots ? el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Wounds' }), btnPM('−', function () { var w0 = c.wounds; c.wounds = Math.max(0, c.wounds - 1); if (c.kind === 'pc') syncPC(c, c.st, w0); save(); render(); }), el('b', { text: String(c.wounds) }), el('span', { class: 'of', text: '/' + slots })]) : null,
       el('button', { type: 'button', class: 'x', title: 'Remove', 'aria-label': 'Remove ' + c.name, text: '×', onclick: function () { S().combat.list = S().combat.list.filter(function (x) { return x !== c; }); save(); render(); } })
     ]);
     var mid = el('div', { class: 'cbt-mid' }, [amt,
@@ -1255,8 +1295,7 @@
       box.appendChild(el('p', { class: 'hint', text: 'Each linked crow shows its own sheet\u2019s vitals: the buttons work just as they do for the player and save to their sheet at once, ' +
         'and their changes show up here within a second. Damage goes through worn armor and parry weapons first, as on the sheet.' }));
       box.appendChild(el('div', { class: 'row', style: 'margin-bottom:.6rem' }, [btn('Everyone to full Stamina', function () {
-        activePCs().forEach(function (p) { p.st = p.stMax; });
-        eachSheet(function (w) { w.CrowsPlay.fullStamina(); });   // linked crows: on their sheets
+        activePCs().forEach(function (p) { sheetOp(p, { full: true }); });   // linked crows: on their sheets
         save(); render();
       }, 'btn-small btn-ghost', 'Every active crow back to full Stamina (linked crows on their own sheets)')]));
       box.appendChild(el('div', { class: 'st-grid', id: 'st-grid' }));
@@ -1284,18 +1323,14 @@
     });
     Object.keys(statusFrames).forEach(function (id) { if (!keep[id]) { statusFrames[id].tile.remove(); delete statusFrames[id]; } });
   }
-  /* Run something in each linked crow's sheet frame (once it has loaded). */
-  function eachSheet(fn) {
-    Object.keys(statusFrames).forEach(function (id) {
-      try { var w = statusFrames[id].frame.contentWindow; if (w && w.CrowsPlay) fn(w); } catch (e) { /* not loaded yet */ }
-    });
-  }
   // A frame reports its height whenever it changes; size it to fit, so there's no inner scrollbar.
   window.addEventListener('message', function (e) {
     if (e.origin !== location.origin || !e.data || !e.data.crowsStatus) return;
     Object.keys(statusFrames).forEach(function (id) {
       var fr = statusFrames[id].frame;
-      if (fr.contentWindow === e.source) fr.style.height = Math.max(60, Math.min(4000, +e.data.h || 0)) + 'px';
+      if (fr.contentWindow !== e.source) return;
+      fr.style.height = Math.max(60, Math.min(4000, +e.data.h || 0)) + 'px';
+      if (e.data.loaded) state.party.forEach(function (p) { if (String(p.link) === id && p.owed) flushOps(p); });
     });
   });
 
@@ -1339,12 +1374,12 @@
       el('div', { class: 'row center', style: 'margin-top:.6rem' }, [el('span', null, ['Total ', el('b', { text: fmt(total) + ' gc' }), ' → ', el('b', { text: fmt(each) + ' XP' }), ' per crow']),
         btn('Award as pending XP', function () {
           if (!each) return;
-          activePCs().forEach(function (p) { p.pending = (p.pending || 0) + each; });
+          activePCs().forEach(function (p) { sheetOp(p, { xp: each, desc: aw.what || 'Treasure', gc: total, n: aw.players }); });
           state.xpLog.push({ date: today(), session: S().n, what: aw.what, gc: total, each: each });
           log('', 'XP: ' + (aw.what || 'treasure') + ' worth ' + fmt(total) + ' gc → **' + fmt(each) + ' XP** each (applies after the next rest).');
           ui.award = null; save(); render();
         }, 'btn-primary'),
-        btn('Apply all pending XP now', function () { activePCs().forEach(function (p) { p.txp += p.pending || 0; p.pending = 0; }); log('', 'Pending XP applied.'); save(); render(); }, 'btn-ghost')]),
+        btn('Apply all pending XP now', function () { activePCs().forEach(function (p) { sheetOp(p, { apply: true }); }); log('', 'Pending XP applied.'); save(); render(); }, 'btn-ghost')]),
       state.xpLog.length ? more('XP history (' + state.xpLog.length + ')', [el('div', { class: 'tbl-wrap' }, [el('table', { class: 'tbl' }, [
         el('thead', null, [el('tr', null, ['Date', 'Session', 'What', 'Value', 'Each'].map(function (h) { return el('th', { text: h }); }))]),
         el('tbody', null, state.xpLog.slice().reverse().map(function (x) { return el('tr', null, [el('td', { text: x.date }), el('td', { text: String(x.session) }), el('td', { text: x.what || '' }), el('td', { class: 'n', text: fmt(x.gc) }), el('td', { class: 'n', text: fmt(x.each) })]); }))
@@ -1405,8 +1440,8 @@
         field('Total XP', inp(p, 'txp', ro({ type: 'number', min: 0, max: 9999999 }), { re: true }))]),
       el('div', { class: 'pc-sum', text: plural(es, 'E&S bonus') + ', ' + plural(cb, 'characteristic bonus') + ' · next E&S bonus at ' + fmt(nextES(p.txp || 0)) + ' TXP' + ((p.txp || 0) >= 60000 ? ' · may retire' : '') }),
       p.miasma && p.miasma.length ? el('div', { class: 'pc-sum', text: 'Miasma: ' + p.miasma.map(function (k) { return lookup(REF.MIASMA_EFFECTS, k)[2].split(':')[0]; }).join(', ') }) : null,
-      el('div', { class: 'grid3' }, [field('Connection', inp(p, 'conn', { placeholder: 'NPC name' })), field('Relationship', inp(p, 'rel')),
-        field('Connection benefit', sel(p, 'benefit', [['', '—']].concat(REF.CONNECTION_BENEFITS.map(function (b) { return b[0]; }))))]),
+      el('div', { class: 'grid3' }, [field('Connection', inp(p, 'conn', ro({ placeholder: 'NPC name' }))), field('Relationship', inp(p, 'rel', ro())),
+        field('Connection benefit', sel(p, 'benefit', [['', '—']].concat(REF.CONNECTION_BENEFITS.map(function (b) { return b[0]; })), { disabled: !!p.link }))]),
       benefit ? el('div', { class: 'fine', text: benefit[1] }) : null,
       field('Notes', area(p, 'notes', { rows: 2, placeholder: 'Feature, goals, debts, secrets…' }))
     ]);
@@ -1419,7 +1454,7 @@
         cell('A', num('A', -5, 5)), cell('M', num('M', -5, 5, { re: true })), cell('S', num('S', -5, 5)),
         el('div', { class: 'c stam' }, [el('span', { class: 'l', text: 'Stamina' }), num('st', 0, 999), el('span', { class: 'of', text: '/' }), num('stMax', 1, 999)]),
         cell('AD', num('ad', 0, 99, null, true)), cell('Wounds', num('wounds', 0, 10)), cell('Cruelty', num('cruelty', 0, 20, { re: true })),
-        cell('Pending XP', num('pending', 0, 9999999, null, true)),
+        cell('Pending XP', num('pending', 0, 9999999)),
         el('div', { class: 'c acts' }, [
           p.link && cloudOn() ? btn('Sheet', function () { openSheet(p); }, 'btn-small', 'Open the player’s whole sheet') : null,
           el('button', { type: 'button', class: 'x', text: '×', 'aria-label': 'Delete crow', onclick: function () {
