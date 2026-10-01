@@ -80,6 +80,13 @@ input[type=text], input[type=email], input[type=password], input[type=search], s
 @media print { .masthead, footer, .row-btns, .check-row, .form-actions { display: none !important; } }
 .check-row { display: flex; gap: .5rem; align-items: flex-start; margin: .4rem 0; }
 .check-row input { margin-top: .25rem; }
+.camps { display: flex; flex-wrap: wrap; gap: .3rem; margin-top: .3rem; }
+.camp-chip { font-size: .78rem; padding: .1rem .55rem; border-radius: 999px; border: 1px solid var(--line); color: var(--muted); }
+.camp-chip b { color: var(--ink, inherit); font-weight: 600; }
+.camp-chip.ok { border-color: var(--ok); } .camp-chip.ok b { color: var(--ok); }
+.camp-chip.warn { border-color: var(--warn); } .camp-chip.warn b { color: var(--warn); }
+.camp-chip.bad { border-color: var(--bad); } .camp-chip.bad b { color: var(--bad); }
+.camp-chip.none { border-style: dashed; }
 .count { display: inline-block; min-width: 1.2rem; margin-left: .35rem; padding: 0 .3rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: .72rem; font-weight: 700; text-align: center; }
 .news .rows li { border-left: 4px solid var(--ok); padding-left: .7rem; }
 .news .rows li.no { border-left-color: var(--warn); }

@@ -13,6 +13,8 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
 - **Home page** (after login): My characters (where new characters are created), Play, and for Refs the Ref Screen
   (campaigns), plus Manage accounts for admins.
 - **Players** keep characters in their account (open, play, copy, download as .json, upload .json, delete).
+  My characters also shows where each crow stands in campaigns: in play, sitting out, dead, retired, or lost
+  (read from the Ref's party), asked to join, or recently declined.
   The Character Generator loads the character from the account and autosaves every change about a second
   later. A new character (Create a character in My characters, Random crow, Start over, Load file) isn't saved until the player
   presses **Save character** in the right column; from then on it autosaves too. Save file / Load file still work.

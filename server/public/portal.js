@@ -436,13 +436,15 @@
     var K = KINDS[kind];
     var list = el('ul', { class: 'rows' }, [el('li', { class: 'empty', text: 'Loading…' })]);
     function load() {
-      api('GET', 'list', undefined, 'kind=' + kind).then(function (j) {
+      Promise.all([api('GET', 'list', undefined, 'kind=' + kind),
+        opts.campaigns ? api('GET', 'characters.campaigns').then(null, function () { return { campaigns: {} }; }) : null]).then(function (res) {
+        var j = res[0], camps = res[1] ? res[1].campaigns : null;
         list.innerHTML = '';
         if (!j.items.length) list.appendChild(el('li', { class: 'empty', text: opts.empty }));
-        j.items.forEach(function (it) { list.appendChild(row(it)); });
+        j.items.forEach(function (it) { list.appendChild(row(it, camps && camps[it.id])); });
       }, function (e) { list.innerHTML = ''; list.appendChild(el('li', { class: 'empty', text: e.message })); });
     }
-    function row(it) {
+    function row(it, camps) {
       var panel = el('div', { class: 'share-panel', hidden: true });
       var btns = opts.buttons(it).concat(opts.manage && kind === 'characters' ? [
         btn('Share', function () { if (panel.hidden) sharePanel(it, panel); else panel.hidden = true; }, 'btn-small btn-ghost', 'Send your Ref a link to this character')
@@ -462,7 +464,8 @@
       ] : []);
       return el('li', null, [
         el('div', null, [el('div', { class: 'name', text: it.name || 'Untitled' }),
-          el('div', { class: 'meta', text: [it.summary, 'saved ' + when(it.updatedAt)].filter(Boolean).join(' · ') })]),
+          el('div', { class: 'meta', text: [it.summary, 'saved ' + when(it.updatedAt)].filter(Boolean).join(' · ') }),
+          opts.campaigns ? campaignChips(camps) : null]),
         el('div', { class: 'btns' }, btns),
         panel
       ]);
@@ -492,6 +495,18 @@
     ]);
     show([head, opts.intro ? el('p', { class: 'muted', text: opts.intro }) : null, el('div', { class: 'card' }, [list])]);
     load();
+  }
+
+  /* Where a crow stands in campaigns (My characters): one chip per campaign, Ref, or join request. */
+  var CAMP_STATES = { active: ['In play', 'ok'], away: ['Sitting out', ''], dead: ['Dead', 'bad'], retired: ['Retired', ''], lost: ['Lost to the Miasma', 'bad'],
+    pending: ['Asked to join', 'warn'], declined: ['Request declined', ''], access: ['Ref has access, not in a party', ''] };
+  function campaignChips(camps) {
+    if (!camps || !camps.length) return el('div', { class: 'camps' }, [el('span', { class: 'camp-chip none', text: 'Not in a campaign' })]);
+    return el('div', { class: 'camps' }, camps.map(function (c) {
+      var st = CAMP_STATES[c.state] || [c.state, ''];
+      return el('span', { class: 'camp-chip ' + st[1], title: (c.campaign ? c.campaign + ', run by ' : 'Ref: ') + c.ref }, [
+        el('b', { text: st[0] }), ' \u00b7 ' + (c.campaign ? c.campaign + ' (' + c.ref + ')' : c.ref)]);
+    }));
   }
 
   /*
@@ -618,7 +633,7 @@
 
   function viewCharacters() {
     listPage('characters', {
-      title: 'My characters', manage: true,
+      title: 'My characters', manage: true, campaigns: true,
       intro: 'Create a character to roll up a new crow; it goes into your account when you press Save character. Saved crows save changes as you go.',
       empty: 'No characters yet. Use Create a character above, or upload a save file from the character generator.',
       buttons: function (it) { return [a('Edit', GEN + '?id=' + it.id + '&mode=build', 'btn btn-small btn-primary'), a('Play', GEN + '?id=' + it.id + '&mode=play', 'btn btn-small')]; }

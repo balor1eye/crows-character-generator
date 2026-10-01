@@ -836,6 +836,46 @@ function a_join_decline(): array {
     return [];
 }
 
+// ---------------------------------------------------------------- campaign status of a player's crows
+/*
+ * For My characters: where each of the player's crows stands in campaigns. A Ref with access (from a character
+ * link or an accepted join request) usually has the crow in a campaign's party, whose entry carries its status
+ * there (active, sitting out, dead, retired, lost); that's read from the Ref's campaigns. Waiting join requests,
+ * and ones declined in the last 14 days, are listed too. Only names and statuses go back, nothing else of the
+ * Ref's campaign.
+ */
+const PARTY_STATUSES = ['active', 'away', 'dead', 'retired', 'lost'];
+function a_characters_campaigns(): array {
+    $s = need_login();
+    $out = [];
+    $add = function (int $cid, array $e) use (&$out) { $out[(string)$cid][] = $e; };
+    $access = q('SELECT a.id, a.character_id, a.ref_user_id, u.username FROM character_access a JOIN characters c ON c.id = a.character_id
+                 JOIN users u ON u.id = a.ref_user_id WHERE c.user_id = ?', [$s['id']])->fetchAll();
+    $byRef = [];
+    foreach ($access as $a) $byRef[(int)$a['ref_user_id']][(int)$a['id']] = $a;
+    foreach ($byRef as $refId => $rows) {
+        $found = [];
+        foreach (q('SELECT id, name, data FROM campaigns WHERE user_id = ? ORDER BY updated_at DESC', [$refId])->fetchAll() as $camp) {
+            $party = json_decode($camp['data'], true)['party'] ?? null;
+            if (!is_array($party)) continue;
+            foreach ($party as $pc) {
+                $aid = is_array($pc) && isset($pc['link']) && is_numeric($pc['link']) ? (int)$pc['link'] : 0;
+                if (!isset($rows[$aid])) continue;
+                $st = in_array($pc['status'] ?? '', PARTY_STATUSES, true) ? $pc['status'] : 'active';
+                $add((int)$rows[$aid]['character_id'], ['campaign' => $camp['name'] !== '' ? $camp['name'] : 'Untitled campaign', 'ref' => $rows[$aid]['username'], 'state' => $st]);
+                $found[$aid] = true;
+            }
+        }
+        // Access, but not in any of that Ref's parties (removed, or the campaign was deleted).
+        foreach ($rows as $aid => $a) if (!isset($found[$aid])) $add((int)$a['character_id'], ['campaign' => null, 'ref' => $a['username'], 'state' => 'access']);
+    }
+    $reqs = q("SELECT j.character_id, j.status, p.name, u.username FROM join_requests j JOIN characters c ON c.id = j.character_id
+               JOIN campaigns p ON p.id = j.campaign_id JOIN users u ON u.id = p.user_id
+               WHERE c.user_id = ? AND (j.status = 'pending' OR (j.status = 'declined' AND j.decided_at > ?))", [$s['id'], now(-14 * 86400)])->fetchAll();
+    foreach ($reqs as $r) $add((int)$r['character_id'], ['campaign' => $r['name'] !== '' ? $r['name'] : 'Untitled campaign', 'ref' => $r['username'], 'state' => $r['status']]);
+    return ['campaigns' => (object)$out];
+}
+
 // ---------------------------------------------------------------- notifications
 /*
  * Short messages for a user, kept until they dismiss them: the home page lists them, and any open app page
@@ -1002,6 +1042,7 @@ const ACTIONS = [
     'join.cancel' => ['POST', 'a_join_cancel', true],
     'join.accept' => ['POST', 'a_join_accept', true],
     'join.decline' => ['POST', 'a_join_decline', true],
+    'characters.campaigns' => ['GET', 'a_characters_campaigns', false],
     'notes.list' => ['GET', 'a_notes_list', false],
     'notes.dismiss' => ['POST', 'a_notes_dismiss', true],
     'admin.users' => ['GET', 'a_admin_users', false],
