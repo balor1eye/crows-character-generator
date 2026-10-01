@@ -381,22 +381,23 @@
    */
   function mergeIn(item, thenSave) {
     if (!cfg.valid(item.data)) return;
+    var before = cfg.getData();            // for onRemote to say what changed
     // Unsaved here are only changes sent from the Ref Screen, which are steps (Stamina -1, XP +130): take the
     // player's version and redo them on top. (A value merge would drop one of two equal hits as "the same".)
     if (linkId && cfg.refOps && cfg.refOps.canRedo()) {
       adoptRemote(item, item.data);
       cfg.refOps.redo();
-      if (cfg.onRemote) cfg.onRemote();
+      if (cfg.onRemote) cfg.onRemote(before);
       flush();
       return;
     }
-    var local = cfg.getData();
+    var local = before;
     var m = linkId ? mergeLinked(base, local, item.data) : merge3(base, local, item.data);
     if (m.clashes.length) return clash(item, m.clashes);
     var unsaved = !same(m.value, item.data);
     adoptRemote(item, item.data);          // the server's version is the new common ancestor...
     if (unsaved) cfg.apply(m.value);       // ...with our own changes laid back on top
-    if (cfg.onRemote) cfg.onRemote();
+    if (cfg.onRemote) cfg.onRemote(before);
     if (unsaved && thenSave !== false) flush();
     else status('saved', 'Saved');
   }
@@ -499,7 +500,7 @@
     /*
      * opts: kind ('characters' | 'campaigns'), getData(), apply(data), valid(data),
      *       name(data), summary(data), fresh() (make a brand-new thing for ?new=1), onReady(params),
-     *       onRemote() (a change made elsewhere was just brought in)
+     *       onRemote(before) (a change made elsewhere was just brought in; `before` is what getData() gave just before)
      */
     attach: function (opts) {
       cfg = opts;

@@ -7210,22 +7210,23 @@ var CROWS_TRAIT_TREES = [
    */
   function mergeIn(item, thenSave) {
     if (!cfg.valid(item.data)) return;
+    var before = cfg.getData();            // for onRemote to say what changed
     // Unsaved here are only changes sent from the Ref Screen, which are steps (Stamina -1, XP +130): take the
     // player's version and redo them on top. (A value merge would drop one of two equal hits as "the same".)
     if (linkId && cfg.refOps && cfg.refOps.canRedo()) {
       adoptRemote(item, item.data);
       cfg.refOps.redo();
-      if (cfg.onRemote) cfg.onRemote();
+      if (cfg.onRemote) cfg.onRemote(before);
       flush();
       return;
     }
-    var local = cfg.getData();
+    var local = before;
     var m = linkId ? mergeLinked(base, local, item.data) : merge3(base, local, item.data);
     if (m.clashes.length) return clash(item, m.clashes);
     var unsaved = !same(m.value, item.data);
     adoptRemote(item, item.data);          // the server's version is the new common ancestor...
     if (unsaved) cfg.apply(m.value);       // ...with our own changes laid back on top
-    if (cfg.onRemote) cfg.onRemote();
+    if (cfg.onRemote) cfg.onRemote(before);
     if (unsaved && thenSave !== false) flush();
     else status('saved', 'Saved');
   }
@@ -7328,7 +7329,7 @@ var CROWS_TRAIT_TREES = [
     /*
      * opts: kind ('characters' | 'campaigns'), getData(), apply(data), valid(data),
      *       name(data), summary(data), fresh() (make a brand-new thing for ?new=1), onReady(params),
-     *       onRemote() (a change made elsewhere was just brought in)
+     *       onRemote(before) (a change made elsewhere was just brought in; `before` is what getData() gave just before)
      */
     attach: function (opts) {
       cfg = opts;
@@ -7611,9 +7612,9 @@ var CROWS_TRAIT_TREES = [
   function norm(s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
   function clone(o) { return JSON.parse(JSON.stringify(o)); }
   var DIE = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
-  function toast(msg) {
+  function toast(msg, ms) {
     var t = $('toast'); t.textContent = msg; t.classList.add('show');
-    clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, 2600);
+    clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, ms || 2600);
   }
   function bg() { return CROWS.BACKGROUNDS[state.bg]; }
   function item(key) { return CROWS.ITEMS[key] || { cat: 'misc', st: 1, sl: 1, gc: 0, txt: '' }; }
@@ -8684,6 +8685,29 @@ var CROWS_TRAIT_TREES = [
       : s === 'conflict' ? 'Changed elsewhere: choose which version to keep.' : '' }));
   }
 
+  /*
+   * A short description of a change brought in from elsewhere (the Ref, or the player's other device): the new
+   * session log entries, which say what happened (Lost 3 Stamina, 130 XP...), plus whatever else changed that
+   * isn't logged. `before` is the sheet as it was here just before.
+   */
+  function describeChange(before) {
+    if (!before) return '';
+    var now = exportState(), seen = {}, msgs = [], other = [];
+    function log(c) { return c.play && Array.isArray(c.play.log) ? c.play.log : []; }
+    function differs(get) { try { return JSON.stringify(get(before)) !== JSON.stringify(get(now)); } catch (e) { return false; } }
+    log(before).forEach(function (e) { seen[e.t + '|' + e.m] = true; });
+    log(now).forEach(function (e) { if (!seen[e.t + '|' + e.m] && e.m) msgs.unshift(e.m); });   // oldest first
+    [['equipment', function (c) { return c.inv; }], ['notes', function (c) { return c.notes; }],
+     ['coins', function (c) { return c.coins; }], ['conditions', function (c) { return c.play && c.play.conds; }]]
+      .concat(msgs.length ? [] : [['Stamina', function (c) { return c.play && c.play.stamina; }],
+        ['wounds', function (c) { return c.play && c.play.wounds; }], ['cruelty', function (c) { return c.play && c.play.cruelty; }],
+        ['XP', function (c) { return [c.txp, c.play && c.play.pendingXP]; }]])
+      .forEach(function (f) { if (differs(f[1])) other.push(f[0]); });
+    var text = msgs.slice(0, 2).join(' ') + (msgs.length > 2 ? ' (and ' + (msgs.length - 2) + ' more in the session log)' : '');
+    if (other.length) text += (text ? ' ' : '') + other.join(', ').replace(/^./, function (c) { return c.toUpperCase(); }) + ' changed.';
+    return text;
+  }
+
   function refOps(fn) { return function (a) { var q = window.CrowsPlay && window.CrowsPlay.refOps; return q ? q[fn](a) : null; }; }
   function init() {
     bind();
@@ -8709,10 +8733,13 @@ var CROWS_TRAIT_TREES = [
         if (window.CrowsPlay && (p.mode === 'play' || p.mode === 'build')) window.CrowsPlay.setMode(p.mode);
         if (window.CrowsRefView) window.CrowsRefView.ready(state.name, window.CrowsCloud.owner);
       },
-      onRemote: function () {
-        // Changes now arrive within a second or two, so say so once in a while rather than every time.
-        var t = Date.now();
-        if (t - lastRemote > 30000 && !(window.CrowsRefView && window.CrowsRefView.status)) toast(refView ? 'Updated with the player\u2019s latest changes.' : 'Updated with changes made on another device or by your Ref.');
+      onRemote: function (before) {
+        // Changes now arrive within a second or two: say what changed each time, or if that can't be told, just
+        // that something did, once in a while.
+        var t = Date.now(), what = describeChange(before);
+        if ((what || t - lastRemote > 30000) && !(window.CrowsRefView && window.CrowsRefView.status)) {
+          toast((refView ? 'The player changed this character' : 'Changed by your Ref or on another device') + (what ? ': ' + what : '.'), what ? 6000 : 0);
+        }
         lastRemote = t;
         if (window.CrowsRefView) window.CrowsRefView.ready(state.name, window.CrowsCloud.owner);
       }
