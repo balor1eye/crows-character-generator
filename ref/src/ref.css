@@ -184,9 +184,14 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .round-box .stat { min-width: 70px; }
 
 /* Party */
-.join-reqs { list-style: none; margin: .6rem 0 0; padding: 0; }
-.join-reqs li { display: flex; gap: .5rem; align-items: center; flex-wrap: wrap; padding: .5rem 0; border-top: 1px solid var(--line); }
-.invite-link { margin-top: .5rem; }
+.side-invite { border-top: 1px solid var(--line); padding-top: .7rem; }
+.side-invite .row { gap: .4rem; }
+.side-invite .fine { margin: .2rem 0 .45rem; }
+.side-invite .badge { display: inline-block; border-radius: 999px; padding: 0 .45rem; font-size: .72rem; font-weight: 700; background: var(--accent); color: #fff; }
+.join-reqs { list-style: none; margin: .5rem 0 0; padding: 0; }
+.join-reqs li { display: flex; flex-direction: column; gap: .3rem; padding: .45rem 0; border-top: 1px solid var(--line); font-size: .88rem; }
+.invite-link { margin-top: .5rem; display: flex; flex-direction: column; gap: .35rem; }
+.invite-link .in { width: 100%; font-size: .78rem; }
 .st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(370px, 1fr)); gap: .7rem; align-items: start; }
 .st-tile { border: 1px solid var(--line); border-top: 4px solid var(--accent); border-radius: 6px; padding: .5rem .7rem; background: var(--card); display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
 .st-tile.local { border-top-color: var(--ink); background: var(--slot); }
@@ -286,6 +291,7 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
   .side { position: static; order: -1; }
   .side-inner { max-height: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
   .side-log ol { max-height: 180px; overflow: auto; }
+  .side-invite { grid-column: 1 / -1; }
   .rules-tools { top: 0; }
   body[data-tab="session"] .side-timer { display: none; }
 }

@@ -180,6 +180,8 @@ textarea { width: 100%; resize: vertical; }
 
 /* Summary sidebar */
 .summary { position: sticky; top: 76px; }
+.acct-save { margin: .8rem 0 .6rem; }
+.acct-save .fine, .summary .acct-save .fine { display: block; margin: .35rem 0 0; }
 .summary-inner { background: var(--card); border: 1px solid var(--line); border-top: 4px solid var(--ink); border-radius: var(--radius); padding: 1rem; box-shadow: var(--shadow); }
 .sum-name { font: bold 1.25rem var(--serif); word-break: break-word; }
 .sum-bg { color: var(--muted); margin-bottom: .5rem; }

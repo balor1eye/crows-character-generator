@@ -737,6 +737,7 @@
       res
     ]));
     renderSideLog();
+    renderInvite();
   }
   function diceBtn(label, expr) {
     return btn(label, function () {
@@ -1176,39 +1177,43 @@
       save(); render();
     }, function (e) { toast(e.message); loadInvites(); });
   }
+  /* A compact block at the foot of the side column, on the Party tab only (the tab's badge and a toast flag new requests). */
   function renderInvite() {
-    var box = $('sec-invite'), id = window.CrowsCloud && window.CrowsCloud.recordId;
-    box.hidden = !cloudOn(); box.style.display = cloudOn() ? '' : 'none';
-    if (!cloudOn()) return;
-    if (!id) { card('sec-invite', 'Invite players', [el('p', { class: 'hint', text: 'Saving the campaign to your account first…' })]); setTimeout(function () { if (tab === 'party') render(); }, 1500); return; }
+    var box = $('side-invite'), id = window.CrowsCloud && window.CrowsCloud.recordId, on = cloudOn() && tab === 'party';
+    box.hidden = !on; box.innerHTML = '';
+    if (!on) return;
+    var head = el('div', { class: 'row center' }, [el('h3', { text: 'Invite players' }), el('span', { class: 'spacer' }),
+      inv.requests.length ? el('span', { class: 'badge', text: String(inv.requests.length), title: plural(inv.requests.length, 'request') + ' waiting' }) : null]);
+    if (!id) { box.appendChild(head); box.appendChild(el('p', { class: 'fine', text: 'Saving the campaign to your account first…' })); setTimeout(function () { if (tab === 'party') render(); }, 1500); return; }
     if (inv.id !== id || Date.now() - inv.at > 60000) loadInvites();   // also catches requests withdrawn meanwhile
     var linkBox = null;
     if (inv.link) {
-      var box2 = el('input', { type: 'text', class: 'in grow', readonly: true, value: inv.link, 'aria-label': 'Invite link', onfocus: function () { this.select(); } });
-      linkBox = el('div', { class: 'invite-link' }, [el('p', { class: 'fine', text: 'Send this link to your players. Keep it private: anyone with an account who has it can ask to join. It\u2019s only shown now; make a new one if you lose it.' }),
-        el('div', { class: 'row center' }, [box2, btn('Copy', function () {
-          box2.select();
+      var input = el('input', { type: 'text', class: 'in', readonly: true, value: inv.link, 'aria-label': 'Invite link', onfocus: function () { this.select(); } });
+      linkBox = el('div', { class: 'invite-link' }, [input,
+        el('div', { class: 'row center' }, [btn('Copy link', function () {
+          input.select();
           (navigator.clipboard ? navigator.clipboard.writeText(inv.link) : Promise.reject()).then(function () { toast('Link copied.'); }, function () { document.execCommand('copy'); toast('Link copied.'); });
-        }, 'btn-small')])]);
+        }, 'btn-small btn-primary')]),
+        el('p', { class: 'fine', text: 'Shown only now; make a new one if you lose it. Keep it private: anyone with an account who has it can ask to join.' })]);
     }
-    card('sec-invite', el('h2', null, ['Invite players', el('small', { text: inv.requests.length ? plural(inv.requests.length, 'request') + ' waiting' : 'campaign link' })]), [
-      el('p', { class: 'hint', text: 'Send players a link to this campaign. They log in, pick a crow, and ask to join; accept here and the crow joins the party, tied to their sheet with its vitals live.' }),
+    [head,
+      el('p', { class: 'fine', text: 'Players open the link, pick a crow, and ask to join. Accepted crows join the party, tied to their sheets.' }),
       el('div', { class: 'row center' }, [
-        btn(inv.hasLink ? 'New link' : 'Make an invite link', function () {
+        btn(inv.hasLink ? 'New link' : 'Make a link', function () {
           if (inv.hasLink && !confirm('Make a new link? The old one stops working. Requests already made stay here.')) return;
           window.CrowsCloud.api('POST', 'invite.create', '', { id: id }).then(function (j) { inv.hasLink = true; inv.link = j.link; render(); }, function (e) { toast(e.message); });
-        }, inv.hasLink ? 'btn-small' : 'btn-small btn-primary'),
-        inv.hasLink ? btn('Turn off link', function () {
+        }, 'btn-small'),
+        inv.hasLink ? btn('Turn off', function () {
           window.CrowsCloud.api('POST', 'invite.disable', '', { id: id }).then(function () { inv.hasLink = false; inv.link = ''; render(); toast('The invite link no longer works. Waiting requests stay here.'); }, function (e) { toast(e.message); });
-        }, 'btn-small btn-ghost') : null,
-        el('span', { class: 'fine', text: inv.hasLink ? (inv.link ? '' : 'A link is active.') : 'No link yet.' })]),
+        }, 'btn-small btn-ghost', 'Turn off the invite link') : null,
+        inv.hasLink && !inv.link ? el('span', { class: 'fine', text: 'Link is on.' }) : null]),
       linkBox,
       inv.requests.length ? el('ul', { class: 'join-reqs' }, inv.requests.map(function (r) {
-        return el('li', null, [el('div', { class: 'grow' }, [el('b', { text: r.name || 'Unnamed crow' }), el('span', { class: 'fine', text: ' \u00b7 ' + r.player + (r.summary ? ' \u00b7 ' + r.summary : '') })]),
-          btn('Accept', function () { answerRequest(r, true); }, 'btn-small btn-primary', 'Add this crow to the party, tied to the player\u2019s sheet'),
-          btn('Decline', function () { answerRequest(r, false); }, 'btn-small btn-ghost')]);
+        return el('li', null, [el('div', null, [el('b', { text: r.name || 'Unnamed crow' }), el('div', { class: 'fine', text: r.player + (r.summary ? ' · ' + r.summary : '') })]),
+          el('div', { class: 'row center' }, [btn('Accept', function () { answerRequest(r, true); }, 'btn-small btn-primary', 'Add this crow to the party, tied to the player’s sheet'),
+            btn('Decline', function () { answerRequest(r, false); }, 'btn-small btn-ghost')])]);
       })) : null
-    ]);
+    ].forEach(function (k) { if (k) box.appendChild(k); });
   }
 
   // ------------------------------------------------------------------ Party status
@@ -1290,7 +1295,6 @@
   });
 
   function renderParty() {
-    renderInvite();
     renderStatus();
     var fileIn = el('input', { type: 'file', accept: '.json,application/json', multiple: true, onchange: function () {
       var files = Array.prototype.slice.call(this.files || []), input = this, done = [];

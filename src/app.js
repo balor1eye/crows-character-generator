@@ -1092,6 +1092,23 @@
     }
   };
 
+  /*
+   * The Save character button (right column, logged in only). A new character isn't in the account until it's
+   * pressed (cloud.js holds it: manualNew); after that it autosaves, and the button just shows that it's saved.
+   */
+  function updateSaveBox(s) {
+    var box = $('acct-save'), C = window.CrowsCloud;
+    if (!box) return;
+    if (refView || !C || !C.user) { box.hidden = true; return; }
+    var held = C.held, saving = s === 'saving' || s === 'loading';
+    box.hidden = false; box.innerHTML = '';
+    box.appendChild(el('button', { type: 'button', class: 'btn wide ' + (held ? 'btn-primary' : 'btn-ghost'), disabled: saving || (!held && s === 'saved'),
+      text: saving ? 'Saving\u2026' : held ? 'Save character' : s === 'saved' ? 'Saved \u2713' : 'Save character', onclick: function () { C.saveNow(); } }));
+    box.appendChild(el('p', { class: 'fine', text: held ? 'Not in your account yet. Once you save it, your changes save automatically.'
+      : s === 'saved' ? 'In your account. Changes save automatically.' : s === 'error' ? 'Not saved yet: trying again. Your work is kept in this browser.'
+      : s === 'conflict' ? 'Changed elsewhere: choose which version to keep.' : '' }));
+  }
+
   function init() {
     bind();
     var s = load();
@@ -1099,6 +1116,8 @@
     render();
     if (window.CrowsCloud) window.CrowsCloud.attach({
       kind: 'characters',
+      manualNew: true,   // new characters wait for the Save character button
+      onStatus: updateSaveBox,
       getData: exportState,
       valid: validState,
       apply: function (data) { selectedId = null; adopt(clone(data)); render(); },

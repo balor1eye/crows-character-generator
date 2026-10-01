@@ -378,7 +378,7 @@
   }
   function viewHome() {
     var tiles = [
-      tile('Create a character', 'Roll up a new crow. It\'s saved to your account as you go.', GEN + '?new=1&mode=build'),
+      tile('Create a character', 'Roll up a new crow, then save it to your account. After that, changes save as you go.', GEN + '?new=1&mode=build'),
       tile('My characters', 'Open, edit, copy, download, upload, or delete your saved crows.', '#characters'),
       tile('Play', 'Take one of your crows to the table: vitals, dice, rests, and XP.', '#play')
     ];

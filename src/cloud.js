@@ -18,6 +18,9 @@
  *
  * The app calls CrowsCloud.attach(opts) once at start-up, CrowsCloud.changed() from its save(),
  * and CrowsCloud.startNew() just before it replaces the whole thing (new, random, load file).
+ *
+ * With opts.manualNew (the Character Generator), a new record isn't autosaved: it's "held" until the app
+ * calls CrowsCloud.saveNow() (its Save character button). From then on it autosaves like any other.
  */
 (function () {
   'use strict';
@@ -46,6 +49,8 @@
   var base = null;             // the same, parsed: the common ancestor for three-way merges
   var timer = null, inFlight = false, again = false, retryMs = 0, firstChange = 0;
   var pendingNew = false, fresh = false;
+  var hold = false;            // opts.manualNew: a new record waiting for saveNow() before it's in the account
+  var heldBase = null;         // the held record as it was when holding started (to warn before leaving with changes)
   var gen = 0;                 // bumped when the app starts a new record, so late replies for the old one are ignored
   var chip = null, bar = null;
   var lastPoll = 0, lastKey = 0;
@@ -151,6 +156,7 @@
       'border:1px solid #5a5354;color:#f4efe6;white-space:nowrap;min-height:30px}' +
       '.cloud-chip .dot{width:8px;height:8px;border-radius:50%;background:#8a8386}' +
       '.cloud-chip[data-s="saved"] .dot{background:#6fbf7c}.cloud-chip[data-s="saving"] .dot{background:#d9a441}' +
+      '.cloud-chip[data-s="unsaved"] .dot{background:transparent;border:1px solid #d9a441}' +
       '.cloud-chip[data-s="error"] .dot,.cloud-chip[data-s="conflict"] .dot{background:#ff7b6e}' +
       '.cloud-home{color:#f4efe6!important;text-decoration:none}' +
       '.cloud-bar{position:fixed;left:50%;transform:translateX(-50%);bottom:16px;z-index:60;max-width:calc(100vw - 32px);width:560px;' +
@@ -180,6 +186,7 @@
     status('loading', 'Loading…');
   }
   function status(s, text, title) {
+    if (cfg && cfg.onStatus) cfg.onStatus(s);
     if (!chip) return;
     chip.setAttribute('data-s', s);
     chip.querySelector('.txt').textContent = (linkId && owner ? owner + '’s crow · ' : '') + text;
@@ -280,7 +287,7 @@
 
   function flush(force) {
     clearTimeout(timer); timer = null; firstChange = 0;
-    if (!ready || !user) return;
+    if (!ready || !user || hold) return;
     if (inFlight) { again = true; return; }
     var data = cfg.getData(), json = JSON.stringify(data);
     if (rec && json === lastSent && !force) { status('saved', 'Saved'); return; }
@@ -442,6 +449,13 @@
   }
 
   // Last-chance save when the page is hidden or closed (keepalive bodies are capped near 64 KB).
+  /* Start holding a new record: nothing goes to the account until saveNow(). */
+  function startHold() {
+    hold = true; heldBase = JSON.stringify(cfg.getData());
+    status('unsaved', 'Not saved yet', 'This character isn\u2019t in your account yet. Use Save character.');
+  }
+  function heldChanges() { return hold && JSON.stringify(cfg.getData()) !== heldBase; }
+
   function flushOnExit() {
     if (!ready || !user || !rec || inFlight) return;
     var data = cfg.getData(), json = JSON.stringify(data);
@@ -494,7 +508,7 @@
         step.then(function () {
           ready = true;
           if (cfg.onReady) cfg.onReady(p);
-          if (rec) status('saved', 'Saved'); else flush();
+          if (rec) status('saved', 'Saved'); else if (cfg.manualNew && !linkId) startHold(); else flush();
           lastPoll = Date.now();
           if (!linkId) loadNotes();
           setInterval(slowPoll, 1000);
@@ -510,11 +524,14 @@
       document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushOnExit(); else { poll(); checkSignals(); } });
       document.addEventListener('input', function () { lastKey = Date.now(); }, true);
       window.addEventListener('pagehide', flushOnExit);
+      // A held new character with changes isn't anywhere but this browser: ask before leaving it.
+      window.addEventListener('beforeunload', function (e) { if (heldChanges()) { e.preventDefault(); e.returnValue = ''; } });
     },
 
     /* Called from the app's save(). Cheap: the real work is debounced. */
     changed: function () {
       if (!ready || !user) return;
+      if (hold) return;   // a new record waits for saveNow()
       var t = Date.now();
       if (!firstChange) firstChange = t;
       schedule(Math.max(0, Math.min(DELAY, firstChange + MAX_WAIT - t)));
@@ -527,6 +544,15 @@
      */
     startNew: function () {
       if (!ready || !user || linkId) return;
+      if (cfg.manualNew) {
+        // Save what was open (if it's in the account), then hold the new one until Save character.
+        if (!hold && (timer || (rec && JSON.stringify(cfg.getData()) !== lastSent))) flush();
+        gen++; rec = null; lastSent = null; base = null; remember(null);
+        inFlight = false; pendingNew = true; fresh = false;
+        clearTimeout(timer); timer = null;
+        setTimeout(startHold, 0);   // after the app has put the new character in place
+        return;
+      }
       var reuse = fresh && (rec || inFlight);
       if (!reuse) {
         if (timer || (rec && JSON.stringify(cfg.getData()) !== lastSent)) flush();
@@ -550,6 +576,15 @@
     },
     /* True while someone is typing in a text field (so a page can hold off re-rendering under them). */
     get typing() { return typing(); },
+
+    /* True while a new record is waiting for saveNow() (opts.manualNew). */
+    get held() { return hold; },
+    /* Save now: a held new record goes into the account (and autosaves from then on); otherwise any pending change is sent. */
+    saveNow: function () {
+      if (!ready || !user || linkId) return;
+      hold = false; heldBase = null; pendingNew = !rec;
+      flush();   // never forced: an existing record still merges with changes made elsewhere
+    },
 
     /* For the Ref Screen: calls the API with this page's login. */
     api: function (method, action, query, body) { return call(method, action, query, body); }

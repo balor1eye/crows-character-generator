@@ -14,7 +14,8 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
   (campaigns), plus Manage accounts for admins.
 - **Players** keep characters in their account (open, play, copy, download as .json, upload .json, delete).
   The Character Generator loads the character from the account and autosaves every change about a second
-  later. Save file / Load file still work.
+  later. A new character (Create a character, Random crow, Start over, Load file) isn't saved until the player
+  presses **Save character** in the right column; from then on it autosaves too. Save file / Load file still work.
 - **Refs** do the same with campaigns in the Ref Screen. `ref.php` only serves the Ref Screen to Refs and admins.
 - **Sharing with a Ref:** a player opens **Share** on a character and sends the link to their Ref. The Ref opens
   it (or pastes it into the Ref Screen's Party tab) to add the crow to a campaign. The crow stays tied to the
