@@ -330,6 +330,20 @@ def smoke():
     p1.post("share.allowControl", {"accessId": acc["id"], "allow": False})
     check("allowing it can be turned off", [r["canTakeControl"] for r in p1.get("share.get", id=ch["id"])["refs"]] == [False])
     p1.post("notes.dismiss", {"all": True}); p2.post("notes.dismiss", {"all": True})
+    # the session (dungeon turn, timer, the party's rest) reaches the party's crows with no fight; a rest prompt takes rest choices
+    sess = {"dt": 3, "running": True, "endAt": 1, "remain": None, "rooms": None, "greed": 20, "pending": True, "rest": {"active": True, "half": False, "chose": []}}
+    pub = ref.post("combat.publish", {"campaign": camp["id"], "combat": {"active": False, "session": sess, "list": [{"id": "x"}]}, "members": [acc["id"], acc2["id"]]})
+    mine2 = p2.get("combat.mine", id=ch2["id"])
+    check("with no fight, the session reaches every linked crow", pub["members"] == 2 and mine2["combat"] == {"active": False, "session": sess}
+          and mine2["you"] == acc2["id"])
+    ra = p2.post("combat.act", {"id": ch2["id"], "campaign": camp["id"], "action": {"type": "rest", "food": "Hearty Ration", "activity": "repair",
+                                                                                     "repair": "17", "tended": 1, "evil": "x"}})["id"]
+    got = ref.get("combat.actions", campaign=camp["id"], after=ra - 1)["items"][0]
+    check("a player sends rest choices while the party rests", got["link"] == acc2["id"] and got["action"]["food"] == "Hearty Ration"
+          and got["action"]["activity"] == "repair" and got["action"]["repair"] == "17" and got["action"]["tended"] is True and "evil" not in got["action"])
+    fails("only fight actions need a fight: none without one", 409, lambda: p2.post("combat.act", {"id": ch2["id"], "campaign": camp["id"], "action": {"type": "done"}}))
+    ref.post("combat.publish", {"campaign": camp["id"], "combat": {"active": False, "session": dict(sess, rest={"active": False})}, "members": [acc["id"], acc2["id"]]})
+    fails("no rest choices once the rest is over", 409, lambda: p2.post("combat.act", {"id": ch2["id"], "campaign": camp["id"], "action": {"type": "rest"}}))
     ref.post("combat.publish", {"campaign": camp["id"], "combat": None})
     check("ending the fight takes it off the player's page", p1.get("combat.mine", id=ch["id"])["combat"] is None)
     fails("acting after the fight is over", 409, lambda: p1.post("combat.act", {"id": ch["id"], "campaign": camp["id"], "action": {"type": "done"}}))

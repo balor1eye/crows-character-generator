@@ -218,6 +218,21 @@ body[data-mode="play"] .play-only { display: block; }
 .vstrip-item .btn { min-height: 28px; padding: .2rem .5rem; }
 .vstrip-conds { display: flex; gap: .3rem; flex-wrap: wrap; }
 .vstrip-conds .cond { padding: .1rem .6rem; min-height: auto; cursor: default; }
+/* Session bar (the Ref Screen's session, shared live): dungeon turn, time left, greed bonus, resting, an encounter signalled. */
+.sessbar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .4rem .9rem; align-items: center; padding: .4rem .8rem; border-radius: var(--radius);
+  border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--soft); font-size: .88rem; }
+body[data-mode="play"] .sessbar.play-only { display: flex; }
+#play-session[hidden] { display: none !important; }
+.sess-title { font-weight: 700; }
+.sess-item { display: flex; align-items: baseline; gap: .35rem; }
+.sess-lbl { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
+.sess-item b { font: bold 1rem var(--serif); }
+.sess-item.low b { color: var(--warn); }
+.sess-item.out b { color: var(--bad); }
+.sess-chip { border: 0; cursor: default; }
+button.sess-chip { cursor: pointer; font: inherit; font-size: .78rem; font-weight: 600; }
+.chip.accent { background: var(--accent); color: var(--accent-ink); }
+.chip.bad { background: var(--bad); color: #fff; }
 .subtabs { display: flex; gap: .3rem; flex-wrap: wrap; }
 .subtabs button { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: .35rem .9rem; cursor: pointer; font-weight: 600; min-height: 36px; }
 .subtabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }

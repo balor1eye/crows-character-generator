@@ -8,7 +8,9 @@ campaign from the link. The Ref finishing a rest must do the whole rest on the p
 full, a wound healed, expertise uses back, and the dungeon turn recorded, and the sheet's Rest card must say the crow
 rested with the party. A crow that rested from its own sheet must be skipped by the Ref's next rest in that dungeon
 turn (no second ration). In the campaign, the player's treasure becomes an XP claim: the Ref sees it on the Party tab,
-uses it for an award, and the player gets the pending XP with the claim answered. Everything it made is deleted.
+uses it for an award, and the player gets the pending XP with the claim answered. The Play page shows the Ref Screen's
+session (dungeon turn, a timer counting down, Resting), and the player's choices for a party rest (a Hearty Ration and
+Repair Armor) reach the Ref Screen and apply when the Ref finishes the rest. Everything it made is deleted.
 
 Logs in through server/test_instance.py (never typing a password into a browser). Needs Firefox and geckodriver,
 like run_combat_test.py.
@@ -26,6 +28,7 @@ import test_instance  # noqa: E402
 JS = JS + r"""
 function sheet() { var p = window.CrowsRef.state.party.filter(function (x) { return x.link; })[0]; return p ? window.CrowsRef.sheet(p.link) : null; }
 function tile() { return q('#sec-status .st-tile.linked'); }
+function hearty(st) { return st.inv.filter(function (c) { return c.key === 'Hearty Ration' && c.area !== 'none'; }).reduce(function (t, c) { return t + c.qty; }, 0); }
 function rations(st) { return st.inv.filter(function (c) { return c.key === 'Ration' && c.area !== 'none'; }).reduce(function (t, c) { return t + c.qty; }, 0); }
 """
 
@@ -116,6 +119,44 @@ def main():
         assert p("return rations(window.CrowsApp.state)") == r1
         ok("after resting from their own sheet, the Ref's rest that dungeon turn is skipped (no second ration)")
 
+        # The session bar: the Ref Screen's dungeon turn and timer, on the player's Play page.
+        dt2 = r("return window.CrowsRef.state.session.dt")
+        r("button('Start timer', q('#sec-dt')).click();")
+        pwait("var b = q('#play-session'); return !!b && !b.hidden && /Dungeon turn ?" + str(dt2) + "(?!\\d)/.test(text(b)) && /Time left ?\\d+:\\d\\d/.test(text(b))",
+              "the session bar with the dungeon turn and the time left")
+        t0 = p("return text(q('#play-session [data-sess-clock] b'))")
+        pwait("return text(q('#play-session [data-sess-clock] b')) !== " + repr(t0), "the session clock to count down", 5)
+        ok(f"the Play page shows the session bar: dungeon turn {dt2}, and the time left counting down")
+
+        # The party's rest with the player's choices: a Hearty Ration and Repair Armor, sent from Play, applied by the Ref's Finish rest.
+        p("""var C = window.CrowsApp.core, st = window.CrowsApp.state; C.addItem('Hearty Ration', 1); C.addItem('Light Armor', 1);
+             st.inv.filter(function (c) { return c.key === 'Light Armor'; })[0].dmg = 1; C.save(); C.render();""")
+        h0, r2 = p("return [hearty(window.CrowsApp.state), rations(window.CrowsApp.state)]")
+        r("button('Start rest', q('#sec-rest')).click();")
+        pwait("return /Resting/.test(text(q('#play-session'))) && /The party is resting/.test(text(q('#play-time')))", "the rest prompt on the Play page")
+        ok("when the Ref starts a rest, the session bar says Resting and the Rest card asks for the player's choices")
+        p("""var sels = qa('#play-time select'); sels[0].value = 'Hearty Ration'; sels[0].dispatchEvent(new Event('change'));
+             sels[1].value = 'repair'; sels[1].dispatchEvent(new Event('change'));""")
+        p("button('Send to the Ref', q('#play-time')).click();")
+        rwait("var c = (window.CrowsRef.state.session.rest.choices || {})[arguments[0]]; return !!(c && c.food === 'Hearty Ration' && c.activity === 'repair' && c.repair === 'Light Armor')".replace("arguments[0]", str(acc)),
+              "the player's rest choices on the Ref Screen")
+        assert "hearty ration, Repair Armor" in r("return text(q('#sec-rest .rest-choices'))"), r("return text(q('#sec-rest'))")
+        ok("the player's choices (Hearty Ration, Repair Armor) reach the Ref Screen's Rest card")
+        pwait("return /choices sent/.test(text(q('#play-session')))", "the session bar to say the choices were sent")
+        ok("...and the player's session bar says the choices were sent")
+        r("button('Finish rest', q('#sec-rest')).click();")
+        pwait("var lr = window.CrowsApp.state.play.lastRest; return !!(lr && lr.by === 'ref' && lr.dt === " + str(dt2) + ")", "the Ref's second rest on the player's sheet")
+        st = p("""var st = window.CrowsApp.state; return { hearty: hearty(st), rations: rations(st), dmg: st.inv.filter(function (c) { return c.key === 'Light Armor'; })[0].dmg || 0,
+                  extras: !!st.play.lastRest.extras, card: text(q('#play-time')), log: st.play.log.slice(0, 3).map(function (e) { return e.m; }).join(' | ') }""")
+        assert st["hearty"] == h0 - 1 and st["rations"] == r2, st
+        ok("the Ref's rest ate the Hearty Ration the player chose (no plain ration)")
+        assert st["dmg"] == 0 and "Repaired Light Armor" in st["log"], st
+        ok("...and did the Repair Armor activity: the armor is back to full AD")
+        assert st["extras"] and "Your rest activity is recorded" in st["card"], st
+        ok("the Rest card doesn't ask for the activity again")
+        pwait("return !/Resting/.test(text(q('#play-session')))", "the session bar to drop Resting")
+        ok("the session bar drops Resting once the rest is over")
+
         # XP claims: the page learns it's in a campaign when it opens.
         P.go(base + "play?id=" + str(char))
         pwait("return qa('#play-advance button').some(function (b) { return text(b) === 'Ask the Ref for XP'; })", "Play's Experience card in campaign mode")
@@ -148,9 +189,16 @@ def main():
     except Exception as e:
         print("FAILED:", e)
         for name, wd, script in (("player", P, "return [text(q('#toast')), JSON.stringify(window.CrowsApp.state.play.log.slice(0, 4))]"),
-                                 ("Ref", R, "return [text(q('#toast')), JSON.stringify(window.CrowsRef.state.log.slice(-4))]")):
+                                 ("player session", P, "var b = q('#play-session'); return [!!b, b && b.hidden, text(b), document.body.getAttribute('data-mode'), "
+                                  "JSON.stringify(window.CrowsCombat && window.CrowsCombat.session())]"),
+                                 ("player combat.mine", P, "var done = arguments[arguments.length - 1]; window.CrowsCloud.api('GET', 'combat.mine', 'id=' + window.CrowsCloud.recordId)"
+                                  ".then(function (j) { done(JSON.stringify(j).slice(0, 600)); }, function (e) { done('error ' + e.message); });"),
+                                 ("Ref", R, "return [text(q('#toast')), JSON.stringify(window.CrowsRef.state.log.slice(-4))]"),
+                                 ("Ref sheet inv", R, "var c = sheet(); return c && JSON.stringify(c.inv.map(function (x) { return [x.id, x.key, x.area, x.dmg]; }))"),
+                                 ("player inv", P, "return JSON.stringify(window.CrowsApp.state.inv.map(function (x) { return [x.id, x.key, x.area, x.dmg]; }))"),
+                                 ("Ref ops", R, "return JSON.stringify(window.CrowsRef.state.party[0].owed || null)")):
             try:
-                print(f"  {name} page:", wd.js(JS + script))
+                print(f"  {name} page:", (wd.js_async if "done(" in script else wd.js)(JS + script))
             except Exception as e2:
                 print(f"  ({name} page unreadable: {e2})")
     finally:

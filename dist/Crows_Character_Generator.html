@@ -267,6 +267,21 @@ body[data-mode="play"] .play-only { display: block; }
 .vstrip-item .btn { min-height: 28px; padding: .2rem .5rem; }
 .vstrip-conds { display: flex; gap: .3rem; flex-wrap: wrap; }
 .vstrip-conds .cond { padding: .1rem .6rem; min-height: auto; cursor: default; }
+/* Session bar (the Ref Screen's session, shared live): dungeon turn, time left, greed bonus, resting, an encounter signalled. */
+.sessbar { grid-column: 1 / -1; display: flex; flex-wrap: wrap; gap: .4rem .9rem; align-items: center; padding: .4rem .8rem; border-radius: var(--radius);
+  border: 1px solid var(--line); border-left: 4px solid var(--accent); background: var(--soft); font-size: .88rem; }
+body[data-mode="play"] .sessbar.play-only { display: flex; }
+#play-session[hidden] { display: none !important; }
+.sess-title { font-weight: 700; }
+.sess-item { display: flex; align-items: baseline; gap: .35rem; }
+.sess-lbl { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
+.sess-item b { font: bold 1rem var(--serif); }
+.sess-item.low b { color: var(--warn); }
+.sess-item.out b { color: var(--bad); }
+.sess-chip { border: 0; cursor: default; }
+button.sess-chip { cursor: pointer; font: inherit; font-size: .78rem; font-weight: 600; }
+.chip.accent { background: var(--accent); color: var(--accent-ink); }
+.chip.bad { background: var(--bad); color: #fff; }
 .subtabs { display: flex; gap: .3rem; flex-wrap: wrap; }
 .subtabs button { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: .35rem .9rem; cursor: pointer; font-weight: 600; min-height: 36px; }
 .subtabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
@@ -521,6 +536,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
 </header>
 
 <main class="layout">
+  <div class="sessbar play-only" id="play-session" hidden></div>
   <div class="vstrip play-only" id="play-vstrip"></div>
   <nav class="subtabs play-only" id="play-subtabs" role="tablist" aria-label="Play section"></nav>
   <div class="steps">
@@ -1580,7 +1596,10 @@ CROWS.NAME_IDEAS = {
   function restActivity(c, o, msgs) {
     var p = c.play;
     if (o.activity === 'repair') {
-      var rc = cardById(c, +o.repair);
+      // By card id (the player's own rest), or by item name (rest choices sent to the Ref Screen, whose copy has no card ids):
+      // the most damaged carried one.
+      var rc = cardById(c, +o.repair) || c.inv.filter(function (x) { return x.key === o.repair && x.dmg && x.area !== 'none'; })
+        .sort(function (a, b) { return b.dmg - a.dmg; })[0] || null;
       if (rc) { rc.dmg = 0; msgs.push('Repaired ' + rc.key + ' to full AD.'); }
     } else if (o.activity === 'study' && o.study) {
       p.temp[o.study] = 1; msgs.push('Studied a lore book: +1 use of ' + o.study + ' until the next rest.');
@@ -1601,7 +1620,10 @@ CROWS.NAME_IDEAS = {
       p.dt = r.dt;
       return 'The party rested (DT ' + r.dt + '). You had already rested from your sheet this dungeon turn, so nothing more happens.';
     }
-    var res = doRest(c, { by: 'ref', dt: r.dt, miasma: !!r.miasma || p.miasma, xp: r.xp });
+    // The player's choices sent from Play (r.chose): food, rest activity, healing from others; otherwise a ration and nothing more.
+    var res = doRest(c, { by: 'ref', dt: r.dt, miasma: !!r.miasma || p.miasma, xp: r.xp, food: r.food, activity: r.activity, repair: r.repair, study: r.study,
+      useKit: r.useKit, tended: r.tended, tendedKit: r.tendedKit, caretaker: r.caretaker });
+    if (res.ok && r.chose && p.lastRest) p.lastRest.extras = true;   // nothing left to record on the Rest card
     p.dt = r.dt;
     return res.ok ? 'Rested with the party (DT ' + r.dt + '). ' + res.msg : 'The party rested (DT ' + r.dt + '), but you couldn\'t: ' + res.msg;
   }
@@ -1642,7 +1664,7 @@ CROWS.NAME_IDEAS = {
    * A change the Ref Screen made to crow c (combat, rests, Miasma, XP), applied as steps rather than final values, so it adds
    * to whatever the player did meanwhile and can be replayed on a newer copy of the sheet. Any of:
    * hit (+ piercing, from, vul): damage, see refHit · restore: a hit taken back (o.result.before of that hit) ·
-   * cond ({ name: true/false }): conditions on or off · rest ({ dt, miasma, xp }): the party's rest, applied in full (see refRest) ·
+   * cond ({ name: true/false }): conditions on or off · rest ({ dt, miasma, xp, and the player's choices + chose }): the party's rest, applied in full (see refRest) ·
    * claims: XP claims the Ref answered (ids) · endDT: dungeon turn n ended · endConds: blessed, vulnerable, weakened end (with a rest) ·
    * dt: dungeon turn n ended (with a rest) · xp (+ desc, gc, n): pending XP · apply: pending XP into TXP · full: full Stamina ·
    * st: Stamina +/- · wounds: ordinary wounds +/- · cruelty: +/- · setCruelty: a new value.
@@ -10500,7 +10522,11 @@ var CROWS_TRAIT_TREES = [
       if (!kit) ui.useKit = false;
     }
     var over = overloadedSlots(), party = restedWithParty(), done = party && p.lastRest.extras;
+    // The Ref Screen's party rest is under way: the player sends their choices, and the Ref finishing the rest applies them.
+    var Cb = window.CrowsCombat, partyRest = !party && Cb && !window.CrowsRefView && Cb.resting(), sent = partyRest && Cb.restSent();
     var restBox = el('div', { class: 'rest-box' }, [
+      partyRest ? el('div', { class: 'banner ok party-rest', text: 'The party is resting. ' + (sent ? 'The Ref has your choices; change them and send again if you like.' :
+        'Pick your food and rest activity and send them to the Ref: they apply when the Ref finishes the rest.') }) : null,
       party ? el('div', { class: 'banner ok', text: 'You rested with the party (dungeon turn ' + p.lastRest.dt + '): food, Stamina, a wound, expertise uses, and recharges are done. ' +
         (done ? 'Your rest activity is recorded.' : 'Record your rest activity and any extra healing here.') }) : null,
       done ? null : el('div', { class: 'row wrap' }, [
@@ -10520,7 +10546,8 @@ var CROWS_TRAIT_TREES = [
       el('div', { class: 'row wrap' }, party ? [
         done ? null : btn('Record activity & extra healing', restExtras, 'btn-primary'),
         btn('Rest again (a separate rest)', rest, 'btn-ghost', { disabled: over.length ? true : null, title: 'Only for a second, separate rest: the party\'s rest is already applied' })
-      ] : [btn('Rest', rest, 'btn-primary', { disabled: over.length ? true : null })])
+      ] : partyRest ? [btn(sent ? 'Send again' : 'Send to the Ref', function () { Cb.sendRest(restChoices()).then(function (ok) { if (ok) C.render(); }); }, 'btn-primary party-rest-send')]
+        : [btn('Rest', rest, 'btn-primary', { disabled: over.length ? true : null })])
     ]);
     card('play-time', 'Dungeon turns & rest', [
       el('div', { class: 'row wrap dt-row' }, [
@@ -10978,7 +11005,7 @@ var CROWS_TRAIT_TREES = [
   $('tab-build').addEventListener('click', function () { setMode('build'); });
   $('tab-play').addEventListener('click', function () { setMode('play'); });
   applyMode(mode());
-  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress, loadCampaign: loadCampaign, joined: joined,
+  window.CrowsPlay = { render: render, setMode: setMode, showTab: setSubtab, syncAddress: syncAddress, loadCampaign: loadCampaign, joined: joined,
     /* For tests and combat.js: this crow's vitals as the sheet has them (AD from worn armor and parry weapons). */
     vitals: function () { return Sheet.vitals(S()); },
     /* For combat.js: a roll's damage, and whether its result is final (no expertise to spend, no chaos roll waiting). */
@@ -11032,7 +11059,9 @@ var CROWS_TRAIT_TREES = [
  *    beyond range), and an ally's assist on the next test.
  *
  * The page watches the change signal for this crow's fights (see "live combat" in server/app/api.php), so the card
- * appears, changes, and goes away within a second or two of the Ref Screen. Damage, conditions, and healing the crow
+ * appears, changes, and goes away within a second or two of the Ref Screen. Every linked crow in the party also gets the
+ * session with it, fight or not (the session bar: dungeon turn, timer, greed bonus, the party's rest, a signalled encounter),
+ * and sends its choices for the party's rest (sendRest). The fight itself only shows to the crows in it. Damage, conditions, and healing the crow
  * takes reach the sheet from the Ref Screen, through its own armor.
  */
 (function () {
@@ -11071,10 +11100,15 @@ var CROWS_TRAIT_TREES = [
   };
 
   function charId() { return Cloud && Cloud.active && !Cloud.linked ? Cloud.recordId : null; }
-  /* The fight the open crow is in, or null. */
+  /* The fight the open crow is in, or null (the party's other crows get the session, not the fight). */
   function cur() {
+    var id = charId(), c = fight && id && fight.charId === id && fight.combat && fight.combat.active ? fight.combat : null;
+    return c && fight.you && (c.list || []).some(function (x) { return x.kind === 'pc' && x.link === fight.you; }) ? c : null;
+  }
+  /* The session the Ref Screen shares (dungeon turn, timer, greed bonus, the party's rest), or null. */
+  function session() {
     var id = charId();
-    return fight && id && fight.charId === id && fight.combat && fight.combat.active ? fight.combat : null;
+    return fight && id && fight.charId === id && fight.combat && fight.combat.session || null;
   }
   function find(id) { var c = cur(); return c && id ? c.list.filter(function (x) { return x.id === id; })[0] || null : null; }
   function me() { var c = cur(); return c && fight.you ? c.list.filter(function (x) { return x.kind === 'pc' && x.link === fight.you; })[0] || null : null; }
@@ -11103,8 +11137,10 @@ var CROWS_TRAIT_TREES = [
       if (charId() !== id) return;
       if (j.unchanged) { fight.version = j.version; return; }
       var was = cur(), prompts = was ? myPrompts().map(function (p) { return p.id; }) : [];
+      var sessWas = JSON.stringify(session()), restWas = resting();
       fight = { charId: id, version: j.version, watch: j.watch, campaign: j.campaign, combat: j.combat, you: j.you };
       var now = cur();
+      if (resting() && !restWas) C.toast('The party is resting: pick your food and rest activity on the Rest & turns tab, and send them to the Ref.', 6000);
       if (now && !was) C.toast('Combat! ' + (fight.campaign ? fight.campaign.name + ': ' : '') + 'your Ref started a fight.', 5000);
       if (was && !now) C.toast('The fight is over.', 4000);
       var fresh = now ? myPrompts().filter(function (p) { return prompts.indexOf(p.id) < 0; }) : [];
@@ -11113,6 +11149,7 @@ var CROWS_TRAIT_TREES = [
       takeGiven();
       update();
       Play.items();
+      if (JSON.stringify(session()) !== sessWas) C.render();   // the session bar and the Rest card
     }, function (e) {
       if (e.status === 404 && /Unknown action/.test(e.message)) off = true;   // a server without live combat
     }).then(function () {
@@ -11127,6 +11164,49 @@ var CROWS_TRAIT_TREES = [
     return Cloud.api('POST', 'combat.act', '', { id: fight.charId, campaign: fight.campaign.id, action: a }).then(function () { return true; },
       function (e) { C.toast('Not sent to the Ref: ' + e.message, 5000); if (e.status === 409) load(); return false; });
   }
+
+  // ------------------------------------------------------------------ the session
+  function resting() { var s = session(); return !!(s && s.rest && s.rest.active); }
+  /* True once the Ref Screen has this crow's rest choices. */
+  function restSent() { var s = session(); return resting() && fight.you != null && (s.rest.chose || []).indexOf(fight.you) >= 0; }
+  /* The player's food and rest activity for the party's rest: the Ref Screen applies them when it finishes the rest. */
+  function sendRest(o) {
+    if (!resting()) { C.toast('The party isn’t resting.'); return Promise.resolve(false); }
+    var a = { type: 'rest' };
+    ['food', 'activity', 'study'].forEach(function (k) { if (o[k]) a[k] = String(o[k]); });
+    // The armor to repair by name: card ids aren't kept on the Ref Screen's copy of the sheet.
+    var rc = o.activity === 'repair' ? sheet().inv.filter(function (c) { return String(c.id) === String(o.repair); })[0] : null;
+    if (rc) a.repair = rc.key;
+    ['useKit', 'tended', 'tendedKit', 'caretaker'].forEach(function (k) { if (o[k]) a[k] = true; });
+    return Cloud.api('POST', 'combat.act', '', { id: fight.charId, campaign: fight.campaign.id, action: a }).then(function () { C.toast('Sent to the Ref.'); return true; },
+      function (e) { C.toast('Not sent to the Ref: ' + e.message, 5000); if (e.status === 409) load(); return false; });
+  }
+  function msLeft(s) { return s.running && s.endAt ? s.endAt - Date.now() : s.remain; }
+  function clockText(ms) { var t = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2); }
+  /* The session bar at the top of Play: the dungeon turn, time left, greed bonus, resting, an encounter signalled. */
+  function renderSession() {
+    var box = $('play-session'), s = document.body.getAttribute('data-mode') === 'play' ? session() : null;
+    if (!box) return;
+    box.hidden = !s;
+    box.innerHTML = '';
+    if (!s) return;
+    var item = function (lbl, val, cls, extra) { return el('div', Object.assign({ class: 'sess-item' + (cls ? ' ' + cls : '') }, extra || {}), [el('span', { class: 'sess-lbl', text: lbl }), ' ', el('b', { text: val })]); };
+    var timer = typeof s.rooms === 'number' ? item('Rooms left', String(s.rooms)) :
+      item(s.running ? 'Time left' : 'Timer paused', clockText(msLeft(s)), msLeft(s) <= 0 ? 'out' : msLeft(s) <= 300000 ? 'low' : '', { 'data-sess-clock': '1' });
+    [el('span', { class: 'sess-title', text: fight.campaign ? fight.campaign.name : 'Session' }), item('Dungeon turn', String(s.dt)), s.rest && s.rest.active ? null : timer,
+      s.greed ? item('Greed bonus', '+' + s.greed + '%') : null,
+      s.rest && s.rest.active ? el('button', { type: 'button', class: 'chip accent sess-chip', text: 'Resting' + (restSent() ? ' · choices sent' : ': choose food & activity'),
+        title: 'Your food and rest activity: Rest & turns tab', onclick: function () { if (Play.showTab) Play.showTab('rest'); } }) : null,
+      s.pending ? el('span', { class: 'chip bad sess-chip', text: 'Encounter signalled', title: 'The Ref gave a sign: an encounter comes during this dungeon turn' }) : null
+    ].forEach(function (n) { if (n) box.appendChild(n); });
+  }
+  setInterval(function () {
+    var s = session(), n = document.querySelector('[data-sess-clock] b');
+    if (!s || !n || !s.running) return;
+    var ms = msLeft(s);
+    n.textContent = clockText(ms);
+    n.parentNode.className = 'sess-item' + (ms <= 0 ? ' out' : ms <= 300000 ? ' low' : '');
+  }, 1000);
 
   // ------------------------------------------------------------------ unattended items
   function sheet() { return window.CrowsApp.state; }
@@ -11515,6 +11595,7 @@ var CROWS_TRAIT_TREES = [
   }
   /* Show the fight: the whole card, or just its view while the player is typing in it. */
   function update(force) {
+    renderSession();
     var box = $('play-combat');
     if (!box) return;
     var c = document.body.getAttribute('data-mode') === 'play' ? cur() : null;
@@ -11548,6 +11629,7 @@ var CROWS_TRAIT_TREES = [
   }
 
   window.CrowsCombat = { load: load, render: update, rolled: rolled, updated: updated, superseded: superseded, rollNote: rollNote,
+    session: session, resting: resting, restSent: restSent, sendRest: sendRest,
     ground: ground, pickUp: pickUp, cantPickUp: cantPickUp, drop: drop,
     rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') load(); });

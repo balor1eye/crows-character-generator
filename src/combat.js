@@ -22,7 +22,9 @@
  *    beyond range), and an ally's assist on the next test.
  *
  * The page watches the change signal for this crow's fights (see "live combat" in server/app/api.php), so the card
- * appears, changes, and goes away within a second or two of the Ref Screen. Damage, conditions, and healing the crow
+ * appears, changes, and goes away within a second or two of the Ref Screen. Every linked crow in the party also gets the
+ * session with it, fight or not (the session bar: dungeon turn, timer, greed bonus, the party's rest, a signalled encounter),
+ * and sends its choices for the party's rest (sendRest). The fight itself only shows to the crows in it. Damage, conditions, and healing the crow
  * takes reach the sheet from the Ref Screen, through its own armor.
  */
 (function () {
@@ -61,10 +63,15 @@
   };
 
   function charId() { return Cloud && Cloud.active && !Cloud.linked ? Cloud.recordId : null; }
-  /* The fight the open crow is in, or null. */
+  /* The fight the open crow is in, or null (the party's other crows get the session, not the fight). */
   function cur() {
+    var id = charId(), c = fight && id && fight.charId === id && fight.combat && fight.combat.active ? fight.combat : null;
+    return c && fight.you && (c.list || []).some(function (x) { return x.kind === 'pc' && x.link === fight.you; }) ? c : null;
+  }
+  /* The session the Ref Screen shares (dungeon turn, timer, greed bonus, the party's rest), or null. */
+  function session() {
     var id = charId();
-    return fight && id && fight.charId === id && fight.combat && fight.combat.active ? fight.combat : null;
+    return fight && id && fight.charId === id && fight.combat && fight.combat.session || null;
   }
   function find(id) { var c = cur(); return c && id ? c.list.filter(function (x) { return x.id === id; })[0] || null : null; }
   function me() { var c = cur(); return c && fight.you ? c.list.filter(function (x) { return x.kind === 'pc' && x.link === fight.you; })[0] || null : null; }
@@ -93,8 +100,10 @@
       if (charId() !== id) return;
       if (j.unchanged) { fight.version = j.version; return; }
       var was = cur(), prompts = was ? myPrompts().map(function (p) { return p.id; }) : [];
+      var sessWas = JSON.stringify(session()), restWas = resting();
       fight = { charId: id, version: j.version, watch: j.watch, campaign: j.campaign, combat: j.combat, you: j.you };
       var now = cur();
+      if (resting() && !restWas) C.toast('The party is resting: pick your food and rest activity on the Rest & turns tab, and send them to the Ref.', 6000);
       if (now && !was) C.toast('Combat! ' + (fight.campaign ? fight.campaign.name + ': ' : '') + 'your Ref started a fight.', 5000);
       if (was && !now) C.toast('The fight is over.', 4000);
       var fresh = now ? myPrompts().filter(function (p) { return prompts.indexOf(p.id) < 0; }) : [];
@@ -103,6 +112,7 @@
       takeGiven();
       update();
       Play.items();
+      if (JSON.stringify(session()) !== sessWas) C.render();   // the session bar and the Rest card
     }, function (e) {
       if (e.status === 404 && /Unknown action/.test(e.message)) off = true;   // a server without live combat
     }).then(function () {
@@ -117,6 +127,49 @@
     return Cloud.api('POST', 'combat.act', '', { id: fight.charId, campaign: fight.campaign.id, action: a }).then(function () { return true; },
       function (e) { C.toast('Not sent to the Ref: ' + e.message, 5000); if (e.status === 409) load(); return false; });
   }
+
+  // ------------------------------------------------------------------ the session
+  function resting() { var s = session(); return !!(s && s.rest && s.rest.active); }
+  /* True once the Ref Screen has this crow's rest choices. */
+  function restSent() { var s = session(); return resting() && fight.you != null && (s.rest.chose || []).indexOf(fight.you) >= 0; }
+  /* The player's food and rest activity for the party's rest: the Ref Screen applies them when it finishes the rest. */
+  function sendRest(o) {
+    if (!resting()) { C.toast('The party isn’t resting.'); return Promise.resolve(false); }
+    var a = { type: 'rest' };
+    ['food', 'activity', 'study'].forEach(function (k) { if (o[k]) a[k] = String(o[k]); });
+    // The armor to repair by name: card ids aren't kept on the Ref Screen's copy of the sheet.
+    var rc = o.activity === 'repair' ? sheet().inv.filter(function (c) { return String(c.id) === String(o.repair); })[0] : null;
+    if (rc) a.repair = rc.key;
+    ['useKit', 'tended', 'tendedKit', 'caretaker'].forEach(function (k) { if (o[k]) a[k] = true; });
+    return Cloud.api('POST', 'combat.act', '', { id: fight.charId, campaign: fight.campaign.id, action: a }).then(function () { C.toast('Sent to the Ref.'); return true; },
+      function (e) { C.toast('Not sent to the Ref: ' + e.message, 5000); if (e.status === 409) load(); return false; });
+  }
+  function msLeft(s) { return s.running && s.endAt ? s.endAt - Date.now() : s.remain; }
+  function clockText(ms) { var t = Math.max(0, Math.ceil(ms / 1000)); return Math.floor(t / 60) + ':' + ('0' + t % 60).slice(-2); }
+  /* The session bar at the top of Play: the dungeon turn, time left, greed bonus, resting, an encounter signalled. */
+  function renderSession() {
+    var box = $('play-session'), s = document.body.getAttribute('data-mode') === 'play' ? session() : null;
+    if (!box) return;
+    box.hidden = !s;
+    box.innerHTML = '';
+    if (!s) return;
+    var item = function (lbl, val, cls, extra) { return el('div', Object.assign({ class: 'sess-item' + (cls ? ' ' + cls : '') }, extra || {}), [el('span', { class: 'sess-lbl', text: lbl }), ' ', el('b', { text: val })]); };
+    var timer = typeof s.rooms === 'number' ? item('Rooms left', String(s.rooms)) :
+      item(s.running ? 'Time left' : 'Timer paused', clockText(msLeft(s)), msLeft(s) <= 0 ? 'out' : msLeft(s) <= 300000 ? 'low' : '', { 'data-sess-clock': '1' });
+    [el('span', { class: 'sess-title', text: fight.campaign ? fight.campaign.name : 'Session' }), item('Dungeon turn', String(s.dt)), s.rest && s.rest.active ? null : timer,
+      s.greed ? item('Greed bonus', '+' + s.greed + '%') : null,
+      s.rest && s.rest.active ? el('button', { type: 'button', class: 'chip accent sess-chip', text: 'Resting' + (restSent() ? ' · choices sent' : ': choose food & activity'),
+        title: 'Your food and rest activity: Rest & turns tab', onclick: function () { if (Play.showTab) Play.showTab('rest'); } }) : null,
+      s.pending ? el('span', { class: 'chip bad sess-chip', text: 'Encounter signalled', title: 'The Ref gave a sign: an encounter comes during this dungeon turn' }) : null
+    ].forEach(function (n) { if (n) box.appendChild(n); });
+  }
+  setInterval(function () {
+    var s = session(), n = document.querySelector('[data-sess-clock] b');
+    if (!s || !n || !s.running) return;
+    var ms = msLeft(s);
+    n.textContent = clockText(ms);
+    n.parentNode.className = 'sess-item' + (ms <= 0 ? ' out' : ms <= 300000 ? ' low' : '');
+  }, 1000);
 
   // ------------------------------------------------------------------ unattended items
   function sheet() { return window.CrowsApp.state; }
@@ -505,6 +558,7 @@
   }
   /* Show the fight: the whole card, or just its view while the player is typing in it. */
   function update(force) {
+    renderSession();
     var box = $('play-combat');
     if (!box) return;
     var c = document.body.getAttribute('data-mode') === 'play' ? cur() : null;
@@ -538,6 +592,7 @@
   }
 
   window.CrowsCombat = { load: load, render: update, rolled: rolled, updated: updated, superseded: superseded, rollNote: rollNote,
+    session: session, resting: resting, restSent: restSent, sendRest: sendRest,
     ground: ground, pickUp: pickUp, cantPickUp: cantPickUp, drop: drop,
     rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') load(); });

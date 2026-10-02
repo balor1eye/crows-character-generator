@@ -10,7 +10,7 @@
       encounterResultBox = f('encounterResultBox'), field = f('field'), greedBonus = f('greedBonus'), inp = f('inp'), log = f('log'),
       logItem = f('logItem'), lookup = f('lookup'), more = f('more'), nowStamp = f('nowStamp'), pauseTimer = f('pauseTimer'),
       pendingEnc = f('pendingEnc'), pendingFrom = f('pendingFrom'), pendingText = f('pendingText'), render = f('render'),
-      renderCombat = f('renderCombat'), resetTimer = f('resetTimer'), rollDungeonTable = f('rollDungeonTable'), runEncBtn = f('runEncBtn'),
+      renderCombat = f('renderCombat'), restChoiceText = f('restChoiceText'), resetTimer = f('resetTimer'), rollDungeonTable = f('rollDungeonTable'), runEncBtn = f('runEncBtn'),
       S = f('S'), save = f('save'), sel = f('sel'), setTab = f('setTab'), sheetOp = f('sheetOp'), startTimer = f('startTimer'), today = f('today'),
       travelCalc = f('travelCalc');
   var $ = A.$, d = A.d, el = A.el, fmt = A.fmt, plural = A.plural, Rules = A.Rules, toast = A.toast, ui = A.ui;
@@ -49,7 +49,7 @@
   function startRest() {
     var s = S();
     if (s.running) { s.remain = Math.max(0, s.endAt - Date.now()); s.running = false; }
-    s.rest.active = true; s.rest.half = false;
+    s.rest.active = true; s.rest.half = false; s.rest.choices = {};
     log('dt', '**Rest begins** (' + s.rest.where + (s.rest.seclude ? ', secluded camp' : '') + '). DT ' + s.dt + ' ends without an encounter check.');
     save(); render();
   }
@@ -65,16 +65,19 @@
   function finishRest() {
     var s = S(), applied = [];
     activePCs().forEach(function (p) {
-      var xp = s.rest.applyXP && p.pending;
+      var xp = s.rest.applyXP && p.pending, ch = p.link && (s.rest.choices || {})[p.link];
       if (xp) applied.push((p.name || 'Crow') + ' +' + fmt(p.pending));
-      // The whole rest on each sheet (food, Stamina, a wound, expertise uses, recharges, XP); the rest used up DT s.dt.
-      sheetOp(p, { rest: { dt: s.dt, miasma: s.rest.where === 'outdoors' && !!state.travel.inMiasma, xp: !!s.rest.applyXP } });
+      // The whole rest on each sheet (food, Stamina, a wound, expertise uses, recharges, XP); the rest used up DT s.dt. With the
+      // choices the player sent from their Play page (food, rest activity, healing from others), if any.
+      var r = { dt: s.dt, miasma: s.rest.where === 'outdoors' && !!state.travel.inMiasma, xp: !!s.rest.applyXP };
+      if (ch) { Object.keys(ch).forEach(function (k) { r[k] = ch[k]; }); r.chose = true; }
+      sheetOp(p, { rest: r });
     });
     s.combat.list.forEach(function (c) { c.used = {}; if (c.kind === 'pc') { var p = state.party.filter(function (x) { return x.id === c.pcId; })[0]; if (p) { c.st = p.st; c.wounds = p.wounds; } } });
     log('dt', '**Rest complete.** Crows regain all Stamina, heal 1 wound, and regain expertise uses' + (s.rest.where === 'outdoors' && state.travel.inMiasma ? ' (NOT in the Miasma: no expertise uses; roll Miasma RRs)' : '') +
       '. Spellbook UD restored. Each crow ate a ration (or takes a starvation wound).' + (applied.length ? ' XP applied: ' + applied.join(', ') + '.' : '') +
       (activePCs().some(function (p) { return p.link; }) ? ' Linked crows\u2019 sheets did all of this (a crow that already rested from its own sheet this DT is skipped).' : ''));
-    s.rest.active = false; s.rest.half = false; s.dt += 1; resetTimer();
+    s.rest.active = false; s.rest.half = false; s.rest.choices = {}; s.dt += 1; resetTimer();
     if (s.mode === 'rooms') { s.rooms = d(6); s.roomsDone = 0; }
     log('dt', 'DT ' + s.dt + ' begins.');
     save(); render();
@@ -185,8 +188,9 @@
         r.half ? null : btn('Halfway (DT effects end)', restHalf),
         btn('Finish rest', finishRest, 'btn-primary'),
         btn('Interrupted: restart', function () { r.half = false; log('', 'The rest was interrupted and restarts.'); save(); render(); }, 'btn-ghost'),
-        btn('Cancel rest', function () { r.active = false; save(); render(); }, 'btn-ghost')
+        btn('Cancel rest', function () { r.active = false; r.choices = {}; save(); render(); }, 'btn-ghost')
       ] : [btn('Start rest', startRest, 'btn-primary'), el('span', { class: 'fine', text: 'Starting a rest ends the current DT without an encounter check.' })]),
+      r.active ? restChoicesBox(r) : null,
       r.active && ui.lastEnc && ui.lastEnc.reason === 'Rest' ? encounterResultBox(ui.lastEnc, function () { ui.lastEnc = null; render(); }) : null,
       more('Rest rules and activities', [
         el('p', { text: 'Rest: 6 uninterrupted hours in one place, no strenuous activity, 4+ hours asleep, eat 1 ration (pets eat too). At the end: all Stamina, lose 1 wound (their choice), all expertise uses (not in the Miasma), spellbook UD restored. One rest activity each:' }),
@@ -198,6 +202,16 @@
       ])
     ];
     card('sec-rest', el('h2', null, ['Rest', r.active ? el('span', { class: 'chip accent', text: r.half ? 'second half' : 'in progress' }) : null]), kids);
+  }
+  /* While resting: what each linked crow's player chose on their Play page (Finish rest applies it), and who hasn't yet. */
+  function restChoicesBox(r) {
+    var linked = activePCs().filter(function (p) { return p.link; });
+    if (!linked.length) return null;
+    var ch = r.choices || {};
+    return el('div', { class: 'rest-choices' }, [el('b', { text: 'Players\u2019 rest choices' }), el('ul', null, linked.map(function (p) {
+      var o = ch[p.link];
+      return el('li', null, [el('b', { text: (p.name || 'Crow') + ': ' }), o ? restChoiceText(o) : el('span', { class: 'fine', text: 'not sent yet (a ration and no activity, unless they send them)' })]);
+    }))]);
   }
   // ------------------------------------------------------------------ sessions
   /*
@@ -260,7 +274,7 @@
     return 'Crows session ' + n + (title ? ': ' + title : '') + (date ? ' (' + date + ')' : '') + '\n\n' + entries.map(function (e) { return e.t + '  ' + e.s.replace(/\*\*/g, ''); }).join('\n') + '\n';
   }
 
-  A.add({ endDT: endDT, setDTLen: setDTLen, startRest: startRest, restEN: restEN, restHalf: restHalf, finishRest: finishRest,
+  A.add({ endDT: endDT, setDTLen: setDTLen, startRest: startRest, restEN: restEN, restHalf: restHalf, finishRest: finishRest, restChoicesBox: restChoicesBox,
       miasmaOutcome: miasmaOutcome, clearCruelty: clearCruelty, renderSession: renderSession, renderRest: renderRest, running: running, startSession: startSession, claimsAward: claimsAward,
       endSession: endSession, goToAward: goToAward, renderSessionCard: renderSessionCard,
       logText: logText });

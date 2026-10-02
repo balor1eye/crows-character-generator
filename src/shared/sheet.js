@@ -267,7 +267,10 @@
   function restActivity(c, o, msgs) {
     var p = c.play;
     if (o.activity === 'repair') {
-      var rc = cardById(c, +o.repair);
+      // By card id (the player's own rest), or by item name (rest choices sent to the Ref Screen, whose copy has no card ids):
+      // the most damaged carried one.
+      var rc = cardById(c, +o.repair) || c.inv.filter(function (x) { return x.key === o.repair && x.dmg && x.area !== 'none'; })
+        .sort(function (a, b) { return b.dmg - a.dmg; })[0] || null;
       if (rc) { rc.dmg = 0; msgs.push('Repaired ' + rc.key + ' to full AD.'); }
     } else if (o.activity === 'study' && o.study) {
       p.temp[o.study] = 1; msgs.push('Studied a lore book: +1 use of ' + o.study + ' until the next rest.');
@@ -288,7 +291,10 @@
       p.dt = r.dt;
       return 'The party rested (DT ' + r.dt + '). You had already rested from your sheet this dungeon turn, so nothing more happens.';
     }
-    var res = doRest(c, { by: 'ref', dt: r.dt, miasma: !!r.miasma || p.miasma, xp: r.xp });
+    // The player's choices sent from Play (r.chose): food, rest activity, healing from others; otherwise a ration and nothing more.
+    var res = doRest(c, { by: 'ref', dt: r.dt, miasma: !!r.miasma || p.miasma, xp: r.xp, food: r.food, activity: r.activity, repair: r.repair, study: r.study,
+      useKit: r.useKit, tended: r.tended, tendedKit: r.tendedKit, caretaker: r.caretaker });
+    if (res.ok && r.chose && p.lastRest) p.lastRest.extras = true;   // nothing left to record on the Rest card
     p.dt = r.dt;
     return res.ok ? 'Rested with the party (DT ' + r.dt + '). ' + res.msg : 'The party rested (DT ' + r.dt + '), but you couldn\'t: ' + res.msg;
   }
@@ -329,7 +335,7 @@
    * A change the Ref Screen made to crow c (combat, rests, Miasma, XP), applied as steps rather than final values, so it adds
    * to whatever the player did meanwhile and can be replayed on a newer copy of the sheet. Any of:
    * hit (+ piercing, from, vul): damage, see refHit · restore: a hit taken back (o.result.before of that hit) ·
-   * cond ({ name: true/false }): conditions on or off · rest ({ dt, miasma, xp }): the party's rest, applied in full (see refRest) ·
+   * cond ({ name: true/false }): conditions on or off · rest ({ dt, miasma, xp, and the player's choices + chose }): the party's rest, applied in full (see refRest) ·
    * claims: XP claims the Ref answered (ids) · endDT: dungeon turn n ended · endConds: blessed, vulnerable, weakened end (with a rest) ·
    * dt: dungeon turn n ended (with a rest) · xp (+ desc, gc, n): pending XP · apply: pending XP into TXP · full: full Stamina ·
    * st: Stamina +/- · wounds: ordinary wounds +/- · cruelty: +/- · setCruelty: a new value.

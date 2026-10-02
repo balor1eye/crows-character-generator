@@ -1,7 +1,7 @@
 # UX streamlining plan (remaining phases)
 
 Done: phase 0 (party rests and XP claims on linked sheets) and phase 1 (src/shared/, split app.js and ref.js), in 658e657;
-phase 2; phase 5. Remaining phases, in this order: **6, 3, 4**. Do one phase per session, then commit (see Workflow). Tick its boxes here and
+phase 2; phase 5; phase 6. Remaining phases, in this order: **3, 4**. Do one phase per session, then commit (see Workflow). Tick its boxes here and
 commit this file with it.
 
 ## Workflow (every phase)
@@ -111,17 +111,24 @@ commit this file with it.
 
 ## Phase 6: session state for players (ref-combat.js, src/combat.js, src/play.js)
 
-- [ ] Add `session: { dt, endAt, running, greed, rest: active, pending }` to what `publicCombat()` returns. It's published even
+- [x] Add `session: { dt, endAt, running, greed, rest: active, pending }` to what `publicCombat()` returns. It's published even
   with no fight: today an inactive fight is `{active:false}`, so extend that, and check `a_combat_publish`/`a_combat_mine` in
   server/app/api.php still accept it (size limit COMBAT_MAX_BYTES).
-- [ ] In combat.js, show a session bar at the top of Play: DT number, time left (count down from `endAt`), greed bonus,
+- [x] In combat.js, show a session bar at the top of Play: DT number, time left (count down from `endAt`), greed bonus,
   "Resting" / "Encounter signalled".
-- [ ] **Rest prompt**: when `session.rest` is active, the Play Rest card shows "The party is resting" with the food/activity
+- [x] **Rest prompt**: when `session.rest` is active, the Play Rest card shows "The party is resting" with the food/activity
   choices. The player sends them with `combat.act` type `rest` (add it to ACTION_TYPES and clean_action in api.php). The Ref
   Screen's `finishRest` (ref-session.js) puts each crow's choices into its `{ rest: {...} }` op, and `refRest` → `doRest(o)` in
   play.js already accepts food, activity, repair, study, useKit, tended, tendedKit, caretaker.
-- [ ] Tests: extend run_live_rest_test.py (the player picks Hearty Ration and Repair Armor, then the Ref finishes the rest, and
+- [x] Tests: extend run_live_rest_test.py (the player picks Hearty Ration and Repair Armor, then the Ref finishes the rest, and
   both apply).
+- Done as described, plus: the members of the published fight are now the fight's crows *and* every active linked crow, so
+  the session reaches the whole party; combat.js `cur()` (and `a_combat_act` on the server, for fight actions) now also
+  requires the crow to be in the fight's list. Rest choices are kept in `session.rest.choices[link]` on the Ref Screen
+  (shown on its Rest card) and go into the crow's `rest` op with `chose: true`, which `refRest` passes to `doRest` and
+  marks the Rest card's activity as recorded. smoke checks the session and the `rest` action through the API.
+  Card ids don't survive the link (the Ref Screen's copy of a sheet has none, and the player's are renumbered on reload), so
+  Repair Armor is sent by item name, and `restActivity` repairs the most damaged carried card of that name.
 
 ## Phase 3: Build flow (src/build-view.js, src/index.html, src/app.css, src/cloud.js, server/app/api.php)
 

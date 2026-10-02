@@ -7,7 +7,7 @@
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
   var activePCs = f('activePCs'), beast = f('beast'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
-      clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), field = f('field'), hitControls = f('hitControls'), inp = f('inp'),
+      clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
       int = f('int'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
       rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), sheetOp = f('sheetOp'),
       test = f('test'), testLine = f('testLine');
@@ -523,11 +523,21 @@
     var f = x.st / (x.stMax || 1);
     return f >= 1 ? (x.ad < x.adMax ? 'armor dented' : 'unhurt') : f > 0.5 ? 'hurt' : 'badly hurt';
   }
-  /* The fight as the players see it, or null when there's none. */
+  /*
+   * The session as the players see it: the dungeon turn, its timer (endAt while it runs, remain while paused, or rooms left), the
+   * greed bonus, whether the party is resting (and which crows sent their rest choices), and whether an encounter was signalled.
+   */
+  function publicSession() {
+    var s = S(), r = s.rest, timer = s.mode === 'timer';
+    return { dt: s.dt, running: timer && !!s.running, endAt: timer && s.running ? s.endAt : null, remain: timer && !s.running ? Math.max(0, s.remain) : null,
+      rooms: timer ? null : Math.max(0, (s.rooms || 0) - (s.roomsDone || 0)), greed: greedBonus(), pending: !!s.pending,
+      rest: r.active ? { active: true, half: !!r.half, where: r.where, chose: Object.keys(r.choices || {}).map(Number) } : { active: false } };
+  }
+  /* The fight as the players see it ({ active: false } when there's none), with the session. */
   function publicCombat() {
     var c = S().combat, run = runningEnc();
-    if (!c.list.length) return null;
-    return { active: true, round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
+    if (!c.list.length) return { active: false, session: publicSession() };
+    return { active: true, session: publicSession(), round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
       list: c.list.map(function (x) {
         var b = beast(x.cref), pc = x.kind === 'pc', g = byId(x.grabbedBy), o = { id: x.id, kind: x.kind, name: x.name, health: healthWord(x), dead: !!x.dead,
           conds: Object.keys(x.conds || {}).filter(function (k) { return x.conds[k]; }), surprised: surprised(x), sz: sizeOf(x) };
@@ -571,7 +581,9 @@
     if (live.busy) { live.again = true; return; }
     var pub = publicCombat(), json = JSON.stringify(pub);
     if (cid === live.cid && json === live.sent) return;
-    var members = pub ? pub.list.filter(function (o) { return o.link; }).map(function (o) { return o.link; }) : [];
+    // The fight's crows, and every active linked crow in the party (for the session bar and the party's rest).
+    var members = (pub.list || []).filter(function (o) { return o.link; }).map(function (o) { return o.link; });
+    activePCs().forEach(function (p) { if (p.link && members.indexOf(p.link) < 0) members.push(p.link); });
     live.busy = true; live.again = false;
     window.CrowsCloud.api('POST', 'combat.publish', '', { campaign: cid, combat: pub, members: members }).then(function (j) {
       live.sent = json; live.cid = cid;
@@ -599,12 +611,28 @@
       if (j.items.length) { save(); if (!window.CrowsCloud.typing) render(); }
     }).then(function () { live.fetching = false; }, function () { live.fetching = false; });
   }
+  /* A player's choices for the party's rest (food, activity...): kept until Finish rest puts them in the crow's rest op. */
+  function restChoice(p, a) {
+    var r = S().rest;
+    if (!r.active || !p.link) return;
+    var o = {};
+    ['food', 'activity', 'repair', 'study'].forEach(function (k) { if (a[k]) o[k] = a[k]; });
+    ['useKit', 'tended', 'tendedKit', 'caretaker'].forEach(function (k) { if (a[k]) o[k] = true; });
+    (r.choices = r.choices || {})[p.link] = o;
+    log('', '**' + (p.name || 'Crow') + '** chose for the rest: ' + restChoiceText(o) + '.');
+  }
+  function restChoiceText(o) {
+    var acts = { repair: 'Repair Armor', study: 'study ' + (o.study || 'a lore book') };
+    return [o.food === 'none' ? 'no food' : (o.food || 'Ration').toLowerCase(), o.activity ? acts[o.activity] || o.activity : '', o.useKit ? 'with a surgical kit' : '',
+      o.tended ? 'tended' + (o.tendedKit ? ' (with a kit)' : '') : '', o.caretaker ? 'at their Caretaker\u2019s home' : ''].filter(Boolean).join(', ');
+  }
   var MANEUVER_NOTES = { 'Move': 'moves', 'Shift': 'shifts (no opportunity attacks)', 'Stand Up': 'stands up', 'Draw From Belt': 'draws from their belt',
     'Draw From Pack': 'draws from their pack', 'Pick Up Item': 'picks up an item', 'Dump Backpack': 'dumps their backpack', 'Reload': 'reloads',
     'Command Pet': 'commands their pet', 'Jump': 'jumps' };
   function takeAction(it) {
     var a = it.action || {}, c = S().combat;
     var p = it.link ? state.party.filter(function (x) { return x.link === it.link; })[0] : null;
+    if (a.type === 'rest') { if (p) restChoice(p, a); return; }
     var me = p ? c.list.filter(function (x) { return x.kind === 'pc' && x.pcId === p.id; })[0] : null;
     if (!me) return;   // not in this fight (any more)
     var who = me.name;
@@ -897,7 +925,7 @@
       undoAct: undoAct, counterDamage: counterDamage, counterAct: counterAct, feed: feed, clearCombat: clearCombat, itemName: itemName,
       itemsText: itemsText, newItem: newItem, onGround: onGround, itemNews: itemNews, putDown: putDown, creaturePickUp: creaturePickUp,
       creatureDrop: creatureDrop, dropFromFallen: dropFromFallen, groundText: groundText, itemsPanel: itemsPanel, pcOf: pcOf, healthWord: healthWord,
-      publicCombat: publicCombat, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,
+      publicSession: publicSession, publicCombat: publicCombat, restChoice: restChoice, restChoiceText: restChoiceText, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,
       doomOptions: doomOptions, livePanel: livePanel, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
       SIZE_ORDER: SIZE_ORDER, live: live, dropQueued: dropQueued, MANEUVER_NOTES: MANEUVER_NOTES });
 })();

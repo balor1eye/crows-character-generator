@@ -117,7 +117,10 @@ python3 ref/test/run_live_combat_test.py            # after server/deploy.sh; --
 Also on the test instance only, set up the same way. The player's crow starts hurt with an expertise use spent. The
 Ref finishing a rest must do the whole rest on the player's sheet (a ration eaten, Stamina full, a wound healed, the
 use back, the dungeon turn recorded), and the Rest card must say the crow rested with the party. After the player rests
-from their own sheet, the Ref's next rest that dungeon turn must skip the crow (no second ration). In the campaign, the
+from their own sheet, the Ref's next rest that dungeon turn must skip the crow (no second ration). The Play page must
+show the Ref Screen's session bar (the dungeon turn, a timer counting down, Resting), and when the Ref starts a rest the
+player's choices (a Hearty Ration and Repair Armor) must reach the Ref Screen's Rest card and apply on the sheet when
+the Ref finishes it, without the Rest card asking for the activity again. In the campaign, the
 player's treasure becomes an XP claim: it must show on the Ref's Experience card (with a badge on the Party tab), and
 using it for the award must give the player the pending XP and take the claim off both lists. Last, a hit dealt
 from the crow's Party status tile must land on the player's sheet and in its log, with no iframe on the Ref Screen,

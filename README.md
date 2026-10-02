@@ -30,7 +30,9 @@ What it does:
 **Play mode** (the *Play* tab in the header) turns the app into a character manager for the table. A sticky
 **vitals strip** (Stamina, AD, wounds, speed, active conditions) stays visible at the top, and the page is split
 into sub-tabs: **Now** (combat, Vitals, Attacks & spells), **Rest & turns**, **Items**, **Growth** (Experience,
-Expertise & Stamina bonuses, and trait buying), and **Log**.
+Expertise & Stamina bonuses, and trait buying), and **Log**. On the accounts site, a crow in a Ref's campaign also
+gets a **session bar** above the strip, live from the Ref Screen: the dungeon turn, the DT timer counting down (or rooms
+left), the greed bonus, Resting, and Encounter signalled.
 
 - **Vitals**: current Stamina, AD of worn armor, shields, and parry weapons, speed (with wound and
   condition penalties), wounds, cruelty, coins, and the six conditions. **Take damage** runs it through
@@ -67,7 +69,8 @@ Expertise & Stamina bonuses, and trait buying), and **Log**.
   spellbooks, handles repair armor and lore book study, feeds pets, and applies pending XP. When the Ref finishes the
   party's rest in the Ref Screen, a linked crow's sheet does all of that itself; the Rest card then says the crow rested
   with the party and only asks for the rest activity and any extra healing (a crow that already rested from its own
-  sheet that dungeon turn isn't rested twice).
+  sheet that dungeon turn isn't rested twice). While the Ref's party rest is under way, the Rest card says so and sends
+  your food and rest activity (and healing from others) to the Ref Screen, which applies them when it finishes the rest.
 - **Expertise uses**, **carried items** (usage dice, refuelling, ammo, healing potions, using up
   consumables), **magic item slots**, **pet Stamina**, and a **session log**.
 - **Growth**: log recovered treasure (XP = gc / players), which applies after the next rest, and see the next

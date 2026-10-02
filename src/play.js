@@ -544,7 +544,11 @@
       if (!kit) ui.useKit = false;
     }
     var over = overloadedSlots(), party = restedWithParty(), done = party && p.lastRest.extras;
+    // The Ref Screen's party rest is under way: the player sends their choices, and the Ref finishing the rest applies them.
+    var Cb = window.CrowsCombat, partyRest = !party && Cb && !window.CrowsRefView && Cb.resting(), sent = partyRest && Cb.restSent();
     var restBox = el('div', { class: 'rest-box' }, [
+      partyRest ? el('div', { class: 'banner ok party-rest', text: 'The party is resting. ' + (sent ? 'The Ref has your choices; change them and send again if you like.' :
+        'Pick your food and rest activity and send them to the Ref: they apply when the Ref finishes the rest.') }) : null,
       party ? el('div', { class: 'banner ok', text: 'You rested with the party (dungeon turn ' + p.lastRest.dt + '): food, Stamina, a wound, expertise uses, and recharges are done. ' +
         (done ? 'Your rest activity is recorded.' : 'Record your rest activity and any extra healing here.') }) : null,
       done ? null : el('div', { class: 'row wrap' }, [
@@ -564,7 +568,8 @@
       el('div', { class: 'row wrap' }, party ? [
         done ? null : btn('Record activity & extra healing', restExtras, 'btn-primary'),
         btn('Rest again (a separate rest)', rest, 'btn-ghost', { disabled: over.length ? true : null, title: 'Only for a second, separate rest: the party\'s rest is already applied' })
-      ] : [btn('Rest', rest, 'btn-primary', { disabled: over.length ? true : null })])
+      ] : partyRest ? [btn(sent ? 'Send again' : 'Send to the Ref', function () { Cb.sendRest(restChoices()).then(function (ok) { if (ok) C.render(); }); }, 'btn-primary party-rest-send')]
+        : [btn('Rest', rest, 'btn-primary', { disabled: over.length ? true : null })])
     ]);
     card('play-time', 'Dungeon turns & rest', [
       el('div', { class: 'row wrap dt-row' }, [
@@ -1022,7 +1027,7 @@
   $('tab-build').addEventListener('click', function () { setMode('build'); });
   $('tab-play').addEventListener('click', function () { setMode('play'); });
   applyMode(mode());
-  window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress, loadCampaign: loadCampaign, joined: joined,
+  window.CrowsPlay = { render: render, setMode: setMode, showTab: setSubtab, syncAddress: syncAddress, loadCampaign: loadCampaign, joined: joined,
     /* For tests and combat.js: this crow's vitals as the sheet has them (AD from worn armor and parry weapons). */
     vitals: function () { return Sheet.vitals(S()); },
     /* For combat.js: a roll's damage, and whether its result is final (no expertise to spend, no chaos roll waiting). */

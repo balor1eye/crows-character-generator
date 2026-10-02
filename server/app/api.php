@@ -1341,7 +1341,8 @@ function a_notes_dismiss(): array {
  * id), whose version is the newest action's id, reads new ones with combat.actions, and applies them.
  */
 const COMBAT_MAX_BYTES = 200000;
-const ACTION_TYPES = ['attack', 'maneuver', 'taunt', 'ready', 'assist', 'assistUsed', 'declare', 'done', 'undone', 'drop', 'pickup'];
+const ACTION_TYPES = ['attack', 'maneuver', 'taunt', 'ready', 'assist', 'assistUsed', 'declare', 'done', 'undone', 'drop', 'pickup', 'rest'];
+const REST_FOODS = ['', 'Ration', 'Hearty Ration', 'none'];
 const MANEUVERS = ['Move', 'Shift', 'Stand Up', 'Draw From Pack', 'Draw From Belt', 'Pick Up Item', 'Dump Backpack', 'Reload', 'Command Pet',
     'Grab', 'Escape Grab', 'Knockback', 'Jump'];
 const COMBAT_CONDS = ['Blessed', 'Grabbed', 'Prone', 'Vulnerable', 'Weakened', 'Unconscious'];
@@ -1361,16 +1362,19 @@ function actions_info(int $campaignId): array {
     return ['latest' => $latest, 'watch' => combat_watch('cacts', $campaignId)];
 }
 
-/** The Ref Screen: the fight as the players see it (combat null or {active: false} when there's none). */
+/**
+ * The Ref Screen: the fight as the players see it ({active: false} when there's none), with the session (dungeon turn, timer,
+ * greed bonus, the party's rest). Its members are the fight's crows and the party's other linked crows, so they see the session.
+ */
 function a_combat_publish(): array {
     $s = need_ref(REF_ONLY);
     $cid = combat_campaign_id();
     own_campaign($s, $cid);
     $c = body_obj()->combat ?? null;
     $active = is_object($c) && !empty($c->active);
-    $json = enc($active ? $c : ['active' => false]);
+    $json = enc($active ? $c : ['active' => false] + (is_object($c) && is_object($c->session ?? null) ? ['session' => $c->session] : []));
     if (strlen($json) > COMBAT_MAX_BYTES) fail('The fight is too large to share.', 413);
-    $aids = array_values(array_unique(array_filter(array_map('intval', $active && is_array(body()['members'] ?? null) ? body()['members'] : []))));
+    $aids = array_values(array_unique(array_filter(array_map('intval', is_array(body()['members'] ?? null) ? body()['members'] : []))));
     $chars = [];
     if ($aids) {
         $in = implode(',', array_fill(0, count($aids), '?'));
@@ -1466,6 +1470,12 @@ function clean_action($a): array {
         $out += ['name' => $name, 'jump' => $num('jump', 0, 20)];
     }
     if ($type === 'assist') $out += ['assistTo' => $txt('assistTo', 40), 'bonus' => $num('bonus', -1, 2)];
+    if ($type === 'rest') {
+        // The player's choices for the party's rest; the Ref Screen applies them when it finishes the rest.
+        $food = $a['food'] ?? '';
+        $out += ['food' => in_array($food, REST_FOODS, true) ? $food : '', 'activity' => $txt('activity', 40), 'repair' => $txt('repair', 80), 'study' => $txt('study', 60),
+                 'useKit' => $flag('useKit'), 'tended' => $flag('tended'), 'tendedKit' => $flag('tendedKit'), 'caretaker' => $flag('caretaker')];
+    }
     if ($type === 'pickup') $out += ['item' => $txt('item', 40), 'itemName' => $txt('itemName', 80)];
     if ($type === 'drop') {
         // Items the crow put down: what's in its hands, or its backpack's contents (dump: the Dump Backpack maneuver).
@@ -1490,7 +1500,14 @@ function a_combat_act(): array {
     $cid = combat_campaign_id();
     $r = member_combat($id, $cid);
     $c = $r ? json_decode($r['data']) : null;
-    if (!$r || !is_object($c) || empty($c->active)) fail('Your crow isn\'t in that fight any more.', 409);
+    if ((body()['action']['type'] ?? '') === 'rest') {
+        if (!$r || !is_object($c) || empty($c->session->rest->active)) fail('The party isn\'t resting any more.', 409);
+    } else {
+        $in = $r && is_object($c) && !empty($c->active) && is_array($c->list ?? null) && array_filter($c->list, function ($x) use ($r) {
+            return is_object($x) && ($x->kind ?? '') === 'pc' && (int)($x->link ?? 0) === (int)$r['access_id'];
+        });
+        if (!$in) fail('Your crow isn\'t in that fight any more.', 409);
+    }
     if ((int)q('SELECT COUNT(*) FROM combat_actions WHERE character_id = ? AND created_at > ?', [$id, now(-10)])->fetchColumn() >= 15) {
         fail('That\'s a lot of actions at once. Wait a few seconds.', 429);
     }
