@@ -206,6 +206,27 @@ body[data-mode="play"] .steps, body[data-mode="play"] .build-only { display: non
 body[data-mode="play"] .play-main { display: flex; }
 body[data-mode="play"] .play-only { display: block; }
 .play-main h3 { font-family: var(--font); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 1rem 0 .4rem; }
+
+/* Sticky vitals strip + sub-tabs: sit outside the rearrangeable columns, spanning all of them. */
+.vstrip, .subtabs { grid-column: 1 / -1; }
+.vstrip { display: flex; flex-wrap: wrap; gap: .5rem .9rem; align-items: center; position: sticky; top: 76px; z-index: 10;
+  background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .5rem .8rem; box-shadow: var(--shadow); }
+.vstrip-item { display: flex; align-items: center; gap: .35rem; font-size: .9rem; }
+.vstrip-item.danger b { color: var(--bad); }
+.vstrip-lbl { color: var(--muted); font-size: .72rem; text-transform: uppercase; letter-spacing: .05em; }
+.vstrip-item b { font: bold 1.05rem var(--serif); }
+.vstrip-item .btn { min-height: 28px; padding: .2rem .5rem; }
+.vstrip-conds { display: flex; gap: .3rem; flex-wrap: wrap; }
+.vstrip-conds .cond { padding: .1rem .6rem; min-height: auto; cursor: default; }
+.subtabs { display: flex; gap: .3rem; flex-wrap: wrap; }
+.subtabs button { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: .35rem .9rem; cursor: pointer; font-weight: 600; min-height: 36px; }
+.subtabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+/* Fallback grouping for sub-tab content when layout.js is inactive (the Ref's embedded view of a linked sheet). */
+.sub-page { display: none; flex-direction: column; gap: 1rem; min-width: 0; }
+body[data-subtab="now"] #sub-now, body[data-subtab="rest"] #sub-rest, body[data-subtab="items"] #sub-items,
+body[data-subtab="growth"] #sub-growth, body[data-subtab="log"] #sub-log { display: flex; }
+/* The bonus/trait blocks are shared with Build's step numbering, which doesn't apply once they're shown in Play. */
+body[data-mode="play"] #sec-advance .step, body[data-mode="play"] #sec-traits .step { display: none; }
 .muted { color: var(--muted); }
 .spacer { flex: 1; }
 input.mini { width: 5.5rem; padding: .35rem .45rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-height: 32px; }
@@ -300,6 +321,8 @@ input.mini { width: 5.5rem; padding: .35rem .45rem; border: 1px solid var(--line
 .exp-spend select { flex: 1; min-width: 0; padding: .3rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-height: 32px; }
 @media (max-width: 1000px) {
   body[data-mode="play"] .summary .play-side { display: block; }
+  /* The sidebar result is now redundant with the inline one under Attacks. */
+  body[data-mode="play"] .summary .play-side .roll-result { display: none; }
 }
 @media (max-width: 700px) {
   .vital-top { grid-template-columns: 1fr; }
@@ -308,6 +331,9 @@ input.mini { width: 5.5rem; padding: .35rem .45rem; border: 1px solid var(--line
   .item-row { grid-template-columns: minmax(0, 1fr) auto; }
   .item-row .loc { grid-column: 1 / -1; }
   .wslot .it { font-size: .68rem; }
+  /* The summary column collapses into a condensed header above the vitals strip and the sub-tab. */
+  body[data-mode="play"] .summary .sum-stats { display: none; }
+  .vstrip { position: static; top: auto; }
 }
 body[data-mode="play"] .summary .play-side .fine { display: revert; }
 @media (min-width: 1001px) {

@@ -50,13 +50,26 @@ def main():
                 total += n
             if not good:
                 break
+            if page == "Crows_Character_Generator.html":
+                # The Play sub-tab choice (src/play.js SUBTAB_KEY) is its own localStorage key, independent of the block layout.
+                wd.js("document.getElementById('tab-play').click();")
+                wd.wait("return !!document.querySelector('#play-subtabs button')", "Play's sub-tabs to render")
+                wd.js("""Array.prototype.filter.call(document.querySelectorAll('#play-subtabs button'), function (b) {
+                    return b.textContent.trim() === 'Growth'; })[0].click();""")
+                wd.wait("return document.body.getAttribute('data-subtab') === 'growth'", "the Growth sub-tab to activate")
+                wd.go(base + page)
+                wd.wait("return document.body.getAttribute('data-mode') === 'play'", "Play mode after reload")
+                ok = wd.js("return document.body.getAttribute('data-subtab') === 'growth'")
+                print("  " + ("ok" if ok else "FAILED"), "the sub-tab choice survives a reload")
+                total += 1
+                good = good and ok
         if good and a.test_instance:
             sys.path.insert(0, os.path.join(ROOT, "server"))
             import test_instance
             pl = test_instance.Client.login("test_player")
             base = test_instance.BASE
             print("test instance, as test_player")
-            pl.post("prefs.save", {"page": "gen-play", "layout": None})
+            pl.post("prefs.save", {"page": "gen-play-now", "layout": None})
             wd.go(base)
             for k in pl.jar:
                 wd.add_cookie({"name": k.name, "value": k.value, "path": k.path, "secure": bool(k.secure), "httpOnly": True, "sameSite": "Lax"})
@@ -68,7 +81,7 @@ def main():
                      v.dispatchEvent(new KeyboardEvent('keydown', { key: 'ArrowRight', bubbles: true }));
                      document.querySelector('.lay-lock').click();""")
             time.sleep(2)
-            got = pl.get("prefs.get")["prefs"].get("layouts", {}).get("gen-play")
+            got = pl.get("prefs.get")["prefs"].get("layouts", {}).get("gen-play-now")
             ok = bool(got) and "play-vitals" in got["cols"][1]
             print("  " + ("ok" if ok else "FAILED"), "moving Vitals to the sidebar column on Play saves it to test_player's account")
             total += ok
@@ -81,7 +94,7 @@ def main():
                 wd.wait("return !!(window.CrowsCloud && window.CrowsCloud.active) && document.getElementById('play-vitals').parentNode.getAttribute('data-col') === '1'", "the account's arrangement", 15)
                 print("  ok with this browser's copy cleared, Play comes back arranged from the account")
                 total += 1
-            pl.post("prefs.save", {"page": "gen-play", "layout": None})
+            pl.post("prefs.save", {"page": "gen-play-now", "layout": None})
             print("  reset test_player's Play arrangement")
     finally:
         wd.quit()

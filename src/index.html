@@ -31,6 +31,8 @@
 </header>
 
 <main class="layout">
+  <div class="vstrip play-only" id="play-vstrip"></div>
+  <nav class="subtabs play-only" id="play-subtabs" role="tablist" aria-label="Play section"></nav>
   <div class="steps">
 
     <section class="card" id="sec-background">
@@ -182,15 +184,25 @@
   </div>
 
   <div class="play-main" id="play">
-    <section class="card" id="play-combat" hidden></section>
-    <section class="card" id="play-vitals"></section>
-    <section class="card" id="play-time"></section>
-    <section class="card" id="play-attacks"></section>
-    <section class="card" id="play-exp"></section>
-    <section class="card" id="play-items"></section>
-    <section class="card" id="play-advance"></section>
-    <section class="card" id="play-gear"></section>
-    <section class="card" id="play-log"></section>
+    <div class="sub-page" id="sub-now">
+      <section class="card" id="play-combat" hidden></section>
+      <section class="card" id="play-vitals"></section>
+      <section class="card" id="play-attacks"></section>
+    </div>
+    <div class="sub-page" id="sub-rest">
+      <section class="card" id="play-time"></section>
+      <section class="card" id="play-gear"></section>
+    </div>
+    <div class="sub-page" id="sub-items">
+      <section class="card" id="play-items"></section>
+      <section class="card" id="play-exp"></section>
+    </div>
+    <div class="sub-page" id="sub-growth">
+      <section class="card" id="play-advance"></section>
+    </div>
+    <div class="sub-page" id="sub-log">
+      <section class="card" id="play-log"></section>
+    </div>
   </div>
 
   <aside class="summary" id="summary">

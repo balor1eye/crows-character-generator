@@ -58,24 +58,28 @@ commit this file with it.
 
 ## Phase 2: Play mode by situation (src/play.js, src/combat.js, src/index.html, src/app.css)
 
-- [ ] Add a sticky **vitals strip** at the top of `.play-main`: Stamina with ±1 and Full, AD now/max, wounds/10, speed, active
+- [x] Add a sticky **vitals strip** at the top of `.play-main`: Stamina with ±1 and Full, AD now/max, wounds/10, speed, active
   conditions as chips. Reuse the logic from `renderVitals`; the full Vitals card stays.
-- [ ] Add **sub-tabs** in Play: Now (`play-combat`, `play-vitals`, `play-attacks`, the dice), Rest & turns (`play-time`,
+- [x] Add **sub-tabs** in Play: Now (`play-combat`, `play-vitals`, `play-attacks`, the dice), Rest & turns (`play-time`,
   `play-gear`), Items (`play-items`, `play-exp`), Growth (`play-advance` and the new trait/bonus block), Log (`play-log`).
   - Store the tab in localStorage, like MODE_KEY. Sections outside the tab get `hidden`.
   - layout.js must treat each sub-tab as its own page: add a page id per sub-tab in the `CrowsLayout.init` call, and have
     `current()` return it.
-- [ ] Show **roll results inline**: `renderRoller` builds the result box (`.roll-result`). Make it a function `resultBox(r)` and
+- [x] Show **roll results inline**: `renderRoller` builds the result box (`.roll-result`). Make it a function `resultBox(r)` and
   render it under the Attacks card (and the dice buttons) when the roll came from there. Keep the sidebar box on desktop only (CSS
   under 1000px). combat.js `rollNote(r)` must still attach to it.
-- [ ] Do **Growth in Play**: render the Expertise & Stamina bonus choices and trait buying inside `play-advance`, by calling
-  build-view.js's `renderAdvance`/`renderTraits` logic. Export what's needed through A.add and use it via `window.CrowsApp.core`.
-  Remove the `gotoBuild` links.
-- [ ] **Phone**: under 700px, the summary column (`.summary`) collapses into a header. Order: vitals strip, then the sub-tab.
-- [ ] Tests:
-  - run_live_combat_test.py selectors assume `#play-combat`, `#play-attacks`, `.roll-result`, `#play-items`. Keep those ids, or
-    update the test to switch to the right sub-tab first.
-  - Add a check that the sub-tab choice survives a reload.
+- [x] Do **Growth in Play**: the bonus choices and trait buying live in `sec-advance`/`sec-traits` (Build's step 2/5 cards), shared
+  with Play's Growth sub-tab the same way `summary` is already shared between Build and Play — `CrowsLayout`'s page definitions list
+  those block ids for the Growth page too, so they physically move there instead of being rebuilt. No new render path needed:
+  build-view.js's `render()` already renders them unconditionally every pass. Removed the `gotoBuild` links (and `gotoBuild` itself,
+  now unused) from play.js's own Experience card.
+- [x] **Phone**: under 700px, the summary column (`.summary`) collapses into a header (hides `.sum-stats`, now redundant with the
+  strip). Order: vitals strip, then the sub-tab.
+- [x] Tests:
+  - run_live_combat_test.py needed no changes: every interaction goes through raw DOM JS (`.click()`, `textContent`) via
+    WebDriver's `execute/sync`, not real input-gated clicks, so hidden (off-tab) elements still work. Confirmed by running it live.
+  - Added a reload-persistence check for the sub-tab choice to run_layout_test.py, and fixed its `--test-instance` branch, which
+    had `"gen-play"` hardcoded as the saved-layout page id — now `"gen-play-now"` since Play's layout pages are per-sub-tab.
 
 ## Phase 5: Ref Screen (ref/src/)
 

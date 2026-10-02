@@ -10,6 +10,8 @@
   var C = window.CrowsApp.core;
   var el = C.el, $ = C.$, d = C.d, fmt = C.fmt, signed = C.signed, item = C.item;
   var MODE_KEY = 'crows-pt2-mode';
+  var SUBTAB_KEY = 'crows-pt2-play-subtab';
+  var SUBTABS = [['now', 'Now'], ['rest', 'Rest & turns'], ['items', 'Items'], ['growth', 'Growth'], ['log', 'Log']];
   var CONDITIONS = ['Blessed', 'Grabbed', 'Prone', 'Vulnerable', 'Weakened', 'Unconscious'];
   var Dice = window.CrowsDice, Rules = window.CrowsRules;   // src/shared/
   var DT_CONDITIONS = Rules.DT_CONDITIONS; // end at the end of a dungeon turn
@@ -72,6 +74,7 @@
   }
   function applyMode(m) {
     document.body.setAttribute('data-mode', m);
+    if (m === 'play') { document.body.setAttribute('data-subtab', subtab()); renderSubtabs(); }
     layoutSync();
     $('tab-build').setAttribute('aria-pressed', String(m === 'build'));
     $('tab-play').setAttribute('aria-pressed', String(m === 'play'));
@@ -81,6 +84,27 @@
     if (sub) sub.textContent = 'Crows Playtest 2 · ' + what + (camp ? ' · ' + camp : '');
     if ($('play-camp')) $('play-camp').textContent = camp ? 'In ' + camp : '';
     syncAddress();
+  }
+  // ------------------------------------------------------------------ Play sub-tabs (Now / Rest & turns / Items / Growth / Log)
+  function subtab() {
+    try { var t = localStorage.getItem(SUBTAB_KEY); return SUBTABS.some(function (s) { return s[0] === t; }) ? t : 'now'; } catch (e) { return 'now'; }
+  }
+  function setSubtab(t) {
+    try { localStorage.setItem(SUBTAB_KEY, t); } catch (e) { /* storage unavailable */ }
+    document.body.setAttribute('data-subtab', t);
+    renderSubtabs();
+    layoutSync();
+    C.render();
+    window.scrollTo(0, 0);
+  }
+  function renderSubtabs() {
+    var box = $('play-subtabs'); if (!box) return;
+    box.innerHTML = '';
+    var cur = subtab();
+    SUBTABS.forEach(function (t) {
+      box.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': String(cur === t[0]), 'aria-pressed': String(cur === t[0]),
+        text: t[1], onclick: function () { setSubtab(t[0]); } }));
+    });
   }
   /* Show this mode's address. Only where the accounts server answered: elsewhere there's no play address to go to. */
   function syncAddress() {
@@ -104,11 +128,6 @@
     var id = window.CrowsCloud && window.CrowsCloud.recordId;
     if (id) { campaign = { id: id, name: name }; C.render(); }
     if (window.CrowsCombat) window.CrowsCombat.load();
-  }
-  function gotoBuild(sectionId) {
-    setMode('build');
-    var n = $(sectionId);
-    if (n) { if (n.tagName === 'DETAILS') n.open = true; n.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
   }
 
   // ------------------------------------------------------------------ inventory helpers
@@ -635,6 +654,26 @@
       el('h3', {}, ['Backpack wounds ', el('small', { text: '(each wound fills a slot; -1 speed per slot with both a wound and an item. Click to mark or heal.)' })]), grid]);
   }
 
+  /* Compact always-visible strip (outside the sub-tabs) with the numbers a player checks most often mid-session. */
+  function renderVitalsStrip() {
+    var box = $('play-vstrip'); if (!box) return;
+    box.innerHTML = '';
+    var p = P(), m = C.staminaMax(), cur = C.curStamina(), sp = speed(), w = C.woundCount(), abs = absorbers();
+    var adText = abs.length ? abs.map(function (c) { return C.adNow(c) + '/' + C.adMax(c); }).join(', ') : '—';
+    box.appendChild(el('div', { class: 'vstrip-item vstrip-stam' }, [
+      el('span', { class: 'vstrip-lbl', text: 'Stamina' }),
+      btn('−1', function () { setStamina(cur - 1); commit(); }, 'btn-small'),
+      el('b', { text: cur + '/' + m }),
+      btn('+1', function () { setStamina(cur + 1); commit(); }, 'btn-small'),
+      btn('Full', function () { setStamina(m); commit(); }, 'btn-small btn-ghost')
+    ]));
+    box.appendChild(el('div', { class: 'vstrip-item' }, [el('span', { class: 'vstrip-lbl', text: 'AD' }), el('b', { text: adText })]));
+    box.appendChild(el('div', { class: 'vstrip-item' + (w >= 7 ? ' danger' : '') }, [el('span', { class: 'vstrip-lbl', text: 'Wounds' }), el('b', { text: w + '/10' })]));
+    box.appendChild(el('div', { class: 'vstrip-item' }, [el('span', { class: 'vstrip-lbl', text: 'Speed' }), el('b', { text: String(sp.v) })]));
+    var active = Object.keys(p.conds);
+    if (active.length) box.appendChild(el('div', { class: 'vstrip-conds' }, active.map(function (k) { return el('span', { class: 'cond on', text: k }); })));
+  }
+
   // Tap-friendly alternative to the condition tooltips (hover tooltips don't show on touch screens).
   function condInfo() {
     if (!ui.condInfo) return null;
@@ -779,7 +818,8 @@
       window.CrowsCombat ? window.CrowsCombat.targetBar() : null,
       el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee). A ranged attack against a creature adjacent to you takes a bane: set it before rolling. Light weapon and parry damage adjustments are included. A thrown weapon is out of your hand (no attacks, parry, or light-weapon bonus) until you recover it.' }),
       rows,
-      stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Drag one into your hands under Items.' }) : null
+      stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Drag one into your hands under Items.' }) : null,
+      resultBox()
     ]);
   }
 
@@ -932,7 +972,7 @@
     var pool = C.usePool(), used = C.allocTotal();
     if (pool > used) todo.push('Assign ' + (pool - used) + ' bonus expertise use' + (pool - used === 1 ? '' : 's'));
     if (s.charBonus.some(function (c) { return !c; })) todo.push('Choose a characteristic bonus');
-    var banner = todo.length ? el('div', { class: 'banner warn' }, [todo.join('. ') + '. ', el('a', { href: '#sec-advance', text: 'Open Advancement', onclick: function (e) { e.preventDefault(); gotoBuild('sec-advance'); } })]) : null;
+    var banner = todo.length ? el('div', { class: 'banner warn', text: todo.join('. ') + '. See the bonus choices below.' }) : null;
     var camp = campaignName();   // in a campaign the Ref awards XP: the player's treasure is a claim for them to answer
     var share = ui.tPlayers > 0 && parseInt(ui.tGc, 10) > 0 ? Math.floor(parseInt(ui.tGc, 10) / ui.tPlayers) : 0;
     var shareEl = el('span', { class: 'fine', id: 'play-share', text: share ? '= ' + fmt(share) + ' XP each' : '' });
@@ -980,8 +1020,7 @@
       el('p', { class: 'hint', text: 'Recovered treasure (not bought, crafted, taken from innocents, or an ally\'s) gives XP = its gc value / number of players. XP and TXP bonuses apply only after a rest.' +
         (camp ? ' Your crow is in a campaign, so log treasure here to ask the Ref for the XP.' : '') }),
       stats, banner,
-      el('p', { class: 'fine' }, ['Next Expertise & Stamina bonus at ' + fmt(nx.es) + ' TXP; next characteristic bonus at ' + fmt(nx.ch) + ' TXP. ',
-        el('a', { href: '#sec-traits', text: 'Buy traits', onclick: function (e) { e.preventDefault(); gotoBuild('tree-browser'); } }), ' with unspent XP.']),
+      el('p', { class: 'fine', text: 'Next Expertise & Stamina bonus at ' + fmt(nx.es) + ' TXP; next characteristic bonus at ' + fmt(nx.ch) + ' TXP. Buy traits below with unspent XP.' }),
       form, other, claims, p.xpLog.length ? el('h3', { text: 'Recent XP' }) : null, hist
     ]);
   }
@@ -1028,32 +1067,9 @@
     ]);
   }
 
-  function renderRoller() {
-    var box = $('play-side'); box.innerHTML = '';
-    var p = P(), ch = C.characteristics().values;
-    box.appendChild(el('h3', { text: 'Dice' }));
-    var eb = el('div', { class: 'seg', role: 'group', 'aria-label': 'Edges and banes' }, [[-2, 'Dbl bane'], [-1, 'Bane'], [0, 'None'], [1, 'Edge'], [2, 'Dbl edge']].map(function (x) {
-      return el('button', { type: 'button', class: ui.eb === x[0] ? 'on' : '', 'aria-pressed': String(ui.eb === x[0]), text: x[1], onclick: function () { ui.eb = x[0]; renderRoller(); } });
-    }));
-    box.appendChild(eb);
-    var auto = [];
-    if (p.conds.Blessed) auto.push('blessed: edge'); if (p.conds.Weakened) auto.push('weakened: bane');
-    box.appendChild(el('div', { class: 'row side-mod' }, [
-      el('label', { class: 'field' }, ['Other modifier', num(ui.mod || '', function (v) { ui.mod = parseInt(v, 10) || 0; }, { class: 'mini', placeholder: '0' })]),
-      auto.length ? el('span', { class: 'fine', text: 'Auto: ' + auto.join(', ') }) : null
-    ]));
-    box.appendChild(el('div', { class: 'side-btns' }, CROWS.CHARS.map(function (c) {
-      return btn(c + ' ' + signed(ch[c]), function () { rollTest({ label: c + ' test', charName: c, charVal: ch[c], kind: 'test', group: 'General' }); }, 'btn-primary');
-    }).concat([
-      btn('Miasma RR', function () {
-        var mask = /Plague Mask/i.test(p.magic.Head || '') ? 2 : 0;
-        rollTest({ label: 'Miasma RR' + (p.cruelty ? ' (cruelty -' + p.cruelty + ')' : '') + (mask ? ' (plague mask +2)' : ''), charName: 'Mind', charVal: ch.Mind, extraMod: mask - p.cruelty, kind: 'miasma', group: 'General' });
-      }),
-      btn('Initiative', function () { plainRoll('Initiative', 1, 10, function (t) { return t >= 6 ? 'PCs and allies act first' : 'enemies act first'; }); }),
-      btn('Draw from pack', function () { plainRoll('Draw from pack', 1, 10, function (t) { return 'you get an item in slots 1-' + t; }); }),
-      btn('d6', function () { plainRoll('d6', 1, 6); }), btn('d10', function () { plainRoll('d10', 1, 10); }),
-      btn('2d10', function () { plainRoll('2d10', 2, 10); }), btn('d100', function () { plainRoll('d100', 1, 100); })
-    ])));
+  /* The outcome of the most recent roll (last): used in the sidebar (desktop) and inline under Attacks (all widths). */
+  function resultBox() {
+    var p = P();
     var res = el('div', { class: 'roll-result', 'aria-live': 'polite' });
     if (!last) res.appendChild(el('p', { class: 'fine', text: 'Tests: 2d10 + characteristic. 11 or lower = tier 1, 12-16 = tier 2, 17+ = tier 3. Natural 19-20 crit; 2-3 doom.' }));
     else if (last.plain) {
@@ -1109,7 +1125,36 @@
         }));
       }
     }
-    box.appendChild(res);
+    return res;
+  }
+
+  function renderRoller() {
+    var box = $('play-side'); box.innerHTML = '';
+    var p = P(), ch = C.characteristics().values;
+    box.appendChild(el('h3', { text: 'Dice' }));
+    var eb = el('div', { class: 'seg', role: 'group', 'aria-label': 'Edges and banes' }, [[-2, 'Dbl bane'], [-1, 'Bane'], [0, 'None'], [1, 'Edge'], [2, 'Dbl edge']].map(function (x) {
+      return el('button', { type: 'button', class: ui.eb === x[0] ? 'on' : '', 'aria-pressed': String(ui.eb === x[0]), text: x[1], onclick: function () { ui.eb = x[0]; renderRoller(); } });
+    }));
+    box.appendChild(eb);
+    var auto = [];
+    if (p.conds.Blessed) auto.push('blessed: edge'); if (p.conds.Weakened) auto.push('weakened: bane');
+    box.appendChild(el('div', { class: 'row side-mod' }, [
+      el('label', { class: 'field' }, ['Other modifier', num(ui.mod || '', function (v) { ui.mod = parseInt(v, 10) || 0; }, { class: 'mini', placeholder: '0' })]),
+      auto.length ? el('span', { class: 'fine', text: 'Auto: ' + auto.join(', ') }) : null
+    ]));
+    box.appendChild(el('div', { class: 'side-btns' }, CROWS.CHARS.map(function (c) {
+      return btn(c + ' ' + signed(ch[c]), function () { rollTest({ label: c + ' test', charName: c, charVal: ch[c], kind: 'test', group: 'General' }); }, 'btn-primary');
+    }).concat([
+      btn('Miasma RR', function () {
+        var mask = /Plague Mask/i.test(p.magic.Head || '') ? 2 : 0;
+        rollTest({ label: 'Miasma RR' + (p.cruelty ? ' (cruelty -' + p.cruelty + ')' : '') + (mask ? ' (plague mask +2)' : ''), charName: 'Mind', charVal: ch.Mind, extraMod: mask - p.cruelty, kind: 'miasma', group: 'General' });
+      }),
+      btn('Initiative', function () { plainRoll('Initiative', 1, 10, function (t) { return t >= 6 ? 'PCs and allies act first' : 'enemies act first'; }); }),
+      btn('Draw from pack', function () { plainRoll('Draw from pack', 1, 10, function (t) { return 'you get an item in slots 1-' + t; }); }),
+      btn('d6', function () { plainRoll('d6', 1, 6); }), btn('d10', function () { plainRoll('d10', 1, 10); }),
+      btn('2d10', function () { plainRoll('2d10', 2, 10); }), btn('d100', function () { plainRoll('d100', 1, 100); })
+    ])));
+    box.appendChild(resultBox());
   }
 
   function render() {
@@ -1117,6 +1162,7 @@
     applyMode(mode());
     if (mode() !== 'play') return;
     if (window.CrowsCombat) window.CrowsCombat.render();
+    renderVitalsStrip();
     renderVitals(); renderTime(); renderAttacks(); renderExp(); renderItems(); renderAdvance(); renderGear(); renderLog(); renderRoller();
     var sb = $('play-sum'), p = P(), sp = speed();
     if (sb) sb.textContent = 'Stamina ' + C.curStamina() + '/' + C.staminaMax() + ' · Speed ' + sp.v + ' · Wounds ' + C.woundCount() + '/10' + (p.cruelty ? ' · Cruelty ' + p.cruelty : '') +
@@ -1135,14 +1181,19 @@
   }
   if (window.CrowsLayout && !window.CrowsRefView) {
     var ids = function (sel) { return Array.prototype.map.call(document.querySelectorAll(sel + ' > section'), function (n) { return n.id; }); };
-    var build = ids('.steps'), play = ids('.play-main');
+    var build = ids('.steps');
+    var pages = { 'gen-build': { blocks: build.concat('summary'), cols: [build, ['summary']], colClass: 'steps' } };
+    SUBTABS.forEach(function (t) {
+      // Growth shares its bonus/trait blocks with Build (sec-advance, sec-traits), moved here like summary is shared.
+      var sids = ids('#sub-' + t[0]).concat(t[0] === 'growth' ? ['sec-advance', 'sec-traits'] : []);
+      pages['gen-play-' + t[0]] = { blocks: sids.concat('summary'), cols: [sids, ['summary']], colClass: 'play-main' };
+    });
     window.CrowsLayout.init({
-      pages: { 'gen-build': { blocks: build.concat('summary'), cols: [build, ['summary']], colClass: 'steps' },
-        'gen-play': { blocks: play.concat('summary'), cols: [play, ['summary']], colClass: 'play-main' } },
+      pages: pages,
       containers: ['main.layout > .steps', 'main.layout > .play-main'],
-      current: function () { return document.body.getAttribute('data-mode') === 'play' ? 'gen-play' : 'gen-build'; },
+      current: function () { return document.body.getAttribute('data-mode') === 'play' ? 'gen-play-' + subtab() : 'gen-build'; },
       narrow: 'clamp(300px, 22vw, 420px)', breakpoint: 1000, nav: document.querySelector('.masthead .actions'),
-      titles: { summary: 'Crow (summary, dice, saving)', 'play-combat': 'Combat' }
+      titles: { summary: 'Crow (summary, dice, saving)', 'play-combat': 'Combat', 'sec-advance': 'Bonus choices', 'sec-traits': 'Traits' }
     });
     layoutOn = true;
   }

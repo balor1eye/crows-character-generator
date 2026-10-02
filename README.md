@@ -27,7 +27,10 @@ What it does:
 8. **Advancement** (optional): enter Total XP for Expertise & Stamina bonuses, characteristic
    bonuses, and trait purchases (for the "Starting With More" rule).
 
-**Play mode** (the *Play* tab in the header) turns the app into a character manager for the table:
+**Play mode** (the *Play* tab in the header) turns the app into a character manager for the table. A sticky
+**vitals strip** (Stamina, AD, wounds, speed, active conditions) stays visible at the top, and the page is split
+into sub-tabs: **Now** (combat, Vitals, Attacks & spells), **Rest & turns**, **Items**, **Growth** (Experience,
+Expertise & Stamina bonuses, and trait buying), and **Log**.
 
 - **Vitals**: current Stamina, AD of worn armor, shields, and parry weapons, speed (with wound and
   condition penalties), wounds, cruelty, coins, and the six conditions. **Take damage** runs it through
@@ -35,7 +38,8 @@ What it does:
   or heal wounds.
 - **Dice**: tests (2d10 + characteristic) with edges/banes, crits, dooms, and tiers; conditions apply
   automatically. After a roll it offers to spend a matching expertise use for +1 tier (never on a doom).
-  Also Miasma RRs (with cruelty), initiative, draw from pack, and plain dice.
+  Also Miasma RRs (with cruelty), initiative, draw from pack, and plain dice. The result shows inline under
+  Attacks & spells as well as in the dice sidebar (desktop only).
 - **Attacks & spells**: one-click attacks with wielded weapons (damage by tier, brutal crits, ammo
   used, the light-weapon bonus for two light weapons or an empty hand, -1 for a parry weapon at 0 AD),
   throws with Melee/Ranged weapons, and castings of wielded spellbooks (the book's usage die, and a
@@ -66,9 +70,10 @@ What it does:
   sheet that dungeon turn isn't rested twice).
 - **Expertise uses**, **carried items** (usage dice, refuelling, ammo, healing potions, using up
   consumables), **magic item slots**, **pet Stamina**, and a **session log**.
-- **Experience**: log recovered treasure (XP = gc / players), which applies after the next rest, and
-  see the next bonus thresholds. New bonuses and trait purchases are chosen in Build > Advancement. In a campaign the
-  Ref awards XP: logging treasure sends the Ref a claim instead, which they use for the award (or dismiss) on the Party tab.
+- **Growth**: log recovered treasure (XP = gc / players), which applies after the next rest, and see the next
+  bonus thresholds; choose new Expertise & Stamina and characteristic bonuses, and buy traits, right there (the
+  same bonus and trait-tree UI as Build > Advancement/Traits). In a campaign the Ref awards XP: logging treasure
+  sends the Ref a claim instead, which they use for the award (or dismiss) on the Party tab.
 
 **Download PDF** builds a fillable, editable PDF:
 
