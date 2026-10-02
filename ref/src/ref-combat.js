@@ -8,7 +8,7 @@
   // From the other files (each call goes to the function there).
   var activePCs = f('activePCs'), beast = f('beast'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
       clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
-      int = f('int'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
+      int = f('int'), lightbox = f('lightbox'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
       rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), sheetOp = f('sheetOp'),
       test = f('test'), testLine = f('testLine');
   var $ = A.$, clone = A.clone, d = A.d, d100 = A.d100, el = A.el, netEdges = A.netEdges, pick = A.pick, plural = A.plural, Rules = A.Rules,
@@ -855,7 +855,10 @@
     var b = beast(c.cref), cb = S().combat, amt = el('input', { type: 'number', class: 'tiny', min: 0, max: 200, value: '', placeholder: 'dmg', 'aria-label': 'Amount' });
     function amount() { return clamp(int(amt.value, 0), 0, 999); }
     var slots = slotsOf(c), linked = c.kind === 'pc' && pcOf(c) && pcOf(c).link && cloudOn(), g = byId(c.grabbedBy), holds = grabbing(c);
+    var art = b && c.kind !== 'pc' && REF.ART.creatures[b.n];
     var head = el('div', { class: 'cbt-top' }, [
+      art ? el('button', { type: 'button', class: 'cbt-art', title: 'View ' + b.n + ' art', 'aria-label': 'View ' + b.n + ' art', onclick: function () { lightbox(b.n, [{ label: '', file: art.file }], art.thumb); } },
+        [el('img', { src: art.thumb, alt: b.n })]) : null,
       el('div', { class: 'cbt-name' }, [inp(c, 'name', { 'aria-label': 'Name' }),
         el('div', { class: 'cbt-meta', text: c.kind === 'pc' ? 'Crow' + (linked ? ' · vitals from their sheet' : '') : b ? b.t + ' · ' + b.sz + ' · P' + b.p + ' · speed ' + b.spd + ' · A ' + signed(b.c[0]) + ' M ' + signed(b.c[1]) + ' S ' + signed(b.c[2]) + (b.rx > 1 ? ' · ' + b.rx + ' reactions' : '') : '' })]),
       el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Stam' }), btnPM('−', function () { var s0 = c.st; c.st = Math.max(0, c.st - 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); }), el('b', { text: String(c.st) }), el('span', { class: 'of', text: '/' + c.stMax }), btnPM('+', function () { var s0 = c.st; c.st = Math.min(c.stMax, c.st + 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); })]),

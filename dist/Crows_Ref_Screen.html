@@ -434,6 +434,8 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .map-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .7rem; margin-top: .6rem; }
 .map-tile { display: flex; flex-direction: column; gap: .25rem; text-align: left; padding: .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--slot); color: var(--ink); font: inherit; cursor: pointer; }
 .map-tile img { width: 100%; height: 150px; object-fit: contain; background: rgba(0, 0, 0, .08); border-radius: 4px; }
+.cbt-art { padding: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--slot); cursor: zoom-in; flex: none; }
+.cbt-art img { display: block; width: 3.5rem; height: 3.5rem; object-fit: cover; }
 
 </style>
 <script>
@@ -4392,7 +4394,7 @@ CROWS.NAME_IDEAS = {
   // From the other files (each call goes to the function there).
   var activePCs = f('activePCs'), beast = f('beast'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
       clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
-      int = f('int'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
+      int = f('int'), lightbox = f('lightbox'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
       rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), sheetOp = f('sheetOp'),
       test = f('test'), testLine = f('testLine');
   var $ = A.$, clone = A.clone, d = A.d, d100 = A.d100, el = A.el, netEdges = A.netEdges, pick = A.pick, plural = A.plural, Rules = A.Rules,
@@ -5239,7 +5241,10 @@ CROWS.NAME_IDEAS = {
     var b = beast(c.cref), cb = S().combat, amt = el('input', { type: 'number', class: 'tiny', min: 0, max: 200, value: '', placeholder: 'dmg', 'aria-label': 'Amount' });
     function amount() { return clamp(int(amt.value, 0), 0, 999); }
     var slots = slotsOf(c), linked = c.kind === 'pc' && pcOf(c) && pcOf(c).link && cloudOn(), g = byId(c.grabbedBy), holds = grabbing(c);
+    var art = b && c.kind !== 'pc' && REF.ART.creatures[b.n];
     var head = el('div', { class: 'cbt-top' }, [
+      art ? el('button', { type: 'button', class: 'cbt-art', title: 'View ' + b.n + ' art', 'aria-label': 'View ' + b.n + ' art', onclick: function () { lightbox(b.n, [{ label: '', file: art.file }], art.thumb); } },
+        [el('img', { src: art.thumb, alt: b.n })]) : null,
       el('div', { class: 'cbt-name' }, [inp(c, 'name', { 'aria-label': 'Name' }),
         el('div', { class: 'cbt-meta', text: c.kind === 'pc' ? 'Crow' + (linked ? ' · vitals from their sheet' : '') : b ? b.t + ' · ' + b.sz + ' · P' + b.p + ' · speed ' + b.spd + ' · A ' + signed(b.c[0]) + ' M ' + signed(b.c[1]) + ' S ' + signed(b.c[2]) + (b.rx > 1 ? ' · ' + b.rx + ' reactions' : '') : '' })]),
       el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Stam' }), btnPM('−', function () { var s0 = c.st; c.st = Math.max(0, c.st - 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); }), el('b', { text: String(c.st) }), el('span', { class: 'of', text: '/' + c.stMax }), btnPM('+', function () { var s0 = c.st; c.st = Math.min(c.stMax, c.st + 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); })]),
@@ -6337,7 +6342,7 @@ CROWS.NAME_IDEAS = {
     $('rules-count').textContent = q ? (hits ? plural(hits, 'match') + ' (whole sections shown when a heading matches)' : 'No matches.') : '';
   }
 
-  A.add({ renderWorld: renderWorld, randomNPC: randomNPC, renderBestiary: renderBestiary, renderMaps: renderMaps, beastCard: beastCard, renderTables: renderTables,
+  A.add({ renderWorld: renderWorld, randomNPC: randomNPC, renderBestiary: renderBestiary, renderMaps: renderMaps, beastCard: beastCard, renderTables: renderTables, lightbox: lightbox,
       parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
 })();
 
