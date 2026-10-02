@@ -81,6 +81,12 @@ expertise uses, wounds, and magic item slots.
 **Save file / Load file** stores the character (including play state) as a small `.json` file. The page also autosaves to
 the browser's local storage.
 
+**Layout**: the 🔒 Layout button in the header unlocks the page (Build, Play, and each Ref Screen tab) so you can drag its
+blocks anywhere, between columns too: the other blocks slide out of the way as you drag, and a block takes the width of
+the column it's over (scaled down if it's too wide for it). Pick the columns (wide + narrow, narrow + wide, two equal,
+three, or one) or Reset, then lock the page again. The arrangement is kept per page in your account when you're logged
+in, and in the browser otherwise. Keyboard: focus a block and use the arrow keys; on a phone, press and hold first.
+
 **Theme**: the ◐ button in the header switches between Auto (follows your device), Light, and Dark. The
 choice is remembered and shared by the Character Generator, the Ref Screen, and the accounts site.
 
@@ -126,6 +132,7 @@ src/play.js                           Play mode: vitals, dice, rests, usage dice
 src/cloud.js                          account autosave, live sync, and merging for both apps (inactive without the accounts server)
 src/refview.js                        the Ref's limited view of a player's shared character
 src/combat.js                         Play mode's live Combat card (targets, attacks sent to the Ref Screen)
+src/layout.js                         rearranging the blocks on a page (both apps), saved to the account
 server/                               the accounts site: PHP API, portal pages, deploy script
 ref/test/                             browser test of a full four-player combat encounter (see ref/test/README.md)
 src/game-data.js                      backgrounds, expertises, item cards, tables

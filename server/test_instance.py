@@ -245,6 +245,17 @@ def smoke():
     check("ending the fight takes it off the player's page", p1.get("combat.mine", id=ch["id"])["combat"] is None)
     fails("acting after the fight is over", 409, lambda: p1.post("combat.act", {"id": ch["id"], "campaign": camp["id"], "action": {"type": "done"}}))
 
+    # page layouts (how each user arranged the blocks on a page)
+    fails("logged out: no layouts", 401, lambda: anon.get("prefs.get"))
+    lay = {"preset": "two", "cols": [["play-vitals", "summary"], ["play-attacks", "bad id!"]]}
+    got = p1.post("prefs.save", {"page": "gen-play", "layout": lay})["prefs"]["layouts"]["gen-play"]
+    check("a player saves a page layout (bad block ids dropped)", got == {"preset": "two", "cols": [["play-vitals", "summary"], ["play-attacks"]]})
+    check("it comes back from prefs.get", p1.get("prefs.get")["prefs"]["layouts"]["gen-play"]["preset"] == "two")
+    check("another user doesn't see it", "gen-play" not in (p2.get("prefs.get")["prefs"].get("layouts") or {}))
+    fails("a malformed layout is refused", 400, lambda: p1.post("prefs.save", {"page": "gen-play", "layout": {"cols": "nope"}}))
+    p1.post("prefs.save", {"page": "gen-play", "layout": None})
+    check("a null layout resets the page", "gen-play" not in (p1.get("prefs.get")["prefs"].get("layouts") or {}))
+
     # account
     prefs = p1.get("account.emailPrefs")
     check("email prefs readable", isinstance(prefs, dict) and prefs["ok"])

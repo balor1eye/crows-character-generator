@@ -58,6 +58,8 @@
   var lastPoll = 0, lastKey = 0;
   var server = false;          // the accounts server answered
   var watches = {};            // change signals being watched: key -> { url, version, onNewer, busy }
+  var meDone = false, meWaiting = [];   // afterMe(): callbacks for when it's known who is logged in
+  function meKnown() { meDone = true; var w = meWaiting; meWaiting = []; w.forEach(function (f) { try { f(user); } catch (e) { /* the caller's problem */ } }); }
 
   function params() {
     var p = {};
@@ -526,7 +528,7 @@
      */
     attach: function (opts) {
       cfg = opts;
-      if (!/^https?:$/.test(location.protocol) || !window.fetch) return;
+      if (!/^https?:$/.test(location.protocol) || !window.fetch) { meKnown(); return; }
       var p = params();
       linkId = cfg.kind === 'characters' ? parseInt(p.link, 10) || null : null;
       call('GET', 'me').then(function (j) {
@@ -534,6 +536,7 @@
         if (cfg.onServer) cfg.onServer();
         if (user && (cfg.kind === 'campaigns' || linkId) && !user.canRef) user = null;
         showChip();
+        meKnown();
         if (!user) {
           if (linkId) showBar('Log in with your Ref account to see this character.', [{ text: 'Log in', cls: 'btn-primary', on: function () { location.href = './#login'; } }]);
           return;
@@ -564,7 +567,7 @@
             { text: 'Home', cls: 'btn-primary', on: function () { location.href = './#home'; } },
             { text: 'Retry', cls: 'btn-ghost', on: function () { location.reload(); } }]);
         });
-      }, function () { /* no accounts server here: stay browser-only */ });
+      }, function () { meKnown(); /* no accounts server here: stay browser-only */ });
       document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushOnExit(); else { poll(); checkSignals(); } });
       document.addEventListener('input', function () { lastKey = Date.now(); }, true);
       window.addEventListener('pagehide', flushOnExit);
@@ -630,6 +633,8 @@
       flush();   // never forced: an existing record still merges with changes made elsewhere
     },
 
+    /* Call fn(user) once it's known who is logged in (user is null for a guest, offline, or without the accounts server). */
+    afterMe: function (fn) { if (meDone) fn(user); else meWaiting.push(fn); },
     /* For the Ref Screen: calls the API with this page's login. */
     api: function (method, action, query, body) { return call(method, action, query, body); }
   };

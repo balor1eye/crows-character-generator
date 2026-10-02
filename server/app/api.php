@@ -1112,6 +1112,49 @@ function a_combat_act(): array {
     return ['id' => $aid];
 }
 
+// ---------------------------------------------------------------- page layouts
+/*
+ * How a user arranged the blocks on each page of the apps (unlock the page, drag blocks between columns, lock it).
+ * prefs.save merges one page at a time, so two devices arranging different pages don't undo each other; a null
+ * layout resets that page to the default. Page names and block ids are short words; the whole thing is capped.
+ */
+const PREFS_MAX_BYTES = 65536;
+function prefs_of(int $userId): array {
+    $d = json_decode((string)q('SELECT data FROM user_prefs WHERE user_id = ?', [$userId])->fetchColumn(), true);
+    return is_array($d) ? $d : [];
+}
+function clean_layout($l): ?array {
+    if ($l === null) return null;
+    if (!is_array($l) || !is_array($l['cols'] ?? null) || count($l['cols']) < 1 || count($l['cols']) > 4) fail('That page layout could not be read.');
+    $preset = is_string($l['preset'] ?? null) && preg_match('/^[a-z-]{1,20}$/', $l['preset']) ? $l['preset'] : 'main-side';
+    $cols = [];
+    foreach ($l['cols'] as $col) {
+        if (!is_array($col) || count($col) > 40) fail('That page layout could not be read.');
+        $cols[] = array_values(array_filter($col, function ($id) { return is_string($id) && preg_match('/^[A-Za-z0-9_-]{1,40}$/', $id); }));
+    }
+    return ['preset' => $preset, 'cols' => $cols];
+}
+function a_prefs_get(): array {
+    $s = need_login();
+    $d = prefs_of($s['id']);
+    $d['layouts'] = (object)($d['layouts'] ?? []);   // {} rather than [] when there are none
+    return ['prefs' => (object)$d];
+}
+function a_prefs_save(): array {
+    $s = need_login();
+    $page = str('page', 40);
+    if (!preg_match('/^[a-z0-9-]{1,40}$/', $page)) fail('Unknown page.');
+    $layout = clean_layout(body()['layout'] ?? null);
+    $d = prefs_of($s['id']);
+    if (!isset($d['layouts']) || !is_array($d['layouts'])) $d['layouts'] = [];
+    if ($layout === null) unset($d['layouts'][$page]); else $d['layouts'][$page] = $layout;
+    if (!$d['layouts']) $d['layouts'] = new stdClass();
+    $json = enc($d);
+    if (strlen($json) > PREFS_MAX_BYTES) fail('Too many saved layouts.', 413);
+    q('INSERT INTO user_prefs (user_id, data, updated_at) VALUES (?,?,?) ON DUPLICATE KEY UPDATE data = VALUES(data), updated_at = VALUES(updated_at)', [$s['id'], $json, now()]);
+    return ['prefs' => json_decode($json)];
+}
+
 // ---------------------------------------------------------------- admin
 function a_admin_users(): array {
     need_admin();
@@ -1230,6 +1273,8 @@ const ACTIONS = [
     'combat.actions' => ['GET', 'a_combat_actions', false],
     'combat.mine' => ['GET', 'a_combat_mine', false],
     'combat.act' => ['POST', 'a_combat_act', true],
+    'prefs.get' => ['GET', 'a_prefs_get', false],
+    'prefs.save' => ['POST', 'a_prefs_save', true],
     'notes.list' => ['GET', 'a_notes_list', false],
     'notes.dismiss' => ['POST', 'a_notes_dismiss', true],
     'admin.users' => ['GET', 'a_admin_users', false],

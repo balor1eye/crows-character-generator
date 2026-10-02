@@ -1419,7 +1419,7 @@
   function newPC() { return { id: nid(), name: '', player: '', bg: '', feature: '', A: 0, M: 0, S: 0, stMax: 7, st: 7, ad: 0, wounds: 0, cruelty: 0, txp: 0, pending: 0, status: 'active', conn: '', rel: '', benefit: '', miasma: [], notes: '' }; }
 
   // ================================================================== RENDERING
-  function setTab(t) { tab = t; document.body.setAttribute('data-tab', t); try { localStorage.setItem(TAB_KEY, t); } catch (e) { /* ignore */ } render(); window.scrollTo(0, 0); }
+  function setTab(t) { tab = t; document.body.setAttribute('data-tab', t); if (window.CrowsLayout) window.CrowsLayout.apply(); try { localStorage.setItem(TAB_KEY, t); } catch (e) { /* ignore */ } render(); window.scrollTo(0, 0); }
   function renderTabbar() {
     var bar = $('tabbar'); bar.innerHTML = '';
     TABS.forEach(function (t) {
@@ -1431,11 +1431,13 @@
     });
     $('camp-name').textContent = state.name || state.village.name || '';
   }
+  var layoutFitQueued = false;
   function render() {
     // A fight with linked crows needs their sheets loaded (Party status), whichever tab is open: hits land there.
     if (tab !== 'party' && cloudOn() && S().combat.list.some(function (x) { var p = pcOf(x); return p && p.link; })) renderStatus();
     renderTabbar();
     renderSide();
+    if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
     ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, world: renderWorld, bestiary: renderBestiary, tables: renderTables, rules: renderRules })[tab]();
     tick();
   }
@@ -2636,6 +2638,17 @@
     try { tab = localStorage.getItem(TAB_KEY) || 'session'; } catch (e) { tab = 'session'; }
     if (!TABS.some(function (t) { return t[0] === tab; })) tab = 'session';
     document.body.setAttribute('data-tab', tab);
+    // Rearrangeable pages (src/layout.js): each tab is a page of its cards plus the sidebar (timer, dice, log).
+    if (window.CrowsLayout) {
+      var pages = {};
+      TABS.forEach(function (t) {
+        var ids = Array.prototype.map.call(document.querySelectorAll('#page-' + t[0] + ' > section'), function (n) { return n.id; });
+        pages['ref-' + t[0]] = { blocks: ids.concat('side'), cols: [ids, ['side']], colClass: 'page' };
+      });
+      window.CrowsLayout.init({ pages: pages, containers: ['main.layout > .pages'], current: function () { return 'ref-' + tab; },
+        narrow: 'clamp(320px, 22vw, 420px)', breakpoint: 1080, nav: document.querySelector('.masthead .actions'),
+        titles: { side: 'Timer, dice & log', 'sec-enc-run': 'Running encounter' } });
+    }
 
     var dl = el('datalist', { id: 'bg-list' }, REF.BACKGROUNDS.map(function (b) { return el('option', { value: b[0] }); }));
     document.body.appendChild(dl);

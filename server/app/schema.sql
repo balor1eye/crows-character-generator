@@ -222,3 +222,12 @@ CREATE TABLE IF NOT EXISTS combat_actions (
   CONSTRAINT fk_caction_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
   CONSTRAINT fk_caction_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A user's settings for the apps, as JSON: { layouts: { <page>: { preset, cols: [[block ids]...] } } } (how they arranged
+-- the blocks on each page of the Character Generator, Play, and the Ref Screen).
+CREATE TABLE IF NOT EXISTS user_prefs (
+  user_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  data MEDIUMTEXT NOT NULL,
+  updated_at DATETIME NOT NULL,
+  CONSTRAINT fk_userprefs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

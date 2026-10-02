@@ -83,6 +83,17 @@ opportunity attacks, and the Grab, Knockback, and Escape Grab maneuvers.
 python3 ref/test/run_engine_test.py
 ```
 
+## Rearranging pages (`layout_test.js`, run by `run_layout_test.py`)
+
+Drags blocks with pointer events in both local builds: unlocking, the placeholder and animations during a drag, the
+dragged block taking the target column's width, keyboard moves, a wide block scaled to fit a narrow column, the column
+presets, Reset, Build/Play and each Ref Screen tab keeping their own arrangements, and everything surviving a reload.
+`--test-instance` also checks that test_player's arrangement is saved to (and comes back from) the account.
+
+```bash
+python3 ref/test/run_layout_test.py [--test-instance]
+```
+
 ## Live combat with a player (`run_live_combat_test.py`)
 
 Runs on the test instance only, in two headless Firefoxes: test_ref in the Ref Screen and test_player on the Play

@@ -65,7 +65,7 @@ var CROWS = [['Ash', 11, 'Strength', 9], ['Briar', 7, 'Agility', 7], ['Corvin', 
 (async function () {
   /* ---------------------------------------------------------------- 1. an empty campaign */
   goTab('Village');
-  var nameIn = qa('#page-village input').filter(function (i) { return i.placeholder === 'optional'; })[0];
+  var nameIn = qa('#sec-village input').filter(function (i) { return i.placeholder === 'optional'; })[0];
   type(nameIn, 'Combat test ' + new Date().toISOString().slice(0, 16));
   check(/^Combat test/.test(saved().name), 'named the campaign');
   check(saved().party.length === 0 && saved().encounters.length === 0 && saved().log.length === 0, 'it starts empty');

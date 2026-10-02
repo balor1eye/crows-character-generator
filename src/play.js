@@ -71,6 +71,7 @@
   }
   function applyMode(m) {
     document.body.setAttribute('data-mode', m);
+    layoutSync();
     $('tab-build').setAttribute('aria-pressed', String(m === 'build'));
     $('tab-play').setAttribute('aria-pressed', String(m === 'play'));
     var what = m === 'play' ? 'Play' : 'Character Generator', camp = m === 'play' ? campaignName() : null;
@@ -963,6 +964,30 @@
     var sb = $('play-sum'), p = P(), sp = speed();
     if (sb) sb.textContent = 'Stamina ' + C.curStamina() + '/' + C.staminaMax() + ' · Speed ' + sp.v + ' · Wounds ' + C.woundCount() + '/10' + (p.cruelty ? ' · Cruelty ' + p.cruelty : '') +
       (Object.keys(p.conds).length ? ' · ' + Object.keys(p.conds).join(', ') : '');
+  }
+
+  /*
+   * Rearrangeable pages (src/layout.js): Build and Play are each a page of their cards plus the Crow sidebar. Not in the
+   * Ref's view of a player's sheet, which keeps its layout.
+   */
+  var layoutOn = false, fitQueued = false;
+  function layoutSync() {
+    if (!layoutOn) return;
+    window.CrowsLayout.apply();
+    if (!fitQueued) { fitQueued = true; requestAnimationFrame(function () { fitQueued = false; window.CrowsLayout.fit(); }); }
+  }
+  if (window.CrowsLayout && !window.CrowsRefView) {
+    var ids = function (sel) { return Array.prototype.map.call(document.querySelectorAll(sel + ' > section'), function (n) { return n.id; }); };
+    var build = ids('.steps'), play = ids('.play-main');
+    window.CrowsLayout.init({
+      pages: { 'gen-build': { blocks: build.concat('summary'), cols: [build, ['summary']], colClass: 'steps' },
+        'gen-play': { blocks: play.concat('summary'), cols: [play, ['summary']], colClass: 'play-main' } },
+      containers: ['main.layout > .steps', 'main.layout > .play-main'],
+      current: function () { return document.body.getAttribute('data-mode') === 'play' ? 'gen-play' : 'gen-build'; },
+      narrow: 'clamp(300px, 22vw, 420px)', breakpoint: 1000, nav: document.querySelector('.masthead .actions'),
+      titles: { summary: 'Crow (summary, dice, saving)', 'play-combat': 'Combat' }
+    });
+    layoutOn = true;
   }
 
   $('tab-build').addEventListener('click', function () { setMode('build'); });
