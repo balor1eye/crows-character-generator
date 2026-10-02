@@ -49,6 +49,7 @@
       claims: (Array.isArray(play.xpClaims) ? clone(play.xpClaims) : []).filter(function (c) {   // treasure the player asks the Ref to award XP for
         return c && (play.claimsAnswered || []).indexOf(c.id) < 0;
       }) };
+    if (typeof s.art === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(s.art) && s.art.length <= 200000) pc.art = s.art;
     return pc;
   }
 

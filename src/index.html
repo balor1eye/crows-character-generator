@@ -87,6 +87,9 @@
         <label class="field">Player
           <input type="text" id="in-player" maxlength="40" autocomplete="off">
         </label>
+        <div class="field span2 art-field"><span>Art <small>(shown to your Ref in combat)</small></span>
+          <span class="with-btn"><img id="char-art" class="char-art" alt="" hidden><button type="button" class="btn btn-small" id="btn-art">Add art</button><button type="button" class="btn btn-small btn-ghost" id="btn-art-clear" hidden>Remove</button><input type="file" id="in-art" accept="image/*" hidden></span>
+        </div>
         <label class="field span2">Distinguishing feature <small>(a tattoo, a smell, a voice, a personality quirk...)</small>
           <span class="with-btn"><input type="text" id="in-feature" maxlength="120" autocomplete="off"><button type="button" class="btn btn-small" id="btn-rand-feature" title="Random feature">Random</button></span>
         </label>

@@ -82,6 +82,9 @@
     [['in-name', 'name'], ['in-player', 'player'], ['in-feature', 'feature']].forEach(function (p) {
       if (document.activeElement !== $(p[0])) $(p[0]).value = state[p[1]];
     });
+    var art = typeof state.art === 'string' ? state.art : '';
+    $('char-art').hidden = !art; if (art) $('char-art').src = art;
+    $('btn-art').textContent = art ? 'Replace art' : 'Add art'; $('btn-art-clear').hidden = !art;
   }
 
   // The 18 expertises with their uses. editable: +/- buttons to assign the bonus uses from advancement (rendered in Advancement).
@@ -309,6 +312,22 @@
     function text(id, key) { $(id).addEventListener('input', function () { state[key] = this.value; renderSummary(); save(); }); }
     text('in-name', 'name'); text('in-player', 'player'); text('in-feature', 'feature'); text('in-village', 'village');
     text('in-conn-name', 'connName'); text('in-conn-rel', 'connRel'); text('in-notes', 'notes');
+    // Character art: shrunk to a small JPEG kept in the save itself, so it follows the sheet to the Ref.
+    $('btn-art').addEventListener('click', function () { $('in-art').click(); });
+    $('btn-art-clear').addEventListener('click', function () { delete state.art; render(); save(); });
+    $('in-art').addEventListener('change', function () {
+      var file = this.files && this.files[0]; this.value = ''; if (!file) return;
+      var url = URL.createObjectURL(file), img = new Image();
+      img.onerror = function () { URL.revokeObjectURL(url); alert('That file isn\'t a picture this browser can open.'); };
+      img.onload = function () {
+        var k = Math.min(1, 480 / Math.max(img.naturalWidth, img.naturalHeight)), c = document.createElement('canvas'), g = c.getContext('2d');
+        c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
+        g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
+        URL.revokeObjectURL(url);
+        state.art = c.toDataURL('image/jpeg', .8); render(); save();
+      };
+      img.src = url;
+    });
     $('btn-rand-name').addEventListener('click', function () { state.name = randomName(); render(); });
     $('btn-rand-feature').addEventListener('click', function () { state.feature = pick(CROWS.NAME_IDEAS.feature); render(); });
 

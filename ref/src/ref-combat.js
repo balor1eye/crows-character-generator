@@ -855,10 +855,10 @@
     var b = beast(c.cref), cb = S().combat, amt = el('input', { type: 'number', class: 'tiny', min: 0, max: 200, value: '', placeholder: 'dmg', 'aria-label': 'Amount' });
     function amount() { return clamp(int(amt.value, 0), 0, 999); }
     var slots = slotsOf(c), linked = c.kind === 'pc' && pcOf(c) && pcOf(c).link && cloudOn(), g = byId(c.grabbedBy), holds = grabbing(c);
-    var art = b && c.kind !== 'pc' && REF.ART.creatures[b.n];
+    var pcArt = c.kind === 'pc' && pcOf(c) && pcOf(c).art, art = pcArt ? { file: pcArt, thumb: pcArt } : b && c.kind !== 'pc' && REF.ART.creatures[b.n];
     var head = el('div', { class: 'cbt-top' }, [
-      art ? el('button', { type: 'button', class: 'cbt-art', title: 'View ' + b.n + ' art', 'aria-label': 'View ' + b.n + ' art', onclick: function () { lightbox(b.n, [{ label: '', file: art.file }], art.thumb); } },
-        [el('img', { src: art.thumb, alt: b.n })]) : null,
+      art ? el('button', { type: 'button', class: 'cbt-art', title: 'View ' + c.name + ' art', 'aria-label': 'View ' + c.name + ' art', onclick: function () { lightbox(c.name, [{ label: '', file: art.file }], art.thumb); } },
+        [el('img', { src: art.thumb, alt: c.name })]) : null,
       el('div', { class: 'cbt-name' }, [inp(c, 'name', { 'aria-label': 'Name' }),
         el('div', { class: 'cbt-meta', text: c.kind === 'pc' ? 'Crow' + (linked ? ' · vitals from their sheet' : '') : b ? b.t + ' · ' + b.sz + ' · P' + b.p + ' · speed ' + b.spd + ' · A ' + signed(b.c[0]) + ' M ' + signed(b.c[1]) + ' S ' + signed(b.c[2]) + (b.rx > 1 ? ' · ' + b.rx + ' reactions' : '') : '' })]),
       el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Stam' }), btnPM('−', function () { var s0 = c.st; c.st = Math.max(0, c.st - 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); }), el('b', { text: String(c.st) }), el('span', { class: 'of', text: '/' + c.stMax }), btnPM('+', function () { var s0 = c.st; c.st = Math.min(c.stMax, c.st + 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); })]),
