@@ -23,6 +23,7 @@ Claude Code (`claude`) is available as a subprocess. Use it selectively — defe
 
 ## Deploying the accounts site (server/)
 
+- **SSH key:** `~/site5/id_rsa` (passphrase in `~/site5/dsh_rsa_key_password`). The key must be usable for `joshuara@shared178.accountservergroup.com`.
 - **Deploy only to the test instance** (https://joshuaramsey.com/crows-test/) unless the user explicitly says to
   deploy to production for that change. `server/deploy.sh` does this by default.
 - **Production** (https://joshuaramsey.com/crows/) gets changes by promoting the tested instance:
