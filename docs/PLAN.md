@@ -1,62 +1,137 @@
 # UX streamlining plan (remaining phases)
 
 Done: phase 0 (party rests and XP claims on linked sheets) and phase 1 (src/shared/, split app.js and ref.js), in 658e657.
-Each phase ships on its own. After each: rebuild dist/, `server/deploy.sh`, then on the test instance run `test_instance.py smoke`,
-`ref/test/run_live_rest_test.py`, `ref/test/run_live_combat_test.py`, and `run_combat_test.py --test-instance`. Run them in the
-background with `python3 -u`, never piped. Promote to production only when asked (CLAUDE.md).
-Order: 2, 5, 6, 3, 4.
+Remaining phases, in this order: **2, 5, 6, 3, 4**. Do one phase per session, then commit (see Workflow). Tick its boxes here and
+commit this file with it.
 
-## Phase 2: Play mode by situation (src/play.js, src/combat.js, src/app.css)
-- A sticky vitals strip (Stamina, AD, wounds, speed, conditions, quick ±) plus four sub-tabs:
-  - **Now**: live combat, or attacks and dice.
-  - **Rest & turns**: rest choices, DT, magic slots, pets.
-  - **Items**: one inventory screen.
-  - **Growth**: XP, bonuses, buying traits.
-  
-  Keep src/layout.js blocks working inside each sub-tab.
-- Show a roll's result inline under the button that rolled it, with the expertise and chaos follow-ups there too. On mobile the sidebar
-  roller goes (app.css puts .summary at order:-1 under 1000px).
-- Move bonus choices and trait buying into Growth, reusing build-view.js (renderAdvance, renderTraits). Drop the gotoBuild links.
-- Phone order: vitals strip, then the sub-tab. The Crow summary becomes a collapsible header.
+## Workflow (every phase)
+
+1. **Find code** with `graft grep "<name>"` or `graft ask "<question>" --source`. Function names below are current; line numbers drift.
+2. **Build** after any change to src/ or ref/src/. The system python lacks the build deps, so use a venv:
+   ```bash
+   python3 -m venv /tmp/crows-venv && /tmp/crows-venv/bin/pip install -q -r build/requirements.txt   # once per machine
+   /tmp/crows-venv/bin/python build/build.py && /tmp/crows-venv/bin/python ref/build/build.py
+   ```
+3. **Local tests** (headless Firefox via the snap geckodriver). Run them with the Bash sandbox disabled, in the background,
+   output to a log file, `python3 -u`, never piped through grep or tail:
+   ```bash
+   python3 -u ref/test/run_engine_test.py; python3 -u ref/test/run_combat_test.py; python3 -u ref/test/run_layout_test.py
+   ```
+4. **Look at it**: create `.claude/launch.json` with an http server on `dist/` (`python3 -m http.server 8765 --directory dist`), open
+   it with the browser pane's preview_start, and click through what changed. Check the console for errors. Delete launch.json afterwards.
+5. **Deploy to the test instance only**: `server/deploy.sh`. Then run, in the background as above:
+   ```bash
+   python3 -u server/test_instance.py smoke && python3 -u ref/test/run_live_rest_test.py && \
+   python3 -u ref/test/run_live_combat_test.py && python3 -u ref/test/run_combat_test.py --test-instance
+   ```
+   Each live test takes about 8 minutes. Afterwards, `pgrep -af geckodriver` must be empty; kill leftovers with
+   `snap run --shell firefox -c "kill <pid>"`.
+6. **Commit** on a branch, then merge into main when the user agrees. Don't push or promote unless asked. Never run `server/promote.sh`
+   or `deploy.sh --production` on your own (CLAUDE.md). Never type test passwords into a browser: use `server/test_instance.py`.
+7. **Docs**: update README.md (the user-facing feature list) and ref/test/README.md if tests changed.
+
+## How the code is put together
+
+- **Character Generator**: src/index.html loads, in order: shared/dom.js, dice.js, rules.js (window.CrowsDom, CrowsDice,
+  CrowsRules), cloud.js, refview.js, layout.js, then state.js, inventory.js, build-view.js, pdf.js, app.js (namespace
+  **window.CrowsGen**), then play.js and combat.js. play.js and combat.js use `window.CrowsApp.core`, which app.js sets.
+- **Ref Screen**: ref/src/index.html loads the same shared files, then ref-core.js, ref-encounters.js, ref-travel.js,
+  ref-session.js, ref-combat.js, ref-village.js, ref-party.js, ref-reference.js, ref.js (namespace **window.CrowsRefApp**).
+- **Rules for the split files**:
+  - Each file is an IIFE: `var A = window.<NS>, f = A.fwd;`, then a `var x = f('x')` forwarder for each function it calls from
+    another file, then `var C = A.C` for constants from earlier files. It ends with `A.add({...})` exporting its top-level names.
+  - A new function used across files goes in its file's A.add, plus a forwarder in each file that calls it.
+  - `state` (and `tab` in the Ref Screen) are reassigned only through `A.set('state', v)`. Every file keeps its own copy via `A.share`.
+  - Run `node --check <file>` after editing.
+- **Rendering**: everything re-renders from state (`C.render()` / ref-core `render()`).
+  - play.js: `render()` calls `renderVitals`, `renderTime`, `renderAttacks`, `renderExp`, `renderItems`, `renderAdvance`,
+    `renderGear`, `renderLog`, `renderRoller`, each filling a `<section id="play-…">` through `card(id, title, kids)`.
+  - Ref Screen: `render()` in ref-core.js dispatches on `tab`; `renderTabbar`/`setTab` are there too.
+  - Pages are blocks that src/layout.js can rearrange: section ids are block ids, and new sections need entries there (see
+    `layoutSync` in play.js, and `CrowsLayout.init` in ref.js).
+- **Ref → player sheet**: `sheetOp(p, op)` (ref-party.js) applies `op` to the party entry (`applyOp`) and delivers it to the linked
+  sheet's `CrowsPlay.refChange(op)`, which runs in a hidden iframe per crow (Party status, `renderStatus`/`sheetWin`). That sheet saves
+  through `link.save`. The fields a Ref may write are SHARED_FIELDS in server/app/api.php and LINK_FIELDS in src/cloud.js, and the
+  two must match.
+- **Live fight**: the Ref Screen publishes with `publicCombat()`/`publish()` (ref-combat.js → `combat.publish`). The player reads
+  `combat.mine` in src/combat.js (`load`, `renderView`, `renderAct`, `targetBar`) and sends `combat.act`.
+
+## Phase 2: Play mode by situation (src/play.js, src/combat.js, src/index.html, src/app.css)
+
+- [ ] Add a sticky **vitals strip** at the top of `.play-main`: Stamina with ±1 and Full, AD now/max, wounds/10, speed, active
+  conditions as chips. Reuse the logic from `renderVitals`; the full Vitals card stays.
+- [ ] Add **sub-tabs** in Play: Now (`play-combat`, `play-vitals`, `play-attacks`, the dice), Rest & turns (`play-time`,
+  `play-gear`), Items (`play-items`, `play-exp`), Growth (`play-advance` and the new trait/bonus block), Log (`play-log`).
+  - Store the tab in localStorage, like MODE_KEY. Sections outside the tab get `hidden`.
+  - layout.js must treat each sub-tab as its own page: add a page id per sub-tab in the `CrowsLayout.init` call, and have
+    `current()` return it.
+- [ ] Show **roll results inline**: `renderRoller` builds the result box (`.roll-result`). Make it a function `resultBox(r)` and
+  render it under the Attacks card (and the dice buttons) when the roll came from there. Keep the sidebar box on desktop only (CSS
+  under 1000px). combat.js `rollNote(r)` must still attach to it.
+- [ ] Do **Growth in Play**: render the Expertise & Stamina bonus choices and trait buying inside `play-advance`, by calling
+  build-view.js's `renderAdvance`/`renderTraits` logic. Export what's needed through A.add and use it via `window.CrowsApp.core`.
+  Remove the `gotoBuild` links.
+- [ ] **Phone**: under 700px, the summary column (`.summary`) collapses into a header. Order: vitals strip, then the sub-tab.
+- [ ] Tests:
+  - run_live_combat_test.py selectors assume `#play-combat`, `#play-attacks`, `.roll-result`, `#play-items`. Keep those ids, or
+    update the test to switch to the right sub-tab first.
+  - Add a check that the sub-tab choice survives a reload.
 
 ## Phase 5: Ref Screen (ref/src/)
-- Group the tabs:
-  - **Run**: Session, Encounters, Travel.
-  - **Campaign**: Party, Village, World.
-  - **Reference**: Bestiary, Tables, Rules, behind one search.
-  
-  TABS is in ref-core.js.
-- One combat tracker: it lives in the running encounter. Session shows a "Fight in progress" link instead of the second combatUI.
-- Sidebar: timer, dice, recent log. Remove the Session log card. Move the invite link (renderInvite) to the Party tab.
-- Replace the Party status iframes (renderStatus, statusFrames, sheetOp via sheetWin) with tiles drawn from link.get data. Changes still
-  go through refChange ops: apply them by loading the sheet only when needed, or move refChange's logic into src/shared/ so the Ref
-  Screen can apply ops to the data and save with link.save itself. Load the full sheet only on Open sheet.
-- Start session (number +1, archive the log) and End session (award XP from claims and the greed bonus, prompt the village cycle).
 
-## Phase 6: session state on the player's page
-- Publish a `session` part with the fight (combat.publish, publicCombat in ref-combat.js): DT, timer end time, greed bonus, rest
-  active, signalled encounter. combat.js shows it as a bar in Play.
-- When the Ref starts a rest, linked players get a rest prompt (food, activity, Tend Wounds). Their choices go with the rest op, or
-  defaults apply. doRest(o) in play.js already takes these choices.
+- [ ] **Tab groups**: TABS in ref-core.js becomes groups — Run (session, encounters, travel), Campaign (party, village, world),
+  Reference (bestiary, tables, rules). Show the group labels in the tab bar (`renderTabbar`); tab ids stay the same.
+- [ ] **One combat tracker**: `renderCombat` (Session) shows only a summary line and a "Go to the fight" button when an encounter is
+  running (`runningEnc()`). Otherwise it keeps the full `combatUI(false)`. Don't remove `combatUI`: `renderEncRun` uses it.
+- [ ] **Sidebar**: drop the `sec-log` card (`renderLogCard`) from Session, and give the sidebar log (`renderSideLog`) a "Show all"
+  toggle in its place (its "full log" link points at `sec-log` now: repoint it). Move
+  `renderInvite` output from `#side-invite` into a new `sec-invite` card on the Party page (index.html + layout block lists).
+- [ ] **Party status without iframes**:
+  - Move the body of `CrowsPlay.refChange` (play.js) and the sheet math it needs into a shared function that works on a character
+    object: `applyRefChange(char, op)` in a new src/shared/sheet.js, used by play.js and the Ref Screen.
+  - The Ref Screen then applies ops to `link.get` data and saves with `link.save` (fields as `flushLinked` in cloud.js does,
+    including the 409 merge).
+  - Draw lightweight tiles from that data, replacing the iframes in `renderStatus`.
+  - Biggest task; keep the iframe path until the live tests pass on the new one.
+- [ ] **Sessions**: a Start session button (session `n` +1, archive the log the way the History card does) and End session
+  (pre-filled XP award from open claims (`allClaims()`) with the greed bonus, and a reminder to end the village cycle).
+- [ ] Tests: run_combat_test.py and run_live_*.py click tabs by name (`button('Party', q('#tabbar'))`), so keep the button labels.
+  Add live-test checks that a Ref's hit lands on the sheet without an iframe.
 
-## Phase 3: Build flow (src/build-view.js, src/index.html)
-- A guided flow: progress across the top, a checklist that also shows on mobile (it's hidden under 1000px), Next buttons. Fold step 4
-  (Expertises & Stamina, all derived) into steps 1–2 as a read-only display.
-- One inventory component (the slot grid) for both Build and Play. Play adds usage dice, ammo, and the ground.
-- A new crow autosaves as a draft in the account (cloud.js manualNew/hold: add a draft flag on the server). "Save character" becomes
-  "Finish crow".
-- Header: on the accounts site, move Save file/Load file/Start over into a "⋯" menu.
+## Phase 6: session state for players (ref-combat.js, src/combat.js, src/play.js)
 
-## Phase 4: Portal (server/public/portal.js)
-- Merge My characters and Play into one Crows list. Each card shows a status (draft / ready / in *campaign* / handed to …) and one main
-  button: Continue building, Play, or Open. Everything else goes in a menu.
-- Home: your crows and your campaigns, with News at the top.
+- [ ] Add `session: { dt, endAt, running, greed, rest: active, pending }` to what `publicCombat()` returns. It's published even
+  with no fight: today an inactive fight is `{active:false}`, so extend that, and check `a_combat_publish`/`a_combat_mine` in
+  server/app/api.php still accept it (size limit COMBAT_MAX_BYTES).
+- [ ] In combat.js, show a session bar at the top of Play: DT number, time left (count down from `endAt`), greed bonus,
+  "Resting" / "Encounter signalled".
+- [ ] **Rest prompt**: when `session.rest` is active, the Play Rest card shows "The party is resting" with the food/activity
+  choices. The player sends them with `combat.act` type `rest` (add it to ACTION_TYPES and clean_action in api.php). The Ref
+  Screen's `finishRest` (ref-session.js) puts each crow's choices into its `{ rest: {...} }` op, and `refRest` → `doRest(o)` in
+  play.js already accepts food, activity, repair, study, useKit, tended, tendedKit, caretaker.
+- [ ] Tests: extend run_live_rest_test.py (the player picks Hearty Ration and Repair Armor, then the Ref finishes the rest, and
+  both apply).
 
-## Code notes
-- Split files share a namespace: window.CrowsGen (src/state.js first, app.js last) and window.CrowsRefApp (ref-core.js first, ref.js
-  last). Each file ends with A.add({...}). Calls into another file go through `f('name')` forwarders at the top. A top-level function
-  used by another file must be in its A.add, plus a forwarder in the file that uses it. state (and tab in the Ref Screen) change only
-  through A.set('state', v).
-- What a Ref may write on a linked sheet: SHARED_FIELDS (server/app/api.php) and LINK_FIELDS (src/cloud.js), which must match. The
-  Ref only adds to play.claimsAnswered; only the player's sheet changes play.xpClaims.
-- Never type test passwords into a browser: use server/test_instance.py.
+## Phase 3: Build flow (src/build-view.js, src/index.html, src/app.css, src/cloud.js, server/app/api.php)
+
+- [ ] **Steps**: a progress bar over the step cards (sections `sec-background` … `sec-notes`), "Next" buttons, and the checklist
+  (`checklist()` in build-view.js) visible on mobile too (app.css hides `.summary .checklist` under 1000px).
+- [ ] Fold step 4 (`sec-expertise`, `renderExpertise`) into a read-only part of step 2. Bonus allocation moves to Growth (phase 2).
+- [ ] **One inventory component**: Play's Items card (`renderItems`/`itemRow` in play.js) and Build's slot grid
+  (`renderInventory`) become one renderer with a `mode` ('build' | 'play'). Play adds usage dice, ammo, and the ground zone.
+- [ ] **Drafts**:
+  - A new crow saves to the account at once as a draft. Add a `draft` column to `characters` in server/app/schema.sql (additive,
+    via install.php) and return it from list.
+  - cloud.js `manualNew`/`hold`/`saveNow` becomes "save as draft, then Finish crow".
+  - The portal shows drafts (phase 4).
+- [ ] **Header**: on the accounts site (`CrowsCloud.server`), put Save file, Load file, and Start over in a "⋯" menu.
+
+## Phase 4: Portal (server/public/portal.js, portal.css)
+
+- [ ] Merge `viewCharacters` and `viewPlay` into one "Crows" list (`listPage('characters', …)`). Each row shows its status chip
+  (draft / ready / in *campaign*, from `characters.campaigns` / handed to …) and one main button by status: Continue building
+  (`?id=N&mode=build`), Play (`play?id=N`), or Open. The other buttons go in a "More" menu. Keep `#play` working as an alias.
+- [ ] Home (`viewHome`): News, then "Your crows" (the top few, plus a link to all), then "Your campaigns" for Refs, then tiles for
+  Find a campaign and Admin.
+- [ ] Tests: the smoke test only checks the API. Check the portal in the browser pane (it's already logged in on the test instance
+  as test_player; don't log in with passwords).
