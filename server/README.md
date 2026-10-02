@@ -35,12 +35,20 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
   pass it on. The owner keeps full access, sees "Handed to …" on the crow, and can **Take back control** any time;
   the other player can also **Hand back**. Each side is told in News, and a sheet still open on the other player's
   page stops saving within a second or two of being taken back (it never saves a copy). One account at a time.
+  A Ref can also **Take control** of a linked crow that's in play or sitting out in one of their own campaigns
+  (Party status tile, or More on its party card), without waiting to be handed it: the sheet opens for them as if
+  the player had handed it over, and the player (and anyone it was handed to, who loses it) is told. The player
+  takes it back as usual.
 - **Inviting players to a campaign:** it also works the other way. On the Ref Screen's Party tab, **Invite players**
   makes a link to the campaign (replace it or turn it off there too). A player who opens it, logging in or signing
   up first if needed, picks one of their crows and asks to join, and can withdraw the request while it's waiting.
   The request shows up in the Ref Screen within a second or two, with a count on the Party tab. **Accept**
   gives the Ref the same access a character link would and adds the crow to the party; **Decline** lets the
   player ask again. A campaign holds at most 30 waiting requests.
+- **Finding a campaign:** under Invite players a Ref can tick **List in Find a campaign** and add a short note
+  (who they're looking for, when they play). Any logged-in player can then search listed campaigns from **Find a
+  campaign** on the home page (by name, summary, note, or the Ref's username), open one, and ask to join exactly
+  as through an invite link. Unticking it takes the campaign out of search; requests already made stay.
   Either way the player is told: a notice pops up within a second or two on any app page they have open (with a
   button to open the accepted crow), and it stays in **News** on their home page, with a count on Home, until
   they dismiss it. They're also emailed, unless they untick that under **Email notifications** on their Account page.

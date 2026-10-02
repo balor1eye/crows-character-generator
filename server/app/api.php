@@ -844,6 +844,39 @@ function a_control_take(): array {
     return [];
 }
 
+/**
+ * A Ref takes control of a crow that's in play (or sitting out) in one of their own campaigns, as if its player
+ * had handed it to them: say the player can't make a session. The Ref then opens, edits, and plays the whole
+ * sheet. The player is told and can take it back as usual; anyone it was handed to before loses it and is told.
+ * The id is the Ref's link to the character (character_access), as in the Ref Screen's party.
+ */
+function a_control_claim(): array {
+    $s = need_ref('Only Refs can take control of a crow in their campaign.');
+    $r = access_row($s, record_id());
+    $campaign = null;
+    foreach (q('SELECT name, data FROM campaigns WHERE user_id = ? ORDER BY updated_at DESC', [$s['id']])->fetchAll() as $camp) {
+        $party = json_decode($camp['data'], true)['party'] ?? null;
+        if (!is_array($party)) continue;
+        foreach ($party as $pc) {
+            if (is_array($pc) && isset($pc['link']) && (int)$pc['link'] === (int)$r['access_id'] && in_array($pc['status'] ?? 'active', ['active', 'away'], true)) {
+                $campaign = $camp['name'] !== '' ? $camp['name'] : 'Untitled campaign';
+                break 2;
+            }
+        }
+    }
+    if ($campaign === null) fail('You can only take control of a crow that\'s in play or sitting out in one of your campaigns.', 409);
+    $cid = (int)$r['id'];
+    $old = control_row($cid);
+    if ($old && (int)$old['user_id'] === $s['id']) return ['characterId' => $cid];
+    q('REPLACE INTO character_control (character_id, user_id, created_at) VALUES (?,?,?)', [$cid, $s['id'], now()]);
+    audit('control_claimed', (int)$r['user_id'], 'character ' . $cid . ($old ? ' from ' . $old['username'] : ''), $s['id']);
+    $detail = ['character' => $r['name'], 'characterId' => $cid, 'by' => $s['username'], 'campaign' => $campaign];
+    notify((int)$r['user_id'], 'control_claimed', $detail);
+    if ($old) notify((int)$old['user_id'], 'control_claimed', $detail);
+    control_changed($cid);
+    return ['characterId' => $cid];
+}
+
 /** The user in control hands it back to its owner. */
 function a_control_release(): array {
     $s = need_login();
@@ -876,6 +909,8 @@ function a_control_list(): array {
  * the Ref's access later from the character's Share panel, as with any Ref.
  * The Ref Screen learns of new requests through the change signal for ('requests', campaign id), whose
  * version is the newest request's id (a fresh request always gets a new, higher id).
+ * A Ref can also list a campaign (campaign_listings) so players find it under Find a campaign and ask to join
+ * without a link; such requests arrive and are answered exactly like ones made through the link.
  */
 const MAX_PENDING = 30;   // per campaign, so a leaked link can't flood the Ref
 
@@ -893,6 +928,21 @@ function invited_by_token(string $tok): array {
     if (!$r) fail('That campaign link no longer works. Ask your Ref for a new one.', 404);
     return $r;
 }
+/** A listed campaign (with its Ref's name), or a clear error. Unlisted ones look the same as missing ones. */
+function listed_campaign(int $id): array {
+    $r = q('SELECT p.id, p.name, p.summary, p.user_id, u.username AS ref FROM campaign_listings l
+            JOIN campaigns p ON p.id = l.campaign_id JOIN users u ON u.id = p.user_id WHERE l.campaign_id = ?', [$id])->fetch();
+    if (!$r) fail('That campaign isn\'t taking new players through Find a campaign any more.', 404);
+    return $r;
+}
+/** The campaign a player is asking about: by invite token, or by id if it's listed. $in is the query or the body. */
+function joinable(array $in): array {
+    $tok = $in['token'] ?? '';
+    if (is_string($tok) && $tok !== '') return invited_by_token($tok);
+    $id = $in['campaign'] ?? 0;
+    if (!is_numeric($id) || (int)$id <= 0) fail('Missing campaign.');
+    return listed_campaign((int)$id);
+}
 function requests_signal(int $campaignId): void {
     $v = (int)q('SELECT MAX(id) FROM join_requests WHERE campaign_id = ?', [$campaignId])->fetchColumn();
     if ($v) signal('requests', $campaignId, $v);
@@ -903,11 +953,12 @@ function a_invite_get(): array {
     $s = need_ref(REF_ONLY);
     $c = own_campaign($s, record_id());
     $has = (bool)q('SELECT 1 FROM campaign_invites WHERE campaign_id = ?', [$c['id']])->fetch();
+    $listing = q('SELECT note FROM campaign_listings WHERE campaign_id = ?', [$c['id']])->fetch();
     $rows = q("SELECT j.id, j.created_at, c.name, c.summary, u.username FROM join_requests j JOIN characters c ON c.id = j.character_id
                JOIN users u ON u.id = c.user_id WHERE j.campaign_id = ? AND j.status = 'pending' ORDER BY j.id", [$c['id']])->fetchAll();
     $latest = (int)q('SELECT MAX(id) FROM join_requests WHERE campaign_id = ?', [$c['id']])->fetchColumn();
     $w = with_watch(['version' => $latest], 'requests', (int)$c['id']);
-    return ['hasLink' => $has, 'latest' => $latest, 'watch' => $w['watch'] ?? null, 'requests' => array_map(function ($r) {
+    return ['hasLink' => $has, 'listed' => (bool)$listing, 'note' => $listing ? $listing['note'] : '', 'latest' => $latest, 'watch' => $w['watch'] ?? null, 'requests' => array_map(function ($r) {
         return ['id' => (int)$r['id'], 'name' => $r['name'], 'summary' => $r['summary'], 'player' => $r['username'], 'at' => $r['created_at'] . 'Z'];
     }, $rows)];
 }
@@ -929,10 +980,60 @@ function a_invite_disable(): array {
     return [];
 }
 
-/** A player opened an invite: the campaign, and each of their characters with any request already made. */
+/** List the campaign in Find a campaign (with an optional short note for players), or take it out. */
+function a_invite_list(): array {
+    $s = need_ref(REF_ONLY);
+    $c = own_campaign($s, record_id());
+    if (!empty(body()['listed'])) {
+        $note = trim(preg_replace('/\s+/u', ' ', str('note', 1000)));
+        if (mb_strlen($note) > 255) fail('Keep the note to 255 characters.');
+        q('INSERT INTO campaign_listings (campaign_id, note, created_at) VALUES (?,?,?) ON DUPLICATE KEY UPDATE note = VALUES(note)', [$c['id'], $note, now()]);
+        audit('campaign_listed', $s['id'], 'campaign ' . $c['id']);
+    } elseif (q('DELETE FROM campaign_listings WHERE campaign_id = ?', [$c['id']])->rowCount()) {
+        audit('campaign_unlisted', $s['id'], 'campaign ' . $c['id']);
+    }
+    return [];
+}
+
+const SEARCH_LIMIT = 50;
+/**
+ * Find a campaign: listed campaigns whose name, summary, note, or Ref's username contains the search words
+ * (all of them; no words lists everything, newest listings first). Each says how many crows are in play there
+ * and whether one of the player's own crows is already waiting or in.
+ */
+function a_campaigns_search(): array {
+    $s = need_login();
+    $text = (string)($_GET['q'] ?? '');
+    if (strlen($text) > 200) fail('Search for fewer words.');
+    $where = [];
+    $args = [$s['id']];
+    foreach (array_slice(preg_split('/\s+/u', trim($text), -1, PREG_SPLIT_NO_EMPTY), 0, 8) as $w) {
+        $like = '%' . addcslashes($w, '%_\\') . '%';
+        $where[] = '(p.name LIKE ? OR p.summary LIKE ? OR l.note LIKE ? OR u.username LIKE ?)';
+        array_push($args, $like, $like, $like, $like);
+    }
+    $rows = q('SELECT p.id, p.name, p.summary, p.data, p.user_id, l.note, l.created_at, u.username AS ref,
+                      (SELECT GROUP_CONCAT(DISTINCT j.status) FROM join_requests j JOIN characters c ON c.id = j.character_id
+                       WHERE j.campaign_id = p.id AND c.user_id = ?) AS mine
+               FROM campaign_listings l JOIN campaigns p ON p.id = l.campaign_id JOIN users u ON u.id = p.user_id'
+              . ($where ? ' WHERE ' . implode(' AND ', $where) : '') . ' ORDER BY l.created_at DESC, p.id DESC LIMIT ' . SEARCH_LIMIT, $args)->fetchAll();
+    return ['items' => array_map(function ($r) use ($s) {
+        $party = json_decode($r['data'], true)['party'] ?? [];
+        $crows = is_array($party) ? count(array_filter($party, function ($pc) { return is_array($pc) && in_array($pc['status'] ?? 'active', ['active', 'away'], true); })) : 0;
+        $mine = $r['mine'] ? explode(',', $r['mine']) : [];
+        return ['id' => (int)$r['id'], 'name' => $r['name'] !== '' ? $r['name'] : 'Untitled campaign', 'summary' => $r['summary'], 'note' => $r['note'],
+            'ref' => $r['ref'], 'crows' => $crows, 'own' => (int)$r['user_id'] === $s['id'], 'listedAt' => $r['created_at'] . 'Z',
+            'mine' => in_array('pending', $mine, true) ? 'pending' : (in_array('accepted', $mine, true) ? 'accepted' : null)];
+    }, $rows), 'more' => count($rows) >= SEARCH_LIMIT];
+}
+
+/**
+ * A player opened an invite, or a campaign from Find a campaign: the campaign, and each of their characters with
+ * any request already made.
+ */
 function a_join_preview(): array {
     $s = need_login();
-    $p = invited_by_token((string)($_GET['token'] ?? ''));
+    $p = joinable($_GET);
     $chars = q('SELECT c.id, c.name, c.summary, j.id AS rid, j.status, (a.id IS NOT NULL) AS has_access FROM characters c
                 LEFT JOIN join_requests j ON j.character_id = c.id AND j.campaign_id = ?
                 LEFT JOIN character_access a ON a.character_id = c.id AND a.ref_user_id = ?
@@ -946,7 +1047,7 @@ function a_join_preview(): array {
 
 function a_join_request(): array {
     $s = need_login();
-    $p = invited_by_token(str('token', 100));
+    $p = joinable(['token' => str('token', 100), 'campaign' => body()['campaign'] ?? 0]);
     $c = own_character($s, (int)(body()['characterId'] ?? 0));
     $cur = q('SELECT id, status FROM join_requests WHERE campaign_id = ? AND character_id = ?', [$p['id'], $c['id']])->fetch();
     if ($cur && $cur['status'] === 'pending') fail('You already asked to join with this crow.', 409);
@@ -1402,6 +1503,7 @@ const ACTIONS = [
     'control.get' => ['GET', 'a_control_get', false],
     'control.give' => ['POST', 'a_control_give', true],
     'control.take' => ['POST', 'a_control_take', true],
+    'control.claim' => ['POST', 'a_control_claim', true],
     'control.release' => ['POST', 'a_control_release', true],
     'control.list' => ['GET', 'a_control_list', false],
     'link.preview' => ['GET', 'a_link_preview', false],
@@ -1412,6 +1514,8 @@ const ACTIONS = [
     'invite.get' => ['GET', 'a_invite_get', false],
     'invite.create' => ['POST', 'a_invite_create', true],
     'invite.disable' => ['POST', 'a_invite_disable', true],
+    'invite.list' => ['POST', 'a_invite_list', true],
+    'campaigns.search' => ['GET', 'a_campaigns_search', false],
     'join.preview' => ['GET', 'a_join_preview', false],
     'join.request' => ['POST', 'a_join_request', true],
     'join.cancel' => ['POST', 'a_join_cancel', true],

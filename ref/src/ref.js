@@ -1416,6 +1416,16 @@
     delete p.owed; save();
   }
   function openSheet(p) { window.open('play?link=' + encodeURIComponent(p.link), '_blank', 'noopener'); }
+  /* Play a linked crow yourself, as if its player had handed it to you (they're told, and can take it back). */
+  function takeControl(p) {
+    if (!confirm('Take control of ' + (p.name || 'this crow') + '? You can open, edit, and play the whole sheet until ' + (p.owner || 'the player') +
+      ' takes it back. They\u2019re told. Hand it back from Handed to you in My characters.')) return;
+    var w = window.open('', '_blank');   // opened now, while the click still counts, so it isn't blocked as a pop-up
+    window.CrowsCloud.api('POST', 'control.claim', '', { id: p.link }).then(function (j) {
+      if (w) w.location.href = new URL('play?id=' + j.characterId, location.href).href; else toast('You have control of ' + (p.name || 'the crow') + '. Open it from My characters.');
+    }, function (e) { if (w) w.close(); toast(e.message); });
+  }
+  function takeBtn(p) { return btn('Take control', function () { takeControl(p); }, 'btn-small btn-ghost', 'Play this crow yourself, say for a session its player will miss'); }
   function newPC() { return { id: nid(), name: '', player: '', bg: '', feature: '', A: 0, M: 0, S: 0, stMax: 7, st: 7, ad: 0, wounds: 0, cruelty: 0, txp: 0, pending: 0, status: 'active', conn: '', rel: '', benefit: '', miasma: [], notes: '' }; }
 
   // ================================================================== RENDERING
@@ -2136,16 +2146,17 @@
    * The Ref makes an invite link for this campaign and sends it to the players. A player who opens it asks to
    * join with one of their crows; the request appears here within a second or two (through the change signal
    * the server writes for each new request). Accepting links the crow, just as a character link would.
+   * The Ref can also list the campaign in Find a campaign, with a short note, so players can ask without a link.
    */
-  var inv = { id: null, loading: false, hasLink: false, link: '', requests: [], latest: 0, at: 0 };
+  var inv = { id: null, loading: false, hasLink: false, link: '', listed: false, note: '', draft: null, requests: [], latest: 0, at: 0 };
   function loadInvites() {
     var id = window.CrowsCloud && window.CrowsCloud.recordId;
     if (!cloudOn() || !id || inv.loading) return Promise.resolve();
     inv.loading = true;
     return window.CrowsCloud.api('GET', 'invite.get', 'id=' + id).then(function (j) {
       var known = inv.id === id ? inv.requests.map(function (r) { return r.id; }) : null;
-      if (inv.id !== id) inv.link = '';
-      inv.id = id; inv.hasLink = j.hasLink; inv.requests = j.requests; inv.latest = j.latest; inv.at = Date.now();
+      if (inv.id !== id) { inv.link = ''; inv.draft = null; }
+      inv.id = id; inv.hasLink = j.hasLink; inv.listed = !!j.listed; inv.note = j.note || ''; inv.requests = j.requests; inv.latest = j.latest; inv.at = Date.now();
       var fresh = known ? j.requests.filter(function (r) { return known.indexOf(r.id) < 0; }) : [];
       if (fresh.length) toast(fresh.map(function (r) { return r.player + ' asks to join with ' + (r.name || 'a crow'); }).join('. ') + '. See the Party tab.');
       window.CrowsCloud.watch('requests', j.watch, j.latest, function () { if (!window.CrowsCloud.typing) return loadInvites(); });
@@ -2162,6 +2173,30 @@
       } else toast('Declined ' + r.player + '\u2019s request.');
       save(); render();
     }, function (e) { toast(e.message); loadInvites(); });
+  }
+  function setListing(id, listed, note) {
+    window.CrowsCloud.api('POST', 'invite.list', '', { id: id, listed: listed, note: note || '' }).then(function () {
+      var was = inv.listed;
+      inv.listed = listed; inv.note = listed ? (note || '') : inv.note; inv.draft = null; render();
+      toast(!listed ? 'Taken out of Find a campaign. Waiting requests stay here.' : was ? 'Note saved.' : 'Listed: players can find this campaign and ask to join.');
+    }, function (e) { toast(e.message); render(); });
+  }
+  /* The switch for Find a campaign, and the note players see there while it's listed. */
+  function listBox(id) {
+    var box = el('input', { type: 'checkbox', checked: inv.listed });
+    box.addEventListener('change', function () { setListing(id, this.checked, inv.draft !== null ? inv.draft : inv.note); });
+    var kids = [el('label', { class: 'check', title: 'Any player with an account can find this campaign and ask to join. You still accept or decline each request.' },
+      [box, 'List in Find a campaign'])];
+    if (inv.listed) {
+      var text = inv.draft !== null ? inv.draft : inv.note;
+      var ta = el('textarea', { rows: 2, maxlength: 255, placeholder: 'A note for players: who you\u2019re looking for, when you play\u2026', 'aria-label': 'Note for players' });
+      ta.value = text;
+      var saveBtn = btn('Save note', function () { setListing(id, true, ta.value); }, 'btn-small', 'Show this note with the campaign in Find a campaign');
+      saveBtn.disabled = text === inv.note;
+      ta.addEventListener('input', function () { inv.draft = this.value; saveBtn.disabled = this.value === inv.note; });
+      kids.push(ta, el('div', { class: 'row center' }, [saveBtn, el('span', { class: 'fine', text: 'Players see the name, summary, this note, and your username.' })]));
+    }
+    return el('div', { class: 'invite-list' }, kids);
   }
   /* A compact block at the foot of the side column, on the Party tab only (the tab's badge and a toast flag new requests). */
   function renderInvite() {
@@ -2183,7 +2218,7 @@
         el('p', { class: 'fine', text: 'Shown only now; make a new one if you lose it. Keep it private: anyone with an account who has it can ask to join.' })]);
     }
     [head,
-      el('p', { class: 'fine', text: 'Players open the link, pick a crow, and ask to join. Accepted crows join the party, tied to their sheets.' }),
+      el('p', { class: 'fine', text: 'Players open the link (or find the campaign, if it\u2019s listed), pick a crow, and ask to join. Accepted crows join the party, tied to their sheets.' }),
       el('div', { class: 'row center' }, [
         btn(inv.hasLink ? 'New link' : 'Make a link', function () {
           if (inv.hasLink && !confirm('Make a new link? The old one stops working. Requests already made stay here.')) return;
@@ -2194,6 +2229,7 @@
         }, 'btn-small btn-ghost', 'Turn off the invite link') : null,
         inv.hasLink && !inv.link ? el('span', { class: 'fine', text: 'Link is on.' }) : null]),
       linkBox,
+      listBox(id),
       inv.requests.length ? el('ul', { class: 'join-reqs' }, inv.requests.map(function (r) {
         return el('li', null, [el('div', null, [el('b', { text: r.name || 'Unnamed crow' }), el('div', { class: 'fine', text: r.player + (r.summary ? ' · ' + r.summary : '') })]),
           el('div', { class: 'row center' }, [btn('Accept', function () { answerRequest(r, true); }, 'btn-small btn-primary', 'Add this crow to the party, tied to the player’s sheet'),
@@ -2260,7 +2296,7 @@
           f.tile = el('div', { class: 'st-tile linked' }, [f.head, f.frame]);
           grid.appendChild(f.tile);
         }
-        f.head.replaceWith(f.head = el('div', { class: 'row center' }, [statusHead(p), btn('Open sheet', function () { openSheet(p); }, 'btn-small btn-ghost', 'See the whole sheet')]));
+        f.head.replaceWith(f.head = el('div', { class: 'row center' }, [statusHead(p), btn('Open sheet', function () { openSheet(p); }, 'btn-small btn-ghost', 'See the whole sheet'), takeBtn(p)]));
         f.tile.style.order = i;
       } else {
         var t = localTile(p); t.className += ' local'; t.style.order = i;
@@ -2380,6 +2416,7 @@
       p.link && cloudOn() ? el('div', { class: 'row center pc-link' }, [
         el('span', { class: 'fine grow', text: 'Linked to ' + (p.owner ? p.owner + '’s' : 'the player’s') + ' sheet: its numbers come from there.' }),
         btn('Update from sheet', function () { refreshLinked(p); }, 'btn-small', 'Refresh name, characteristics, Stamina, wounds, and XP from the sheet'),
+        p.status === 'active' || p.status === 'away' ? takeBtn(p) : null,
         btn('Unlink', function () { if (confirm('Unlink ' + (p.name || 'this crow') + ' from the player’s sheet? You keep this copy, but lose access to the sheet.')) unlinkPC(p); }, 'btn-small btn-ghost')
       ]) : null,
       el('div', { class: 'grid3' }, [field('Player', inp(p, 'player', ro())), field('Background', inp(p, 'bg', ro({ list: 'bg-list' }))),

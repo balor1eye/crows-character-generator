@@ -118,7 +118,11 @@ input[type=text], input[type=email], input[type=password], input[type=search], s
 .rows li:first-child { border-top: 0; }
 .rows .name { font-weight: 600; }
 .rows .meta { color: var(--muted); font-size: .85rem; }
-.rows .btns { display: flex; gap: .35rem; flex-wrap: wrap; }
+.rows .btns { display: flex; gap: .35rem; flex-wrap: wrap; align-items: center; }
+.rows .grow { flex: 1 1 16rem; min-width: 0; }
+.rows .note { margin-top: .25rem; font-size: .9rem; white-space: pre-wrap; overflow-wrap: anywhere; }
+.search { display: flex; margin-bottom: .4rem; }
+.search input { flex: 1; min-width: 0; }
 .share-panel { flex-basis: 100%; background: var(--paper); border: 1px solid var(--line); border-radius: 6px; padding: .8rem; }
 .share-panel h3 { font-size: 1rem; }
 .share-panel .row-btns { display: flex; gap: .4rem; flex-wrap: wrap; margin-bottom: .6rem; }

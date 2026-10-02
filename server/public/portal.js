@@ -78,7 +78,7 @@
     if (m) return viewReset(m[1]);
     var sh = /^(share|join)=([0-9a-f]{64})$/.exec(h);
     if (sh) {
-      if (me) return sh[1] === 'share' ? viewShare(sh[2]) : viewJoin(sh[2]);
+      if (me) return sh[1] === 'share' ? viewShare(sh[2]) : viewJoin({ token: sh[2] });
       // Remember it through login (or account creation), then come back to it.
       try { sessionStorage.setItem(PENDING_SHARE, h); } catch (e) { /* ignore */ }
       history.replaceState(null, '', location.pathname + '#login');
@@ -87,11 +87,13 @@
     var page = h || (me ? 'home' : 'login');
     if (!me && ['login', 'register', 'forgot'].indexOf(page) < 0) page = 'login';
     if (me && ['login', 'register', 'forgot'].indexOf(page) >= 0) page = 'home';
+    var listed = /^campaign=(\d+)$/.exec(page);
+    if (listed) { nav(); viewJoin({ campaign: listed[1] }); window.scrollTo(0, 0); return; }
     if (page === 'campaigns' && !me.canRef) page = 'home';
     if (page === 'admin' && !me.isAdmin) page = 'home';
     nav();
     var views = { login: viewLogin, register: viewRegister, forgot: viewForgot, home: viewHome, characters: viewCharacters,
-      play: viewPlay, campaigns: viewCampaigns, account: viewAccount, admin: viewAdmin };
+      play: viewPlay, find: viewFind, campaigns: viewCampaigns, account: viewAccount, admin: viewAdmin };
     (views[page] || viewHome)();
     window.scrollTo(0, 0);
   }
@@ -379,7 +381,8 @@
   function viewHome() {
     var tiles = [
       tile('My characters', 'Create a new crow, or open, edit, copy, download, upload, or delete your saved ones.', '#characters'),
-      tile('Play', 'Take one of your crows to the table: vitals, dice, rests, and XP.', '#play')
+      tile('Play', 'Take one of your crows to the table: vitals, dice, rests, and XP.', '#play'),
+      tile('Find a campaign', 'Search the campaigns Refs have opened to new players, and ask to join with one of your crows.', '#find')
     ];
     if (me.canRef) tiles.push(tile('Ref Screen', 'Run sessions and keep your campaigns: open one or start a new one.', '#campaigns', 'ref'));
     if (me.isAdmin) tiles.push(tile('Manage accounts', 'Mark accounts as players or Refs, send reset links, and more.', '#admin', 'admin'));
@@ -397,10 +400,11 @@
   function noteText(n) {
     var d = n.detail || {}, crow = d.character || 'your crow', camp = d.campaign || 'their campaign';
     if (n.kind === 'join_accepted') return d.ref + ' accepted ' + crow + ' into ' + camp + '. You\u2019ll see each other\u2019s changes live.';
-    if (n.kind === 'join_declined') return d.ref + ' declined ' + crow + '\u2019s request to join ' + camp + '. You can ask again from their invite link.';
+    if (n.kind === 'join_declined') return d.ref + ' declined ' + crow + '\u2019s request to join ' + camp + '. You can ask again from their invite link, or from Find a campaign if it\u2019s listed.';
     if (n.kind === 'control_given') return d.owner + ' handed you ' + crow + ' to play. It\u2019s under Handed to you in My characters until they take it back.';
     if (n.kind === 'control_taken') return d.owner + ' took back control of ' + crow + '.';
     if (n.kind === 'control_returned') return d.by + ' handed ' + crow + ' back to you.';
+    if (n.kind === 'control_claimed') return d.by + ' (Ref of ' + (d.campaign || 'your campaign') + ') took control of ' + crow + ' to play it. If it\u2019s yours, Take back control under Delegate Control in My characters.';
     return null;
   }
   function loadNews(box) {
@@ -689,18 +693,55 @@
   }
 
   /*
-   * Someone opened a campaign invite. They pick which of their crows to bring; the Ref accepts or declines in
-   * the Ref Screen. Each crow shows where its request stands, and a waiting one can be withdrawn.
+   * Find a campaign: the campaigns Refs have listed, searchable by name, summary, the Ref's note, or the Ref's
+   * username. Each opens the same join page an invite link does.
    */
-  function viewJoin(token) {
+  function viewFind() {
+    var q = el('input', { type: 'search', class: 'grow', placeholder: 'Search by name, Ref, or words in the description', 'aria-label': 'Search campaigns', maxlength: 200 });
+    var list = el('ul', { class: 'rows' }, [el('li', { class: 'empty', text: 'Loading…' })]);
+    var seq = 0, timer = null;
+    function load() {
+      var mine = ++seq, words = q.value.trim();
+      api('GET', 'campaigns.search', undefined, 'q=' + encodeURIComponent(words)).then(function (j) {
+        if (mine !== seq) return;
+        list.innerHTML = '';
+        if (!j.items.length) list.appendChild(el('li', { class: 'empty', text: words ? 'No listed campaign matches that. Try fewer or other words.' : 'No campaigns are listed right now. Ask a Ref for an invite link, or check back later.' }));
+        j.items.forEach(function (c) {
+          var state = c.own ? 'Your campaign' : c.mine === 'pending' ? 'You asked to join' : c.mine === 'accepted' ? 'One of your crows is in' : null;
+          list.appendChild(el('li', null, [
+            el('div', { class: 'grow' }, [el('div', { class: 'name', text: c.name }),
+              el('div', { class: 'meta', text: ['run by ' + c.ref, c.crows === 1 ? '1 crow in play' : c.crows + ' crows in play', c.summary].filter(Boolean).join(' · ') }),
+              c.note ? el('div', { class: 'note', text: c.note }) : null]),
+            el('div', { class: 'btns' }, [state ? el('span', { class: 'meta', text: state }) : null,
+              a(c.own ? 'View' : 'Ask to join', '#campaign=' + c.id, 'btn btn-small' + (c.own ? '' : ' btn-primary'))])]));
+        });
+        if (j.more) list.appendChild(el('li', { class: 'empty', text: 'Showing the newest ' + j.items.length + '. Search to narrow it down.' }));
+      }, function (e) { if (mine !== seq) return; list.innerHTML = ''; list.appendChild(el('li', { class: 'empty', text: e.message })); });
+    }
+    q.addEventListener('input', function () { clearTimeout(timer); timer = setTimeout(load, 300); });
+    q.addEventListener('keydown', function (e) { if (e.key === 'Enter') { clearTimeout(timer); load(); } });
+    show([el('div', { class: 'list-head' }, [el('h1', { text: 'Find a campaign' })]),
+      el('p', { class: 'muted', text: 'These campaigns are open to new players. Pick one to ask to join with one of your crows; its Ref accepts or declines.' }),
+      el('div', { class: 'card' }, [el('div', { class: 'row search' }, [q]), list])]);
+    load();
+  }
+
+  /*
+   * Someone opened a campaign invite ({ token }), or a listed campaign from Find a campaign ({ campaign: id }).
+   * They pick which of their crows to bring; the Ref accepts or declines in the Ref Screen. Each crow shows
+   * where its request stands, and a waiting one can be withdrawn.
+   */
+  function viewJoin(src) {
     nav();
+    var query = src.token ? 'token=' + src.token : 'campaign=' + encodeURIComponent(src.campaign);
+    var again = src.token ? 'open this link again' : 'come back to this page';
     var box = el('div', { class: 'card' }, [el('p', { class: 'muted', text: 'Loading…' })]);
     show([el('div', { class: 'narrow' }, [el('h1', { text: 'Join a campaign' }), box])]);
     function load() {
-      api('GET', 'join.preview', undefined, 'token=' + token).then(draw, function (e) {
+      api('GET', 'join.preview', undefined, query).then(draw, function (e) {
         box.innerHTML = '';
         box.appendChild(el('p', { text: e.message }));
-        box.appendChild(a('Home', '#home', 'btn'));
+        box.appendChild(src.token ? a('Home', '#home', 'btn') : a('Find a campaign', '#find', 'btn'));
       });
     }
     function draw(j) {
@@ -712,7 +753,7 @@
         'the crow joins the party: they can see its sheet and change its vitals (Stamina, wounds, conditions…), equipment, and notes, ' +
         'and you both see each other\u2019s changes live. You can take that access away later from the crow\u2019s Share button.' }));
       if (!j.characters.length) {
-        box.appendChild(el('p', { class: 'muted', text: 'You have no characters yet. Create one in My characters, then open this link again.' }));
+        box.appendChild(el('p', { class: 'muted', text: 'You have no characters yet. Create one in My characters, then ' + again + '.' }));
         box.appendChild(a('Go to My characters', '#characters', 'btn btn-primary'));
         return;
       }
@@ -725,13 +766,14 @@
           }, 'btn-small btn-ghost')
           : c.status === 'accepted' && c.refHasAccess ? null
           : btn(c.status === 'declined' ? 'Ask again' : 'Ask to join', function () {
-            api('POST', 'join.request', { token: token, characterId: c.id }).then(function () { toast('Asked to join with ' + (c.name || 'this crow') + '.'); load(); },
+            api('POST', 'join.request', { token: src.token || '', campaign: src.token ? 0 : Number(src.campaign), characterId: c.id }).then(function () { toast('Asked to join with ' + (c.name || 'this crow') + '.'); load(); },
               function (e) { toast(e.message); load(); });
           }, 'btn-small btn-primary');
         return el('li', null, [el('div', null, [el('div', { class: 'name', text: c.name || 'Unnamed crow' }), el('div', { class: 'meta', text: c.summary || '' })]),
           el('div', { class: 'btns' }, [state, act])]);
       })));
-      box.appendChild(el('p', { class: 'fine' }, ['Want a new crow for this campaign? Create one in ', a('My characters', '#characters', ''), ', then open this link again.']));
+      box.appendChild(el('p', { class: 'fine' }, ['Want a new crow for this campaign? Create one in ', a('My characters', '#characters', ''), ', then ' + again + '.']));
+      if (!src.token) box.appendChild(el('p', null, [a('Back to Find a campaign', '#find', 'btn btn-small btn-ghost')]));
     }
     load();
   }

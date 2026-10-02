@@ -126,7 +126,16 @@ CREATE TABLE IF NOT EXISTS campaign_invites (
   CONSTRAINT fk_invite_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- A player asking, through an invite link, to bring one of their characters into a campaign. Accepting it
+-- A campaign its Ref has listed in Find a campaign, so any logged-in player can find it and ask to join without
+-- an invite link. No row means unlisted. `note` is the Ref's short pitch (who they're looking for, when they play).
+CREATE TABLE IF NOT EXISTS campaign_listings (
+  campaign_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  note VARCHAR(255) NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  CONSTRAINT fk_listing_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A player asking, through an invite link or a listing, to bring one of their characters into a campaign. Accepting it
 -- gives the campaign's Ref a character_access row, just as a character link would.
 CREATE TABLE IF NOT EXISTS join_requests (
   id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,

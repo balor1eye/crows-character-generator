@@ -215,6 +215,29 @@ def smoke():
     p2.post("notes.dismiss", {"all": True})
     check("notes dismissed", p2.get("notes.list")["items"] == [])
     check("characters.campaigns answers", "campaigns" in p2.get("characters.campaigns"))
+
+    # listing a campaign in Find a campaign, and asking to join from there
+    fails("an unlisted campaign can't be previewed by id", 404, lambda: p1.get("join.preview", campaign=camp["id"]))
+    check("an unlisted campaign isn't found", all(c["id"] != camp["id"] for c in p1.get("campaigns.search", q="Smoke Campaign")["items"]))
+    fails("players can't list campaigns", 403, lambda: p1.post("invite.list", {"id": camp["id"], "listed": True}))
+    ref.post("invite.list", {"id": camp["id"], "listed": True, "note": "Smoke  note:\tThursdays"})
+    inv = ref.get("invite.get", id=camp["id"])
+    check("Ref sees the campaign listed, note tidied", inv["listed"] and inv["note"] == "Smoke note: Thursdays")
+    found = [c for c in p1.get("campaigns.search", q="thursdays test_ref")["items"] if c["id"] == camp["id"]]
+    check("player finds it by note and Ref", len(found) == 1 and found[0]["ref"] == "test_ref" and not found[0]["own"])
+    check("a search with no match finds nothing", p1.get("campaigns.search", q="Smoke zzqqxx")["items"] == [])
+    check("LIKE wildcards are literal", all(c["id"] != camp["id"] for c in p1.get("campaigns.search", q="Smoke_Campaign")["items"]))
+    check("listed campaign previews by id", p1.get("join.preview", campaign=camp["id"])["campaign"] == "Smoke Campaign")
+    p1.post("join.request", {"campaign": camp["id"], "characterId": ch["id"]})
+    found = [c for c in p1.get("campaigns.search", q="Smoke Campaign")["items"] if c["id"] == camp["id"]]
+    check("search shows the player's waiting request", found and found[0]["mine"] == "pending")
+    lreq = [r for r in ref.get("invite.get", id=camp["id"])["requests"] if r["player"] == "test_player"]
+    check("Ref sees the request made from the listing", len(lreq) == 1)
+    ref.post("join.decline", {"id": lreq[0]["id"]})
+    ref.post("invite.list", {"id": camp["id"], "listed": False})
+    check("Ref unlists the campaign", not ref.get("invite.get", id=camp["id"])["listed"])
+    fails("can't ask to join an unlisted campaign by id", 404, lambda: p1.post("join.request", {"campaign": camp["id"], "characterId": ch["id"]}))
+    p1.post("notes.dismiss", {"all": True})
     check("decision emails were logged, not sent", any(m["to"] == accounts()["test_player2"]["email"] for m in mail(20)))
 
     # live combat: the Ref shares a fight; the linked crow's player sees it and acts in it
@@ -280,6 +303,20 @@ def smoke():
     ref.post("control.release", {"id": ch["id"]})
     check("the Ref hands it back and the owner is told", p1.get("control.get", id=ch["id"])["controller"] is None
           and any(n["kind"] == "control_returned" and n["detail"]["by"] == "test_ref" for n in p1.get("notes.list")["items"]))
+    # the Ref taking control of a crow in their campaign (here from the player it was handed to)
+    fails("players can't take control through a Ref link", 403, lambda: p1.post("control.claim", {"id": acc["id"]}))
+    p1.post("control.give", {"id": ch["id"], "username": "test_player2"})
+    got = ref.post("control.claim", {"id": acc["id"]})
+    check("the Ref takes control of a crow in their campaign", got["characterId"] == ch["id"]
+          and p1.get("control.get", id=ch["id"])["controller"]["username"] == "test_ref"
+          and ref.get("get", kind="characters", id=ch["id"])["item"]["owner"] == "test_player")
+    check("the player and the one it was handed to are told", all(any(n["kind"] == "control_claimed" and n["detail"]["by"] == "test_ref"
+          and n["detail"]["campaign"] == "Smoke Campaign" for n in c.get("notes.list")["items"]) for c in (p1, p2)) and p2.get("control.list")["items"] == [])
+    p1.post("control.take", {"id": ch["id"]})
+    cv = ref.get("get", kind="campaigns", id=camp["id"])["item"]["version"]
+    ref.post("save", {"id": camp["id"], "version": cv, "name": "Smoke Campaign", "data": {"party": [
+        {"name": "Smoke Kestrel", "link": acc["id"], "status": "retired"}, {"name": "Smoke Rook", "link": acc2["id"]}]}}, kind="campaigns")
+    fails("not once the crow has left play", 409, lambda: ref.post("control.claim", {"id": acc["id"]}))
     p1.post("notes.dismiss", {"all": True}); p2.post("notes.dismiss", {"all": True})
     ref.post("combat.publish", {"campaign": camp["id"], "combat": None})
     check("ending the fight takes it off the player's page", p1.get("combat.mine", id=ch["id"])["combat"] is None)

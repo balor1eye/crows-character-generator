@@ -241,6 +241,7 @@
     if (n.kind === 'control_given') return d.owner + ' handed you ' + crow + ' to play.';
     if (n.kind === 'control_taken') return d.owner + ' took back control of ' + crow + '.';
     if (n.kind === 'control_returned') return d.by + ' handed ' + crow + ' back to you.';
+    if (n.kind === 'control_claimed') return d.by + ' (Ref of ' + (d.campaign || 'your campaign') + ') took control of ' + crow + '.';
     return null;
   }
   function showNote(n) {
