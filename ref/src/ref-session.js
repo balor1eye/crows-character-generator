@@ -5,8 +5,8 @@
   'use strict';
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var activePCs = f('activePCs'), addsText = f('addsText'), addToCombatBtn = f('addToCombatBtn'), allClaims = f('allClaims'), btn = f('btn'), card = f('card'), chk = f('chk'),
-      claimOp = f('claimOp'), currentPlace = f('currentPlace'), download = f('download'), dungeonEN = f('dungeonEN'), encounterCheck = f('encounterCheck'),
+  var activePCs = f('activePCs'), addsText = f('addsText'), addToCombatBtn = f('addToCombatBtn'), btn = f('btn'), card = f('card'), chk = f('chk'),
+      currentPlace = f('currentPlace'), download = f('download'), dungeonEN = f('dungeonEN'), encounterCheck = f('encounterCheck'),
       encounterResultBox = f('encounterResultBox'), field = f('field'), greedBonus = f('greedBonus'), inp = f('inp'), log = f('log'),
       logItem = f('logItem'), lookup = f('lookup'), more = f('more'), nowStamp = f('nowStamp'), pauseTimer = f('pauseTimer'),
       pendingEnc = f('pendingEnc'), pendingFrom = f('pendingFrom'), pendingText = f('pendingText'), render = f('render'),
@@ -163,49 +163,9 @@
     ]);
     renderCombat();
     renderRest();
-    renderSessionCtrl();
+    renderLogCard();
     card('sec-quick', 'Quick Reference', [el('dl', { class: 'kv' }, REF.QUICK.reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, [])),
       more('Conditions', [el('dl', { class: 'kv' }, REF.CONDITIONS.reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, []))])]);
-  }
-
-  // ------------------------------------------------------------------ session management
-  function startSession() {
-    var s = S();
-    if (s.log.length) {
-      if (!confirm('Start session ' + (s.n + 1)? 'This will archive the current session\'s log to the World tab.')) return;
-      state.history.push({ n: s.n, title: s.title, date: s.date, log: state.log });
-    }
-    s.n += 1; s.title = ''; s.date = today(); s.pending = null; ui.lastEnc = null;
-    log('dt', '**Session ' + s.n + ' begins.**');
-    save(); render(); toast('Started session ' + s.n + '.');
-  }
-  function endSession() {
-    var s = S();
-    var claims = allClaims();
-    var totalGc = claims.reduce(function (a, x) { return a + x.c.gc; }, 0);
-    var greed = greedBonus();
-    var total = Math.round(totalGc * (1 + greed / 100));
-    var players = activePCs().length || 1;
-    var each = Math.floor(total / players);
-    var msg = 'End session ' + s.n + ':\n';
-    msg += 'XP awards from player claims: ' + claims.length + ' claim(s), ' + fmt(totalGc) + ' gc → ' + fmt(each) + ' XP each (with ' + (greed ? '+' + greed + '% greed bonus' : 'no greed bonus') + ').\n';
-    msg += 'Don\'t forget to end the village cycle.';
-    if (!confirm(msg)) return;
-    // Apply all pending XP from claims
-    activePCs().forEach(function (p) {
-      var answered = (p.claims || []).map(function (c) { return c.id; });
-      if (answered.length) sheetOp(p, claimOp(p, answered, { xp: each, desc: 'Session ' + s.n + ' treasure', gc: total, n: players }));
-    });
-    state.xpLog.push({ date: today(), session: s.n, what: 'Session end — player claims', gc: total, each: each });
-    log('dt', '**Session ' + s.n + ' ends.** XP awarded: ' + fmt(each) + ' each from ' + claims.length + ' claim(s).');
-    save(); render(); toast('Session ' + s.n + ' ended.');
-  }
-  function renderSessionCtrl() {
-    var s = S();
-    card('sec-session-ctrl', el('h2', null, ['Session', el('small', { text: 'start a new session or end the current one' })]), [
-      el('div', { class: 'row' }, [
-        btn('Start session ' + (s.n + 1), startSession, 'btn-primary', 'Archive this session\'s log, increment session number, and begin session ' + (s.n + 1)),
-        btn('End session ' + s.n, endSession, 'btn-ghost', 'Award XP from player claims with the greed bonus, then remind to end the village cycle')])]);
   }
 
   function renderRest() {
@@ -263,6 +223,5 @@
 
   A.add({ endDT: endDT, setDTLen: setDTLen, startRest: startRest, restEN: restEN, restHalf: restHalf, finishRest: finishRest,
       miasmaOutcome: miasmaOutcome, clearCruelty: clearCruelty, renderSession: renderSession, renderRest: renderRest, renderLogCard: renderLogCard,
-      renderSessionCtrl: renderSessionCtrl, startSession: startSession, endSession: endSession,
       logText: logText });
 })();

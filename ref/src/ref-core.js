@@ -31,13 +31,7 @@
 
   var STORAGE_KEY = 'crows-pt2-ref-campaign';
   var TAB_KEY = 'crows-pt2-ref-tab';
-  /* Tab groups: each sub-array is a group; the tab bar renders a group label between groups. Tab ids stay the same. */
-  var TAB_GROUPS = [
-    ['session', 'Session'], ['encounters', 'Encounters'], ['travel', 'Travel'],       // Run
-    ['party', 'Party'], ['village', 'Village'], ['world', 'World'],                    // Campaign
-    ['bestiary', 'Bestiary'], ['tables', 'Tables'], ['rules', 'Rules']                 // Reference
-  ];
-  var TABS = TAB_GROUPS.map(function (t) { return t; });  // flat list, same as before
+  var TABS = [['session', 'Session'], ['encounters', 'Encounters'], ['travel', 'Travel'], ['village', 'Village'], ['party', 'Party'], ['world', 'World'], ['bestiary', 'Bestiary'], ['tables', 'Tables'], ['rules', 'Rules']];
   var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge' };
   var EB_LABELS = [[-2, 'DB'], [-1, 'Bane'], [0, '—'], [1, 'Edge'], [2, 'DE']];
   var uid = 1;   // state (the campaign) and tab (the open tab) are shared: A.set('state', ...)
@@ -277,14 +271,7 @@
   function setTab(t) { A.set('tab', t); document.body.setAttribute('data-tab', t); if (window.CrowsLayout) window.CrowsLayout.apply(); try { localStorage.setItem(TAB_KEY, t); } catch (e) { /* ignore */ } render(); window.scrollTo(0, 0); }
   function renderTabbar() {
     var bar = $('tabbar'); bar.innerHTML = '';
-    var groupLabels = ['Run', 'Campaign', 'Reference'];
-    var groupBoundaries = [0, 3, 6];  // TAB_GROUPS indices where each group starts
-    var gi = 0;
-    TAB_GROUPS.forEach(function (t, i) {
-      if (groupBoundaries.indexOf(i) >= 0) {
-        bar.appendChild(el('div', { class: 'tab-group-label', text: groupLabels[gi] }));
-        gi++;
-      }
+    TABS.forEach(function (t) {
       var badge = null;
       if (t[0] === 'session' && (S().pending || S().combat.list.some(function (c) { return !c.dead && c.kind === 'foe'; }))) badge = el('span', { class: 'badge', text: S().pending ? '!' : '⚔' });
       if (t[0] === 'encounters' && runningEnc()) badge = el('span', { class: 'badge', text: '⚔', title: 'An encounter is running' });
@@ -391,13 +378,9 @@
   }
   function renderSideLog() {
     var box = $('side-log'); box.innerHTML = '';
-    var showAll = ui.sideLogAll;
-    var count = showAll ? state.log.length : 14;
-    var list = el('ol'), recent = state.log.slice(-count).reverse();
+    var list = el('ol'), recent = state.log.slice(-14).reverse();
     recent.forEach(function (e) { list.appendChild(logItem(e)); });
-    var toggleBtn = showAll ? btn('Show recent', function () { ui.sideLogAll = false; save(); render(); }, 'btn-small btn-ghost')
-      : btn('Show all', function () { ui.sideLogAll = true; save(); render(); }, 'btn-small');
-    box.appendChild(el('div', null, [el('div', { class: 'row center' }, [el('h3', { text: 'Log' }), el('span', { class: 'spacer' }), toggleBtn]),
+    box.appendChild(el('div', null, [el('div', { class: 'row center' }, [el('h3', { text: 'Log' }), el('span', { class: 'spacer' }), el('a', { href: '#', class: 'fine', onclick: function (e) { e.preventDefault(); setTab('session'); setTimeout(function () { $('sec-log').scrollIntoView(); }, 0); }, text: 'full log' })]),
       recent.length ? list : el('p', { class: 'fine', text: 'Rolls and events appear here.' })]));
   }
 
@@ -408,7 +391,7 @@
       dungeonEN: dungeonEN, travelCalc: travelCalc, greedBonus: greedBonus, activePCs: activePCs, salePct: salePct, nextES: nextES,
       remainMs: remainMs, clockText: clockText, startTimer: startTimer, pauseTimer: pauseTimer, resetTimer: resetTimer, beep: beep, tick: tick,
       setTab: setTab, renderTabbar: renderTabbar, render: render, renderSide: renderSide, fxText: fxText, hitControls: hitControls, diceBtn: diceBtn,
-      rollInitiative: rollInitiative, renderSideLog: renderSideLog, STORAGE_KEY: STORAGE_KEY, TAB_KEY: TAB_KEY, TABS: TABS, TAB_GROUPS: TAB_GROUPS, SIZES: SIZES,
+      rollInitiative: rollInitiative, renderSideLog: renderSideLog, STORAGE_KEY: STORAGE_KEY, TAB_KEY: TAB_KEY, TABS: TABS, SIZES: SIZES,
       EB_LABELS: EB_LABELS, ui: ui, Dom: Dom, Dice: Dice, Rules: Rules, $: $, el: el, fmt: fmt, signed: signed, clone: clone, plural: plural,
       toast: toast, d: d, pick: pick, rollDice: rollDice, d100: d100, netEdges: netEdges, ebWord: ebWord, esBonusCount: esBonusCount,
       charBonusCount: charBonusCount, inv: inv, layoutFitQueued: layoutFitQueued });
