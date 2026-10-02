@@ -45,12 +45,18 @@ What it does:
   Surgical kits add a wound healed to Tend Wounds, and ticking "2+ items here" on a magic item slot
   blocks resting and deals 1d6 wounds at the end of each dungeon turn.
 - **Live combat** (accounts site): when the Ref runs a fight with your linked crow in the Ref Screen's combat
-  tracker, a **Combat** card appears at the top of Play within a second or two. It shows the round, who acts first,
+  tracker, a **Combat** card appears at the top of Play within a second or two. It offers every option the combat
+  rules give at that moment: your turn (an action and a maneuver, or two maneuvers; a crit adds an action; one
+  reaction a round), maneuvers (Move, Shift with Disengage, Stand Up, Draw From Belt/Pack, Pick Up Item, Dump Backpack,
+  Reload, Command Pet, and the rolled Grab, Knockback, Escape Grab, and Jump), the actions Taunt, Ready, and Assist,
+  counters when a creature misses you in melee (offered on the card), opportunity attacks, several targets for spells
+  that take them, healing and blessing allies or yourself, and the modifiers for the target's state and the battlefield
+  (flanking, high ground, hidden, cover, dim light, darkness, ranged against an adjacent creature, beyond range). It shows the round, who acts first,
   surprise, the enemies (how hurt each looks, or their Stamina and AD if the Ref shows them), the allies and crows,
   and a feed of what happens. Pick a target, then attack or cast from Attacks & spells: once the roll is final (after
   any expertise use or chaos roll) it goes to the Ref with its tier and damage, and the Ref Screen deals the damage
   to that target (attacks on a surprised target get +1). You can also send any other action in words and mark your
-  crow **Done for this round**.
+  crow **Done for this round**. A creature attacking your crow is marked "attacking you".
 - **Dungeon turns & rest**: the Ref ends each DT from the Ref Screen; on a linked crow's sheet that rolls
   usage dice of lights in hand and ends blessed/vulnerable/weakened. **Rest** eats a ration (or gives a starvation wound), restores Stamina, heals wounds
   (hearty ration, Tend Wounds, Caretaker), restores expertise uses outside the Miasma, recharges
@@ -87,7 +93,7 @@ Load campaign** writes a `.json` file).
 
 - **Session**: the shared dungeon-turn timer (60/30/20 minutes or every 1d6 rooms), Encounter Number with
   crowded/chaos adjustments, greed bonus, End DT (ends DT conditions, rolls the encounter check and the monster
-  table, tracks signalled encounters, and ends the DT on each linked crow's sheet; rests do the same), a combat tracker shared live with the players' Play pages (their attacks land on the targets they pick, automatically or with one click, and can be undone; initiative, Stamina/AD/wounds, conditions, one-click
+  table, tracks signalled encounters, and ends the DT on each linked crow's sheet; rests do the same), a combat tracker shared live with the players' Play pages (their attacks land on the targets they pick, automatically or with one click, and can be undone; after a player's miss or doom, buttons for the counter, the stray shot at a random ally, or the backlash roll), creatures that attack a target the Ref picks (or a random one), with each hit dealt to it and undoable (initiative, Stamina/AD/wounds, conditions, one-click
   monster attacks, X/Rest uses), the rest procedure, and the session log.
 - **Travel**: hexes and EN from pace, speed, roads, water, and weather; travel encounters with every sub-table;
   the secret lost-direction roll; Miasma RRs and effects for each crow; the travel roles.

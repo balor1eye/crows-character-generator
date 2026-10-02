@@ -69,8 +69,8 @@
   }
 
   /* A test: 2d10 + mod with net edges (-2..2). Returns nat, total, tier, crit, doom. */
-  function test(mod, net, critMin) {
-    var a = d(10), b = d(10), nat = a + b;
+  function test(mod, net, critMin, dice) {
+    var a = dice ? dice[0] : d(10), b = dice ? dice[1] : d(10), nat = a + b;
     var total = nat + mod + (net === 1 ? 2 : net === -1 ? -2 : 0);
     var tier = total <= 11 ? 1 : total <= 16 ? 2 : 3;
     if (net === 2) tier = Math.min(3, tier + 1);
@@ -100,7 +100,7 @@
       session: { n: 1, title: '', date: today(), dt: 1, dtLen: 30, mode: 'timer', rooms: 0, roomsDone: 0, running: false, endAt: 0, remain: 30 * 60000,
         sound: true, autoNext: true, place: '', table: 'Blood Creatures', crowded: false, chaos: false, enAdj: 0, firstVisit: true, pending: null,
         rest: { active: false, where: 'dungeon', seclude: false, half: false, applyXP: true },
-        combat: { round: 0, list: [], encId: null, surprise: 'none', first: null, feed: [], acts: [], auto: true, showSt: false } },
+        combat: { round: 0, list: [], encId: null, surprise: 'none', first: null, feed: [], acts: [], prompts: [], assists: [], auto: true, autoMon: true, showSt: false } },
       log: [],
       travel: { day: 1, pace: 'Normal', speed: 5, road: false, water: 'none', weather: '', beacon: false, strong: false, hexAdj: 0, enAdj: 0, restEnAdj: 0,
         climate: 'Fall & Spring', habitat: 'Forest', nearby: 'Undead', lost: false, miasmaMod: 0, inMiasma: true },
@@ -120,6 +120,7 @@
   }
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+    if (state.session && state.session.combat) releaseGrabs();
     if (window.CrowsCloud) { window.CrowsCloud.changed(); liveChanged(); }
   }
   function startNew() { if (window.CrowsCloud) window.CrowsCloud.startNew(); }
@@ -613,7 +614,10 @@
     var list = S().combat.list, added = 0;
     activePCs().forEach(function (p) {
       if (list.some(function (c) { return c.pcId === p.id; })) return;
-      list.push({ id: nid(), kind: 'pc', pcId: p.id, cref: '', name: p.name || 'Crow', st: p.st, stMax: p.stMax, ad: p.ad || 0, adMax: p.ad || 0, wounds: p.wounds || 0, conds: {}, used: {}, dead: false, note: '' });
+      var x = { id: nid(), kind: 'pc', pcId: p.id, cref: '', name: p.name || 'Crow', st: p.st, stMax: p.stMax, ad: p.ad || 0, adMax: p.ad || 0, wounds: p.wounds || 0,
+        conds: clone(p.conds || {}), used: {}, dead: false, note: '' };
+      list.push(x);
+      pullVitals(x);   // a linked crow's own AD (armor and parry weapons) and conditions, from its sheet
       added++;
     });
     return added;
@@ -624,14 +628,47 @@
     return cb.round === 1 && (cb.surprise === 'crows' ? c.kind !== 'foe' : cb.surprise === 'foes' && c.kind === 'foe');
   }
   function slotsOf(c) { var b = beast(c.cref); return c.kind === 'pc' ? 10 : b && (b.t === 'Human' || b.t === 'Animal') ? b.sl : 0; }
-  function damage(c, amount, piercing) {
+  function byId(id) { return id ? S().combat.list.filter(function (x) { return x.id === id; })[0] || null : null; }
+  var SIZE_ORDER = 'TSMLH';
+  function sizeOf(x) { var b = beast(x && x.cref); return !x || x.kind === 'pc' || !b ? 'M' : b.sz; }
+  /* x is `than`'s size or smaller (than: a creature or a size letter). */
+  function noBigger(x, than) { return SIZE_ORDER.indexOf(sizeOf(x)) <= SIZE_ORDER.indexOf(typeof than === 'string' ? than : sizeOf(than)); }
+  /* Set or clear a condition; on a crow it goes onto the player's sheet too. Losing Grabbed ends the grab. */
+  function setCond(x, k, on) {
+    if (k === 'Grabbed' && !on) delete x.grabbedBy;
+    if (!!x.conds[k] === !!on) return;
+    if (on) x.conds[k] = true; else delete x.conds[k];
+    var p = pcOf(x);
+    if (p) { var o = { cond: {} }; o.cond[k] = !!on; sheetOp(p, o); }
+  }
+  /*
+   * Damage through AD, Stamina, and wounds. A linked crow takes it on its own sheet (its worn armor and parry weapons,
+   * the way Take damage works there), and the result is read back; the sheet as it was comes back for Undo.
+   * opts: { from: who dealt it, quiet: no save/render (the caller does it) }. Returns { sheet: before } for a sheet hit.
+   */
+  function damage(c, amount, piercing, opts) {
+    opts = opts || {};
+    var p = pcOf(c), w = p && p.link && cloudOn() ? sheetWin(p) : null, out = null;
+    if (w) {
+      var o = { hit: amount, piercing: !!piercing, from: opts.from || '' };
+      sheetOp(p, o);   // the frame is ready, so it's dealt now and o.result says how
+      if (o.result) {
+        pullVitals(c);
+        var dead = c.wounds >= 10;
+        log('', '**' + c.name + '** takes ' + o.result.total + (piercing ? ' piercing' : '') + ' damage on their sheet (' + o.result.parts.join(', ') + ')' + (dead ? ' — all backpack slots wounded: dead.' : '.'));
+        feed('**' + c.name + '** takes ' + o.result.total + (piercing ? ' piercing' : '') + ' damage (' + o.result.parts.join(', ') + ')' + (dead ? ' — dead.' : '.'));
+        if (!opts.quiet) { save(); render(); }
+        return { sheet: o.result.before };
+      }
+    }
     var parts = [], total = amount, st0 = c.st, w0 = c.wounds;
     if (c.conds.Vulnerable) { var v = d(6); total += v; parts.push('vulnerable +' + v); }
     var left = total;
     if (!piercing && c.ad > 0) { var absorbed = Math.min(c.ad, left); c.ad -= absorbed; left -= absorbed; parts.push(absorbed + ' to AD'); }
     if (left > 0) { var st = Math.min(c.st, left); c.st -= st; left -= st; if (st) parts.push(st + ' to Stamina'); }
     var slots = slotsOf(c);
-    if (left > 0 && slots) { var w = Math.min(slots - c.wounds, left); c.wounds += w; left -= w; if (w) parts.push(plural(w, 'wound')); }
+    if (left > 0 && slots) { var wn = Math.min(slots - c.wounds, left); c.wounds += wn; left -= wn; if (wn) parts.push(plural(wn, 'wound')); }
+    if (c.conds.Unconscious && total > 0) { delete c.conds.Unconscious; parts.push('wakes up'); }   // any damage wakes a sleeper
     var fate = '';
     if (c.kind === 'pc') { if (c.wounds >= 10) fate = ' — all backpack slots wounded: dead.'; }
     else if (c.st <= 0) {
@@ -640,42 +677,306 @@
       else if (c.wounds >= slots) { c.dead = true; fate = ' — dead (every slot wounded).'; }
       else fate = b && b.t === 'Human' ? ' — at 0 Stamina: a lone human flees; a group reduced by half flees.' : ' — at 0 Stamina: animals flee.';
     }
-    if (c.kind === 'pc') syncPC(c, st0, w0);
+    // A linked crow whose sheet isn't open here yet gets the hit itself when it opens (its own armor decides); others get the change.
+    if (p && p.link && cloudOn()) sheetOp(p, { hit: amount, piercing: !!piercing, from: opts.from || '' });
+    else if (c.kind === 'pc') syncPC(c, st0, w0);
     log('', '**' + c.name + '** takes ' + total + (piercing ? ' piercing' : '') + ' damage (' + (parts.join(', ') || 'no effect') + ')' + fate);
     // Players see where a foe's damage went only when the Ref shows them foes' Stamina.
     feed('**' + c.name + '** takes ' + total + (piercing ? ' piercing' : '') + ' damage' + (c.kind !== 'foe' || S().combat.showSt ? ' (' + (parts.join(', ') || 'no effect') + ')' : '') + (fate || '.'));
-    save(); render();
+    if (!opts.quiet) { save(); render(); }
+    return out;
   }
-  function heal(c, amount) { var st0 = c.st; c.st = Math.min(c.stMax, c.st + amount); if (c.st > 0 && c.kind !== 'pc' && !slotsOf(c)) c.dead = false; if (c.kind === 'pc') syncPC(c, st0, c.wounds); log('', c.name + ' regains ' + amount + ' Stamina (' + c.st + '/' + c.stMax + ').'); feed('**' + c.name + '** regains ' + amount + ' Stamina.'); save(); render(); }
+  function heal(c, amount, opts) {
+    var st0 = c.st; c.st = Math.min(c.stMax, c.st + amount);
+    if (c.st > 0 && c.kind !== 'pc' && !slotsOf(c)) c.dead = false;
+    if (c.kind === 'pc') syncPC(c, st0, c.wounds);
+    log('', c.name + ' regains ' + amount + ' Stamina (' + c.st + '/' + c.stMax + ').'); feed('**' + c.name + '** regains ' + amount + ' Stamina.');
+    if (!(opts && opts.quiet)) { save(); render(); }
+  }
   /* A crow's combat entry changed from (st0, w0): pass the change on to the party entry and its sheet. */
   function syncPC(c, st0, w0) {
-    var p = state.party.filter(function (x) { return x.id === c.pcId; })[0];
+    var p = pcOf(c);
     if (p && (c.st !== st0 || c.wounds !== w0)) sheetOp(p, { st: c.st - st0, wounds: c.wounds - w0 });
   }
-  function monsterAttack(c, a) {
-    var b = beast(c.cref), dice = state.dice, edges = 0, banes = 0, why = [];
-    if (dice.net > 0) edges += dice.net; if (dice.net < 0) banes -= dice.net;
-    if (c.conds.Weakened) { banes++; why.push('weakened'); }
-    if (c.conds.Blessed) { edges++; why.push('blessed'); }
-    if (c.conds.Prone && /^M/.test(a[2])) { banes++; why.push('prone'); }
-    var crit = /crits on 18-20/.test(a[5] || '') ? 18 : 19, bonus = 0, cb = S().combat;
-    if (cb.round === 1 && (cb.surprise === 'crows' && c.kind === 'foe' || cb.surprise === 'foes' && c.kind === 'ally')) { bonus = 1; why.push('+1 vs surprised'); }
-    var r = test(a[1] + bonus, netEdges(edges, banes), crit);
-    var dmg = r.tier === 1 ? 'miss' : (r.tier === 2 ? a[3] : a[4]) + ' damage';
-    var extra = c.conds.Blessed && b ? ' (+' + Math.max(b.c[0], b.c[2]) + ' blessed)' : '';
-    ui.dice = { label: c.name + ': ' + a[0], r: r, dmg: dmg + (r.tier > 1 ? extra : ''), note: (a[5] || '') + (why.length ? (a[5] ? '; ' : '') + 'auto: ' + why.join(', ') : '') };
-    log('', '**' + c.name + '** ' + a[0] + ' (' + a[2] + '): ' + testLine(r) + ' → T' + r.tier + (r.tier === 1 ? ' miss' + (/^M/.test(a[2]) ? ' (target may counter)' : '') : ', ' + dmg + extra) + (r.crit ? '. Crit: extra action.' : ''));
-    feed('**' + c.name + '** ' + a[0] + ': tier ' + r.tier + (r.crit ? ' (crit)' : '') + (r.tier === 1 ? ', a miss.' : ', ' + dmg + extra + '.'));
+  /* A linked crow's vitals as its sheet has them (Stamina, AD from its armor and parry weapons, wounds, conditions). */
+  function pullVitals(x) {
+    var p = pcOf(x), w = p && p.link && cloudOn() ? sheetWin(p) : null;
+    if (!w || !w.CrowsPlay.vitals) return false;
+    var v = w.CrowsPlay.vitals(), was = JSON.stringify([x.st, x.stMax, x.ad, x.adMax, x.wounds, x.conds]);
+    x.st = v.st; x.stMax = v.stMax; x.ad = v.ad; x.adMax = v.adMax; x.wounds = v.wounds; x.conds = v.conds;
+    if (!x.conds.Grabbed) delete x.grabbedBy;
+    p.st = v.st; p.wounds = v.wounds; p.conds = clone(v.conds);
+    return was !== JSON.stringify([x.st, x.stMax, x.ad, x.adMax, x.wounds, x.conds]);
+  }
+  /* Keep linked crows in the tracker in step with their sheets (the player may drink a potion, stand up, change armor). */
+  setInterval(function () {
+    if (!state || !cloudOn() || window.CrowsCloud.typing) return;
+    var changed = false;
+    S().combat.list.forEach(function (x) { if (x.kind === 'pc' && pullVitals(x)) changed = true; });
+    if (changed) { save(); render(); }
+  }, 2000);
+
+  // ---- targets, reactions, grabs, taunts
+  /* Who a creature in the tracker can attack: the other side (crows and allies for a foe, foes for an ally), still up. */
+  function targetsFor(c) {
+    return S().combat.list.filter(function (x) { return x !== c && !x.dead && (c.kind === 'foe' ? x.kind !== 'foe' : x.kind === 'foe'); });
+  }
+  /* The creature's chosen target (n = 2: its second target, for attacks on 2 targets), while it can still be attacked. */
+  function targetOf(c, n) { var id = n === 2 ? c.tgt2 : c.tgt, t = id && targetsFor(c).filter(function (x) { return x.id === id; })[0]; return t || null; }
+  function twoTargets(a) { return /2 targets/.test(a[5] || ''); }
+  /* Reactions: 1 a round (more for some creatures); counters and opportunity attacks use them. */
+  function rxMax(x) { var b = beast(x.cref); return x.kind === 'pc' ? 1 : (b && b.rx) || 1; }
+  function rxLeft(x) { var r = S().combat.round; return rxMax(x) - (x.rx && x.rx.r === r ? x.rx.n : 0); }
+  function useRx(x) { var r = S().combat.round; if (!x.rx || x.rx.r !== r) x.rx = { r: r, n: 0 }; x.rx.n++; }
+  /* A grab ends when the grabber is gone, dead, prone, or unconscious. Called from save(). */
+  function releaseGrabs() {
+    var list = S().combat.list;
+    list.forEach(function (x) {
+      if (!x.grabbedBy) return;
+      var g = byId(x.grabbedBy);
+      if (g && !g.dead && !g.conds.Prone && !g.conds.Unconscious && x.conds.Grabbed) return;
+      delete x.grabbedBy;
+      if (x.conds.Grabbed) { setCond(x, 'Grabbed', false); feed('**' + x.name + '** is no longer grabbed' + (g ? ' (' + g.name + (g.dead ? ' is dead' : g.conds.Prone ? ' is prone' : g.conds.Unconscious ? ' is unconscious' : ' let go') + ').' : '.')); }
+    });
+  }
+  function grabbing(c) { return S().combat.list.filter(function (x) { return x.grabbedBy === c.id; }); }
+  /* Taunt: until the start of the taunter's next turn, attacks by the taunted creature that don't include the taunter take a bane. */
+  function tauntOn(x) { var t = x.taunt; return !!(t && byId(t.by) && !byId(t.by).dead); }
+  /* A new round: taunts run out at the start of the taunter's next turn, reaction prompts and unused assists lapse. */
+  function newRound(c) {
+    c.list.forEach(function (x) {
+      var t = x.taunt;
+      if (t && (c.round > t.round + 1 || (c.round === t.round + 1 && c.first === 'crows'))) delete x.taunt;
+    });
+    c.prompts = (c.prompts || []).filter(function (p) { return p.round >= c.round; });
+    c.assists = (c.assists || []).filter(function (a) { return a.round >= c.round - 1; });
+  }
+  /* Modifiers on a creature's roll against a target: its own conditions, the target's state, and the battlefield (ui.sit). */
+  function rollMods(att, t, melee, a) {
+    var dice = state.dice, sit = ui.sit || {}, b = beast(att.cref), x = (b && b.x) || '', note = (a && a[5]) || '';
+    var m = { e: 0, b: 0, bonus: 0, why: [], autoT3: false };
+    if (dice.net > 0) m.e += dice.net; if (dice.net < 0) m.b -= dice.net;
+    if (att.conds.Weakened) { m.b++; m.why.push('weakened'); }
+    if (att.conds.Blessed) { m.e++; m.why.push('blessed'); }
+    if (att.conds.Prone && melee) { m.b++; m.why.push('prone'); }
+    if (att.hidden) { m.e++; m.why.push('hidden'); }
+    if (tauntOn(att) && (!t || t.id !== att.taunt.by)) { m.b++; m.why.push('taunted by ' + att.taunt.name); }
+    if (t) {
+      if (surprised(t)) { m.bonus++; m.why.push('+1 vs surprised'); }
+      if (t.conds.Prone) { if (melee) { m.e++; m.why.push('target prone'); } else { m.b++; m.why.push('target prone (ranged)'); } }
+      if (t.conds.Grabbed) { m.e++; m.why.push('target grabbed'); }
+      if (t.squeeze) { m.bonus++; m.why.push('+1 vs squeezing'); }
+      if (t.conds.Unconscious) { m.autoT3 = true; m.why.push('target unconscious: tier 3'); }
+    } else if (S().combat.round === 1 && (S().combat.surprise === 'crows' && att.kind === 'foe' || S().combat.surprise === 'foes' && att.kind === 'ally')) { m.bonus++; m.why.push('+1 vs surprised'); }
+    if (sit.flank && melee) { m.e++; m.why.push('flanking'); }
+    if (sit.high) { m.e++; m.why.push('high ground'); }
+    if (sit.cover && !/ignores cover/.test(note)) { m.b++; m.why.push('cover'); }
+    if (sit.dark && !/◐/.test(x)) { m.b += 2; m.why.push('darkness'); }
+    else if (sit.dim && !/[⌂◐]/.test(x)) { m.b++; m.why.push('dim light'); }
+    if (sit.adj && !melee) { m.b++; m.why.push('ranged vs adjacent'); }
+    if (sit.far > 0 && !melee) { m.bonus -= 2 * sit.far; m.why.push('-' + (2 * sit.far) + ' beyond range'); }
+    return m;
+  }
+  /* What a creature's attack does on top of damage, read from its notes: conditions by tier (with a size limit), grabs. */
+  function tierFx(c, a, t, r) {
+    var note = (a[5] || '').toLowerCase(), out = { conds: {}, grab: false, notes: [] };
+    if (!t || r.tier < 2) return out;
+    var gate = /vs (tiny|small|medium|large|huge) or smaller/.exec(note), fits = !gate || noBigger(t, gate[1][0].toUpperCase());
+    note.split(';').forEach(function (part) {
+      var m = /t([23])(?: vs \w+ or smaller)?:? ([a-z ,]+)/.exec(part.trim()), any = /^damage: (\w+)/.exec(part.trim());
+      var words = m && +m[1] <= r.tier ? m[2] : any ? any[1] : '';
+      if (!words || (m && gate && !fits)) return;
+      ['weakened', 'vulnerable', 'prone', 'blessed'].forEach(function (k) { if (words.indexOf(k) >= 0) out.conds[k[0].toUpperCase() + k.slice(1)] = true; });
+      if (words.indexOf('grabbed') >= 0) out.grab = true;
+    });
+    if (gate && !fits && /grabbed|prone/.test(note)) out.notes.push(t.name + ' is too big for the ' + /grabbed|prone/.exec(note)[0] + ' on tier 3');
+    if (/lacerate/.test(note) && (r.tier === 3 || /any hit/.test(note))) out.notes.push('Lacerate: ' + t.name + ' takes 1 piercing for each laceration whenever they move and act in a turn, until they regain Stamina');
+    return out;
+  }
+  /* The damage a creature's hit deals (crit damage, blessed, bonuses against what it has grabbed). */
+  function hitDamage(c, a, t, r) {
+    var b = beast(c.cref), note = a[5] || '', n = r.tier === 2 ? a[3] : a[4], parts = [];
+    var cd = r.crit && /crit = (\d+) damage/.exec(note);
+    if (cd) { n = +cd[1]; parts.push('crit'); }
+    if (c.conds.Blessed && b) { var bl = Math.max(b.c[0], b.c[2]); n += bl; parts.push('+' + bl + ' blessed'); }
+    var g = /\+(\d+) (?:melee )?damage vs (?:a creature it has )?grabbed/.exec(note);
+    if (g && t && t.grabbedBy === c.id) { n += +g[1]; parts.push('+' + g[1] + ' vs grabbed'); }
+    var any = /\+(\d+) while it has anyone grabbed/.exec(note);
+    if (any && grabbing(c).length) { n += +any[1]; parts.push('+' + any[1] + ' while grabbing'); }
+    // From its stat line: hurt beasts hit harder ("At 15 Stamina or less: +2 damage"), and a charge (the Ref's "Charged 4+" button).
+    var x = (b && b.x) || '', low = /At (\d+) Stamina(?: or less)?: \+(\d+) damage/.exec(x), ch = /^Charge:[^+]*\+(\d+) damage/m.exec(x.replace(/\. /g, '.\n'));
+    if (low && c.st <= +low[1]) { n += +low[2]; parts.push('+' + low[2] + ' hurt'); }
+    if (ch && (ui.sit || {}).charge) { n += +ch[1]; parts.push('+' + ch[1] + ' charge'); }
+    return { n: n, parts: parts };
+  }
+  /* A test with these dice (one roll for every target of an attack; each target's modifiers apply on their own). */
+  function testWith(dice, mod, net, critMin) {
+    var r = test(mod, net, critMin, dice);
+    return r;
+  }
+  /* A creature's own melee attack, for counters and opportunity attacks. */
+  function meleeAtk(c) { var b = beast(c.cref); return b ? b.atk.filter(function (a) { return /^M/.test(a[2]); })[0] || null : null; }
+  /*
+   * A creature's attack, at its target(s) if the Ref picked them: one roll, each target's modifiers on their own. A hit
+   * deals damage (crit damage, blessed, grab bonuses) and the attack's tier effects (weakened, prone, grabbed...) to the
+   * target unless the Ref turned that off; Undo takes it back. A melee miss lets the target counter (a crow's player is
+   * asked on their Play page). A crit regains a used X/Rest feature. opts.rxn: an opportunity attack (uses a reaction).
+   */
+  function monsterAttack(c, a, opts) {
+    opts = opts || {};
+    var cb = S().combat, melee = /^M/.test(a[2]), crit = /crits on 18-20/.test(a[5] || '') ? 18 : 19;
+    var t1 = targetOf(c), t2 = twoTargets(a) ? targetOf(c, 2) : null, tgts = [t1].concat(t2 && t2 !== t1 ? [t2] : []).filter(Boolean);
+    var dice = [d(10), d(10)], lines = [], act = { who: c.name, label: a[0], items: [], applied: false }, counters = [];
+    (tgts.length ? tgts : [null]).forEach(function (t) {
+      var m = rollMods(c, t, melee, a), r = testWith(dice, a[1] + m.bonus, netEdges(m.e, m.b), crit);
+      if (m.autoT3 && !r.doom) r.tier = 3;
+      var line = (t ? '→ **' + t.name + '**: ' : '') + testLine(r) + ' → T' + r.tier, dm = null, fx = null;
+      if (r.tier > 1) {
+        dm = hitDamage(c, a, t, r); fx = tierFx(c, a, t, r);
+        line += ', ' + dm.n + ' damage' + (dm.parts.length ? ' (' + dm.parts.join(', ') + ')' : '');
+        var cn = Object.keys(fx.conds);
+        if (cn.length) line += ', ' + cn.join(' and ').toLowerCase();
+        if (fx.grab) line += ', grabbed';
+        if (fx.notes.length) line += '. ' + fx.notes.join('. ');
+        if (t) act.items.push({ id: t.id, damage: dm.n, conds: fx.conds, grab: fx.grab ? c.id : null });
+      } else {
+        line += ' miss';
+        if (melee && t) {
+          if (t.kind === 'pc') { prompt(t, c, r.doom, 'a melee attack'); line += ' (' + t.name + ' may counter)'; }
+          else if (meleeAtk(t)) counters.push({ by: t, vs: c, doom: r.doom });
+        }
+      }
+      if (m.why.length) line += ' [' + m.why.join(', ') + ']';
+      lines.push({ r: r, text: line, t: t, dm: dm });
+    });
+    var r0 = lines[0].r;
+    if (opts.rxn) useRx(c);
+    if (c.hidden) { c.hidden = false; lines[0].text += '. ' + c.name + ' is no longer hidden'; }
+    if (r0.crit) {
+      var b = beast(c.cref), back = b && b.uses.filter(function (u) { return c.used[u[0]] > 0; })[0];
+      if (back) { c.used[back[0]]--; lines[0].text += '. Crit: regains a use of ' + back[0]; }
+    }
+    ui.sit = {};   // the battlefield modifiers were for this roll
+    ui.dice = { label: c.name + ': ' + a[0] + (opts.rxn ? ' (opportunity attack)' : '') + (tgts.length ? ' → ' + tgts.map(function (t) { return t.name; }).join(', ') : ''), r: r0,
+      dmg: lines.map(function (l) { return (l.t ? l.t.name + ': ' : '') + (l.r.tier === 1 ? 'miss' : l.dm.n + ' damage'); }).join(' · '),
+      hit: act.items.length ? act : null, counters: counters,
+      note: [a[5] || ''].concat(lines.length > 1 || lines[0].text.indexOf('[') >= 0 ? lines.map(function (l) { return l.text.replace(/\*\*/g, ''); }) : []).filter(Boolean).join('; ') };
+    log('', '**' + c.name + '** ' + a[0] + ' (' + a[2] + ')' + (opts.rxn ? ', opportunity attack' : '') + (tgts.length ? ' ' : ': ') + lines.map(function (l) { return l.text; }).join('; ') + (r0.crit ? '. Crit: extra action.' : ''));
+    feed('**' + c.name + '** ' + a[0] + (opts.rxn ? ' (opportunity attack)' : '') + ': ' + lines.map(function (l) { return (l.t ? '→ **' + l.t.name + '** ' : '') + 'tier ' + l.r.tier + (l.r.crit ? ' (crit)' : '') + (l.r.tier === 1 ? ', a miss' : ', ' + l.dm.n + ' damage'); }).join('; ') + '.');
+    if (act.items.length && cb.autoMon !== false) applyAct(act);
     save(); render();
+  }
+  /* A crow may counter (its player is asked on their Play page, until the end of the round). */
+  function prompt(crow, by, doom, what) {
+    var cb = S().combat;
+    (cb.prompts = cb.prompts || []).push({ id: nid(), to: crow.id, from: by.id, fromName: by.name, doom: !!doom, round: cb.round, what: what });
+  }
+  /*
+   * A creature's maneuver: Grab or Knockback against its target (its size or smaller), or Escape Grab. 2d10 + S
+   * (Escape: A or S). Grab: T2 grabbed (push 1 or shift), T3 grabbed. Knockback: push 1 / 2. Escape: T2 free (the grabber
+   * may counter), T3 free and move 1. A tier 1 Grab or Knockback lets the target counter.
+   */
+  function monsterManeuver(c, kind) {
+    var b = beast(c.cref), cb = S().combat, t = kind === 'escape' ? byId(c.grabbedBy) : targetOf(c);
+    if (!t) { toast(kind === 'escape' ? c.name + ' isn’t grabbed.' : 'Pick ' + c.name + '’s target first.'); return; }
+    if (kind !== 'escape' && !noBigger(t, c)) { toast(t.name + ' is bigger than ' + c.name + ': it can only grab or knock back its size or smaller.'); return; }
+    var x = (b && b.x) || '', tx = (beast(t.cref) || {}).x || '', m = { e: 0, b: 0, bonus: 0, why: [] }, net = state.dice.net;
+    if (net > 0) m.e += net; if (net < 0) m.b -= net;
+    if (c.conds.Weakened) { m.b++; m.why.push('weakened'); }
+    if (c.conds.Blessed) { m.e++; m.why.push('blessed'); }
+    var ch = b ? (kind === 'escape' ? Math.max(b.c[0], b.c[2]) : b.c[2]) : 0;
+    if (kind === 'grab' && /E to grab/.test(x)) { m.e++; m.why.push('good grabber'); }
+    if (kind === 'escape' && /B (to escape|for others to escape)/.test(tx)) { m.b++; m.why.push(t.name + ' holds tight'); }
+    var r = test(ch + m.bonus, netEdges(m.e, m.b), 19), name = kind === 'grab' ? 'Grab' : kind === 'knockback' ? 'Knockback' : 'Escape Grab';
+    var act = { who: c.name, label: name, items: [], applied: false }, res, counters = [];
+    if (kind === 'escape') {
+      res = r.tier === 1 ? 'still grabbed' : r.tier === 2 ? 'breaks free, but ' + t.name + ' may counter' : 'breaks free and moves 1 square';
+      if (r.tier > 1) act.items.push({ id: c.id, conds: { Grabbed: false } });
+      if (r.tier === 2) { if (t.kind === 'pc') prompt(t, c, false, 'an escape from your grab'); else if (meleeAtk(t)) counters.push({ by: t, vs: c, doom: false }); }
+    } else {
+      res = r.tier === 1 ? 'fails; ' + t.name + ' may counter' : kind === 'grab' ? (r.tier === 2 ? 'grabbed (push 1 or ' + c.name + ' shifts)' : 'grabbed') : 'pushed ' + (r.tier === 2 ? 1 : 2) + ' square' + (r.tier === 2 ? '' : 's');
+      if (r.tier > 1 && kind === 'grab') act.items.push({ id: t.id, grab: c.id });
+      if (r.tier === 1) { if (t.kind === 'pc') prompt(t, c, r.doom, 'a ' + name); else if (meleeAtk(t)) counters.push({ by: t, vs: c, doom: r.doom }); }
+    }
+    var line = '**' + c.name + '** ' + name + (kind === 'escape' ? ' from **' + t.name + '**' : ' → **' + t.name + '**') + ': ' + testLine(r) + ' → T' + r.tier + ', ' + res + (m.why.length ? ' [' + m.why.join(', ') + ']' : '') + '.';
+    ui.sit = {};
+    ui.dice = { label: c.name + ': ' + name + ' (' + (kind === 'escape' ? 'from ' : '→ ') + t.name + ')', r: r, dmg: res, hit: act.items.length ? act : null, counters: counters, note: m.why.length ? 'auto: ' + m.why.join(', ') : '' };
+    log('', line); feed(line);
+    if (act.items.length && cb.autoMon !== false) applyAct(act);
+    save(); render();
+  }
+
+  // ---- applying and undoing effects
+  /* What an action does to whom: [{ id, damage, piercing, heal, ad, wounds (healed), conds: { name: on }, grab: grabber id }]. */
+  function fxItems(act) { return act.items || (act.target && act.damage ? [{ id: act.target, damage: act.damage, piercing: act.piercing }] : []); }
+  /* Deal an action's effects (remembering everyone as they were, for Undo). */
+  function applyAct(act) {
+    if (act.applied) return;
+    var before = {};
+    fxItems(act).forEach(function (f) {
+      var x = byId(f.id);
+      if (!x) return;
+      var b = before[f.id] = { st: x.st, ad: x.ad, adMax: x.adMax, wounds: x.wounds, dead: !!x.dead, conds: clone(x.conds), grabbedBy: x.grabbedBy || null };
+      if (f.damage > 0) { var r = damage(x, f.damage, f.piercing, { from: act.who, quiet: true }); if (r && r.sheet) b.sheet = r.sheet; }
+      if (f.heal > 0) heal(x, f.heal, { quiet: true });
+      if (f.ad > 0) { x.ad += f.ad; x.adMax = Math.max(x.adMax, x.ad); log('', x.name + ' gains ' + f.ad + ' AD (' + act.who + ').'); feed('**' + x.name + '** gains ' + f.ad + ' AD.'); }
+      if (f.wounds > 0 && x.wounds) {
+        var n = Math.min(f.wounds, x.wounds), w0 = x.wounds; x.wounds -= n;
+        if (x.kind === 'pc') syncPC(x, x.st, w0);
+        log('', x.name + ' heals ' + plural(n, 'wound') + ' (' + act.who + ').'); feed('**' + x.name + '** heals ' + plural(n, 'wound') + '.');
+      }
+      if (f.conds) Object.keys(f.conds).forEach(function (k) { setCond(x, k, f.conds[k]); });
+      if (f.grab) { x.grabbedBy = f.grab; setCond(x, 'Grabbed', true); }
+    });
+    act.before = before; act.applied = true;
+    save(); render();
+  }
+  function undoAct(act) {
+    if (!act.applied || !act.before) return;
+    var names = [];
+    Object.keys(act.before).forEach(function (id) {
+      var x = byId(id), b = act.before[id], p = x && pcOf(x);
+      if (!x) return;
+      var st0 = x.st, w0 = x.wounds;
+      if (b.sheet && p) sheetOp(p, { restore: b.sheet });
+      x.st = b.st; x.ad = b.ad; x.adMax = b.adMax; x.wounds = b.wounds; x.dead = b.dead;
+      REF.CONDITIONS.forEach(function (k) { setCond(x, k[0], !!b.conds[k[0]]); });
+      if (b.grabbedBy) x.grabbedBy = b.grabbedBy; else delete x.grabbedBy;
+      if (x.kind === 'pc' && !b.sheet) syncPC(x, st0, w0);
+      if (p && b.sheet) { p.st = b.st; p.wounds = b.wounds; }
+      names.push(x.name);
+    });
+    act.applied = false; delete act.before;
+    log('', 'Undid ' + act.who + '’s ' + (act.label || 'action') + ' on ' + names.join(', ') + '.');
+    feed('The Ref undid **' + act.who + '**’s ' + (act.label || 'action') + ' on **' + names.join(', ') + '**.');
+    save(); render();
+  }
+  /* A creature counters (a reaction): its melee attack's tier 2 damage, tier 3 if the one it counters rolled a doom. */
+  function counterDamage(t, doom) {
+    var m = meleeAtk(t);
+    return m ? { n: doom ? m[4] : m[3], with: m[0] } : null;
+  }
+  function counterAct(by, victim, doom) {
+    var cd = counterDamage(by, doom);
+    if (!cd) return null;
+    useRx(by);
+    var act = { who: by.name, label: 'counter', items: [{ id: victim.id, damage: cd.n }], applied: false };
+    log('', '**' + by.name + '** counters **' + victim.name + '** with ' + cd.with + (doom ? ' (doom: tier 3 damage)' : '') + '.');
+    feed('**' + by.name + '** counters **' + victim.name + '**: ' + cd.n + ' damage.');
+    applyAct(act);
+    return act;
   }
 
   // ------------------------------------------------------------------ live combat with the players
   /*
    * On the accounts site the fight in the combat tracker is shared with the players of the linked crows in it.
-   * Their Play pages show the round, who acts first, the enemies (how hurt they look, or their Stamina and AD if the
-   * Ref shows them), the crows, and a feed of what happens. Players pick a target and attack or cast at it from their
-   * sheet, describe other actions, and say when they're done for the round. Those actions arrive here; hits are
-   * applied to the target at once unless the Ref turns that off, and can be undone. See "live combat" in server/app/api.php.
+   * Their Play pages show the round, who acts first, every combatant (how hurt foes look, or their Stamina and AD if
+   * the Ref shows them; conditions, grabs, taunts, who's attacking whom), reaction prompts, assists, and a feed. From
+   * there players attack and cast at targets they pick, make maneuvers (Grab, Knockback, Escape Grab, Stand Up, Jump...),
+   * Taunt, Ready, Assist, react (counters, opportunity attacks), and say when they're done for the round. Those actions
+   * arrive here; their effects are applied at once unless the Ref turns that off, and can be undone. The rules' options
+   * after a miss, a doom, or a crit (counters, stray shots, backlash, dismember) are buttons on the action.
+   * See "live combat" in server/app/api.php.
    */
   var live = { sent: null, cid: null, timer: null, busy: false, again: false, off: false, fetching: false };
   /* A line for the players' combat feed (only while there's a fight). */
@@ -685,7 +986,7 @@
     (c.feed = c.feed || []).push({ t: Date.now(), s: text });
     if (c.feed.length > 40) c.feed.splice(0, c.feed.length - 40);
   }
-  function clearCombat(c) { c.list = []; c.round = 0; c.encId = null; c.surprise = 'none'; c.first = null; c.feed = []; c.acts = []; }
+  function clearCombat(c) { c.list = []; c.round = 0; c.encId = null; c.surprise = 'none'; c.first = null; c.feed = []; c.acts = []; c.prompts = []; c.assists = []; }
   function pcOf(x) { return x && x.kind === 'pc' ? state.party.filter(function (p) { return p.id === x.pcId; })[0] || null : null; }
   function healthWord(x) {
     if (x.dead) return 'dead';
@@ -699,13 +1000,25 @@
     if (!c.list.length) return null;
     return { active: true, round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
       list: c.list.map(function (x) {
-        var b = beast(x.cref), pc = x.kind === 'pc', o = { id: x.id, kind: x.kind, name: x.name, health: healthWord(x), dead: !!x.dead,
-          conds: Object.keys(x.conds || {}).filter(function (k) { return x.conds[k]; }), surprised: surprised(x) };
-        if (b && !pc) { o.type = b.t; o.size = SIZES[b.sz] || b.sz; }
+        var b = beast(x.cref), pc = x.kind === 'pc', g = byId(x.grabbedBy), o = { id: x.id, kind: x.kind, name: x.name, health: healthWord(x), dead: !!x.dead,
+          conds: Object.keys(x.conds || {}).filter(function (k) { return x.conds[k]; }), surprised: surprised(x), sz: sizeOf(x) };
+        if (b && !pc) {
+          o.type = b.t; o.size = SIZES[b.sz] || b.sz;
+          var t = targetOf(x), t2 = targetOf(x, 2);
+          if (t) { o.tgt = t.id; o.tgtName = t.name; }
+          if (t2 && t2 !== t) { o.tgt2 = t2.id; o.tgt2Name = t2.name; }
+        }
+        if (g) { o.grabbedBy = g.id; o.grabbedByName = g.name; }
+        if (tauntOn(x)) { o.tauntBy = x.taunt.by; o.tauntName = x.taunt.name; }
+        if (x.hidden) o.hidden = true;
+        if (x.squeeze) o.squeeze = true;
         if (pc || x.kind === 'ally' || c.showSt) { o.st = x.st; o.stMax = x.stMax; o.ad = x.ad; o.adMax = x.adMax; }
-        if (pc) { var p = pcOf(x); o.wounds = x.wounds; o.link = p && p.link || null; o.done = !!c.round && x.done === c.round; }
+        if (pc) { var p = pcOf(x); o.wounds = x.wounds; o.link = p && p.link || null; o.done = !!c.round && x.done === c.round; o.rxLeft = rxLeft(x); }
+        else o.acted = !!c.round && x.acted === c.round;
         return o;
       }),
+      prompts: (c.prompts || []).filter(function (p) { return !p.done && p.round === c.round; }),
+      assists: c.assists || [],
       feed: (c.feed || []).slice(-25) };
   }
   /* Called from save(): publish the fight soon after it changes. */
@@ -749,6 +1062,9 @@
       if (j.items.length) { save(); if (!window.CrowsCloud.typing) render(); }
     }).then(function () { live.fetching = false; }, function () { live.fetching = false; });
   }
+  var MANEUVER_NOTES = { 'Move': 'moves', 'Shift': 'shifts (no opportunity attacks)', 'Stand Up': 'stands up', 'Draw From Belt': 'draws from their belt',
+    'Draw From Pack': 'draws from their pack', 'Pick Up Item': 'picks up an item', 'Dump Backpack': 'dumps their backpack', 'Reload': 'reloads',
+    'Command Pet': 'commands their pet', 'Jump': 'jumps' };
   function takeAction(it) {
     var a = it.action || {}, c = S().combat;
     var p = it.link ? state.party.filter(function (x) { return x.link === it.link; })[0] : null;
@@ -760,55 +1076,133 @@
       feed('**' + who + '** ' + (a.type === 'done' ? 'is done for round ' + c.round + '.' : 'isn’t done yet.'));
       return;
     }
-    var tgt = c.list.filter(function (x) { return x.id === a.target; })[0] || null, tname = tgt ? tgt.name : a.targetName || '';
-    var act = { id: it.id, who: who, type: a.type, target: tgt ? tgt.id : null, tname: tname, round: c.round, applied: false, text: a.text || '' }, line;
+    if (a.type === 'assistUsed') { c.assists = (c.assists || []).filter(function (x) { return x.id !== a.text; }); return; }
+    var tlist = (a.targets && a.targets.length ? a.targets : a.target ? [{ id: a.target, name: a.targetName }] : [])
+      .map(function (t) { var x = byId(t.id); return x ? { x: x, name: x.name } : { x: null, name: t.name || '' }; });
+    var tgt = tlist[0] && tlist[0].x, tname = tlist.map(function (t) { return t.name; }).filter(Boolean).join(', ');
+    var act = { id: it.id, who: who, type: a.type, target: tgt ? tgt.id : null, tname: tname, round: c.round, applied: false, text: a.text || '', from: me.id,
+      label: a.label || a.name || '', tier: a.tier, crit: !!a.crit, doom: !!a.doom, rxn: !!a.rxn }, line;
+    if (a.rxn) useRx(me);
+    if (a.prompt) (c.prompts || []).forEach(function (q) { if (q.id === a.prompt) q.done = true; });
     if (a.type === 'attack') {
-      act.label = a.label; act.tier = a.tier; act.damage = a.damage; act.piercing = !!a.piercing;
-      line = '**' + who + '**: ' + (a.label || 'attack') + (tname ? ' → **' + tname + '**' : '') + ': tier ' + a.tier + (a.crit ? ' (crit)' : a.doom ? ' (doom)' : '') +
-        (a.damage ? ', ' + a.damage + (a.piercing ? ' piercing' : '') + ' damage.' : a.tier === 1 && !a.cast ? ', a miss.' : '.') + (a.text ? ' ' + a.text : '');
-    } else line = '**' + who + '**' + (tname ? ' → **' + tname + '**' : '') + ': ' + (a.text || 'acts.');
+      act.damage = a.damage; act.piercing = !!a.piercing; act.melee = !!a.melee; act.ranged = !!a.ranged; act.allyDamage = a.allyDamage || 0;
+      act.allyDamage2 = a.allyDamage2 || 0; act.rank = a.rank || 0; act.backlash = !!a.backlash; act.dismember = !!a.dismember;
+      act.items = tlist.filter(function (t) { return t.x; }).map(function (t) {
+        var f = { id: t.x.id, damage: a.damage || 0, piercing: !!a.piercing, heal: a.heal || 0, ad: a.ad || 0, wounds: a.healWounds || 0, conds: {} };
+        (a.conds || []).forEach(function (k) { if (k !== 'Prone' || !a.condMaxSize || noBigger(t.x, a.condMaxSize)) f.conds[k] = true; });
+        return f;
+      });
+      var effects = [a.damage ? a.damage + (a.piercing ? ' piercing' : '') + ' damage' : '', a.heal ? 'regains ' + a.heal + ' Stamina' : '', a.ad ? '+' + a.ad + ' AD' : '',
+        a.healWounds ? 'heals ' + plural(a.healWounds, 'wound') : '', (a.conds || []).length ? (a.conds || []).join(' and ').toLowerCase() : '', a.push ? 'push ' + a.push : ''].filter(Boolean);
+      line = '**' + who + '**' + (a.rxn ? ' (reaction)' : '') + ': ' + (a.label || 'attack') + (tname ? ' → **' + tname + '**' : '') + ': tier ' + a.tier + (a.crit ? ' (crit)' : a.doom ? ' (doom)' : '') +
+        (effects.length ? ', ' + effects.join(', ') + '.' : a.tier === 1 && !a.cast ? ', a miss.' : '.') + (a.text ? ' ' + a.text : '');
+      if (!act.items.some(function (f) { return f.damage || f.heal || f.ad || f.wounds || Object.keys(f.conds).length; })) act.items = [];
+    } else if (a.type === 'maneuver') {
+      var n = a.name || 'Maneuver', rolled = a.tier > 0, res = '';
+      act.label = n; act.items = [];
+      if (n === 'Grab' && tgt) {
+        if (!noBigger(tgt, 'M')) res = tgt.name + ' is too big to grab';
+        else if (a.tier > 1) { res = a.tier === 2 ? 'grabbed (push 1 or ' + who + ' shifts)' : 'grabbed'; act.items.push({ id: tgt.id, grab: me.id }); }
+        else { res = 'fails; ' + tgt.name + ' may counter'; act.counterable = true; }
+      } else if (n === 'Knockback' && tgt) {
+        if (!noBigger(tgt, 'M')) res = tgt.name + ' is too big to knock back';
+        else if (a.tier > 1) res = tgt.name + ' pushed ' + (a.tier === 2 ? '1 square' : '2 squares');
+        else { res = 'fails; ' + tgt.name + ' may counter'; act.counterable = true; }
+      } else if (n === 'Escape Grab') {
+        var g = byId(me.grabbedBy);
+        if (a.tier > 1) { res = a.tier === 2 ? 'breaks free' + (g ? ', but ' + g.name + ' may counter' : '') : 'breaks free and moves 1 square'; act.items.push({ id: me.id, conds: { Grabbed: false } }); }
+        else res = 'still grabbed';
+        if (a.tier === 2 && g) { act.target = g.id; act.tname = g.name; act.counterable = true; }
+      } else if (n === 'Stand Up') { act.items.push({ id: me.id, conds: { Prone: false } }); res = 'stands up'; }
+      else if (n === 'Jump') res = a.tier === 1 ? 'jumps 0 squares' : a.tier === 2 ? 'jumps up to 2 squares (1 high)' : 'jumps up to ' + (a.jump || 3) + ' squares (1 high)';
+      else res = MANEUVER_NOTES[n] || 'acts';
+      line = '**' + who + '** ' + n + (tgt && n !== 'Escape Grab' ? ' → **' + tgt.name + '**' : '') + (rolled ? ' (tier ' + a.tier + (a.crit ? ', crit' : a.doom ? ', doom' : '') + ')' : '') + ': ' + res + '.' + (a.text ? ' ' + a.text : '');
+    } else if (a.type === 'taunt' && tgt) {
+      tgt.taunt = { by: me.id, name: who, round: c.round };
+      line = '**' + who + '** taunts **' + tgt.name + '**: until ' + who + '’s next turn, its attacks that don’t include ' + who + ' take a bane.';
+    } else if (a.type === 'assist') {
+      var to = byId(a.assistTo);
+      if (to) (c.assists = c.assists || []).push({ id: 'as' + it.id, to: to.id, toName: to.name, from: me.id, fromName: who, bonus: a.bonus | 0, round: c.round });
+      line = '**' + who + '** assists **' + (to ? to.name : 'an ally') + '** (tier ' + a.tier + '): ' + signed(a.bonus | 0) + ' to their next test this turn.' + (a.text ? ' ' + a.text : '');
+    } else if (a.type === 'ready') line = '**' + who + '** readies an action: ' + (a.text || '(no trigger given)') + '.';
+    else line = '**' + who + '**' + (tname ? ' → **' + tname + '**' : '') + ': ' + (a.text || 'acts.');
     c.acts = (c.acts || []).concat([act]).slice(-30);
     log('', line); feed(line);
-    if (a.type === 'attack' && a.damage > 0 && tgt && !tgt.dead && c.auto !== false) applyAct(act);
+    if (act.items && act.items.length && c.auto !== false) applyAct(act);
   }
-  /* Deal a player's hit to its target (remembering the target as it was, for Undo). */
-  function applyAct(act) {
-    var tgt = S().combat.list.filter(function (x) { return x.id === act.target; })[0];
-    if (!tgt || act.applied) return;
-    act.before = { st: tgt.st, ad: tgt.ad, wounds: tgt.wounds, dead: !!tgt.dead };
-    act.applied = true;
-    damage(tgt, act.damage, act.piercing);
+  /*
+   * What the rules let happen after a player's action, as buttons on it: the target counters a melee miss or a failed
+   * Grab/Knockback (its melee attack's tier 2 damage, tier 3 on a doom; it needs a reaction left), the grabber counters an
+   * escape at tier 2, a ranged miss next to allies may hit one (odd on any die: the weapon's tier 2 damage; a doom: tier
+   * 3), a doom casting or chaos roll of 1 is a backlash (d100 + the spell's rank), and a crit with a Dismember weapon
+   * takes a limb (d6). Each hit can be undone like any other.
+   */
+  function doomOptions(a) {
+    var c = S().combat, out = [], tgt = byId(a.target), crow = byId(a.from);
+    if (a.type !== 'attack' && a.type !== 'maneuver') return out;
+    if (a.counter) out.push(el('span', { class: 'fine', text: 'Counter:' }), hitControls(a.counter));
+    else if (((a.type === 'attack' && a.melee && a.tier === 1) || a.counterable) && tgt && !tgt.dead && crow && tgt.kind !== 'pc') {
+      var cd = counterDamage(tgt, a.doom);
+      if (cd) out.push(rxLeft(tgt) > 0 ? btn(tgt.name + ' counters (' + cd.n + ')', function () { a.counter = counterAct(tgt, crow, a.doom); save(); render(); },
+        'btn-small', 'A counter (reaction): its melee attack’s tier 2 damage, tier 3 on a doom') : el('span', { class: 'fine', text: tgt.name + ' has no reaction left to counter.' }));
+    }
+    if (a.stray) out.push(el('span', { class: 'fine', text: 'Stray shot:' }), hitControls(a.stray));
+    else if (a.type === 'attack' && a.ranged && a.tier === 1 && (a.doom ? a.allyDamage : a.allyDamage2) && !a.strayRolled) {
+      var allies = c.list.filter(function (x) { return !x.dead && x.kind !== 'foe' && x.id !== a.from; });
+      if (allies.length) out.push(btn(a.doom ? 'Hit a random ally (' + a.allyDamage + ')' : 'Ally next to the target? Roll (odd: ' + a.allyDamage2 + ')', function () {
+        var roll = a.doom ? 1 : d(6);
+        if (!(roll % 2)) { a.strayRolled = 'd6 = ' + roll + ': even, no ally is hit.'; log('', a.who + '’s miss: ' + a.strayRolled); save(); render(); return; }
+        var hit = pick(allies), n = a.doom ? a.allyDamage : a.allyDamage2;
+        a.stray = { who: a.who, label: 'stray shot', items: [{ id: hit.id, damage: n }], applied: false };
+        log('', (a.doom ? 'Ranged doom' : 'Ranged miss, d6 = ' + roll) + ': **' + a.who + '** hits **' + hit.name + '** instead (random ally next to the target).');
+        feed('**' + a.who + '**’s shot hits **' + hit.name + '** instead: ' + n + ' damage.');
+        applyAct(a.stray);
+      }, 'btn-small', 'A ranged miss with allies next to the target: odd on any die hits a random one for the weapon’s tier 2 damage; a doom hits one for tier 3. You decide who was adjacent.'));
+    }
+    if (a.strayRolled) out.push(el('span', { class: 'fine', text: a.strayRolled }));
+    if (a.backlashText) out.push(el('span', { class: 'fine', text: a.backlashText }));
+    else if (a.backlash) out.push(btn('Roll backlash (d100 + ' + a.rank + ')', function () {
+      var r = d100().total, n = r + a.rank, what = rollInText(lookup(REF.BACKLASH, n)[2]);   // rolled once, shown everywhere
+      a.backlashText = 'Backlash ' + r + ' + ' + a.rank + ' = ' + n + ': ' + what;
+      ui.dice = { label: a.who + ': backlash', text: a.backlashText };
+      log('', '**' + a.who + '** suffers a backlash: d100 ' + r + ' + rank ' + a.rank + ' = ' + n + '. ' + what);
+      feed('**' + a.who + '** suffers a backlash: ' + what);
+      save(); render();
+    }, 'btn-small btn-primary', REF.BACKLASH_RULES));
+    if (a.limbText) out.push(el('span', { class: 'fine', text: a.limbText }));
+    else if (a.dismember && a.crit && tgt) out.push(btn('Dismember (d6)', function () {
+      var r = d(6), limb = r <= 2 ? 'an arm (' + a.who + ' picks): it drops what it held, lets go of grabs, and attacks with it deal 1 less damage' :
+        r <= 4 ? 'a leg: its speed drops in proportion (no legs: speed 0, can’t stand)' : r === 5 ? 'an arm or a leg (' + a.who + '’s choice)' : 'its head: it dies';
+      a.limbText = 'Dismember d6 = ' + r + ': ' + tgt.name + ' loses ' + limb + '.';
+      if (r === 6) { tgt.dead = true; tgt.st = 0; }
+      log('', a.limbText); feed('**' + tgt.name + '** loses ' + limb.replace(/ \(.*?\)/, '') + '.');
+      save(); render();
+    }, 'btn-small btn-primary', 'Dismember: a crit removes a limb. Creatures with no clear anatomy take double crit damage instead (your call).'));
+    if (a.doom && !out.length) out.push(el('span', { class: 'fine', text: 'Doom: tier 1 and a major setback (your call).' }));
+    return out;
   }
-  function undoAct(act) {
-    var tgt = S().combat.list.filter(function (x) { return x.id === act.target; })[0], b = act.before;
-    if (!tgt || !act.applied || !b) return;
-    var st0 = tgt.st, w0 = tgt.wounds;
-    tgt.st = b.st; tgt.ad = b.ad; tgt.wounds = b.wounds; tgt.dead = b.dead;
-    if (tgt.kind === 'pc') syncPC(tgt, st0, w0);
-    act.applied = false; delete act.before;
-    log('', 'Undid ' + act.who + '’s hit on ' + tgt.name + '.');
-    feed('The Ref undid **' + act.who + '**’s hit on **' + tgt.name + '**.');
-    save(); render();
-  }
-  /* Under the combat tracker: who sees the fight, the players' latest actions, and how hits are applied. */
+  /* Under the combat tracker: who sees the fight, the players' latest actions, open reaction prompts, and assists. */
   function livePanel() {
     if (!cloudOn()) return null;
     var c = S().combat, crows = c.list.filter(function (x) { var p = pcOf(x); return p && p.link; }).length, acts = (c.acts || []).slice(-8).reverse();
+    var open = (c.prompts || []).filter(function (p) { return !p.done && p.round === c.round; });
     return el('div', { class: 'live-box' }, [
       el('div', { class: 'row center' }, [
         el('b', { text: 'Players' }),
         el('span', { class: 'fine grow', text: !c.list.length ? 'Players see the fight on their Play page once their linked crows are in the tracker.' :
           crows ? plural(crows, 'linked crow') + ' in this fight: their players see it live and act from their Play page.' : 'No linked crows in this fight, so no player sees it. Link crows in the Party tab.' }),
-        chk(c, 'auto', 'Apply their hits automatically', { title: 'Off: each hit waits here until you apply it' }),
+        chk(c, 'auto', 'Apply their actions automatically', { title: 'Off: each hit, heal, grab, or condition waits here until you apply it' }),
         chk(c, 'showSt', 'Show foes’ Stamina and AD', { title: 'Off: players only see how hurt each foe looks' })]),
+      open.length ? el('div', { class: 'fine' }, ['Waiting on reactions: ' + open.map(function (p) { var to = byId(p.to); return (to ? to.name : 'a crow') + ' may counter ' + p.fromName; }).join('; ') + ' (until the end of the round).']) : null,
+      (c.assists || []).length ? el('div', { class: 'fine' }, ['Assists: ' + c.assists.map(function (x) { return x.fromName + ' → ' + x.toName + ' ' + signed(x.bonus); }).join('; ') + '.']) : null,
       acts.length ? el('ul', { class: 'live-acts' }, acts.map(function (a) {
-        var tgt = c.list.filter(function (x) { return x.id === a.target; })[0];
+        var items = fxItems(a), what = a.type === 'attack' ? 'tier ' + a.tier + (a.damage ? ', ' + a.damage + (a.piercing ? ' piercing' : '') + ' damage' : '') :
+          a.type === 'maneuver' ? (a.tier ? 'tier ' + a.tier : '') + (a.text ? ' ' + a.text : '') : a.text;
         return el('li', null, [
           el('span', { class: 'log-t', text: a.round ? 'R' + a.round : '' }),
-          el('span', { class: 'grow' }, [rich('**' + a.who + '**' + (a.label ? ': ' + a.label : '') + (a.tname ? ' → ' + a.tname : '') + ' · ' +
-            (a.type === 'attack' ? 'tier ' + a.tier + (a.damage ? ', ' + a.damage + (a.piercing ? ' piercing' : '') + ' damage' : '') : a.text))]),
-          a.type === 'attack' && a.damage && tgt ? (a.applied ? btn('Undo', function () { undoAct(a); }, 'btn-small btn-ghost', 'Put ' + tgt.name + '’s Stamina, AD, and wounds back as they were')
-            : btn('Apply ' + a.damage, function () { applyAct(a); }, 'btn-small btn-primary', 'Deal the damage to ' + tgt.name)) : null]);
+          el('span', { class: 'grow' }, [rich('**' + a.who + '**' + (a.label ? ': ' + a.label : a.type === 'taunt' ? ': Taunt' : a.type === 'assist' ? ': Assist' : '') + (a.tname ? ' → ' + a.tname : '') + (what ? ' · ' + what : '') + (a.rxn ? ' (reaction)' : ''))]),
+          a.doom ? el('span', { class: 'chip warn', text: 'doom' }) : a.crit ? el('span', { class: 'chip ok', text: 'crit' }) : null,
+          items.length ? hitControls(a) : null].concat(doomOptions(a)));
       })) : null
     ]);
   }
@@ -920,7 +1314,8 @@
     var pc = { id: nid(), name: s.name || '', player: s.player || '', bg: bg[0], feature: s.feature || '', A: v.Agility, M: v.Mind, S: v.Strength,
       stMax: stMax, st: typeof play.stamina === 'number' ? clamp(play.stamina, 0, stMax) : stMax, ad: 0,
       wounds: play.wounds ? Object.keys(play.wounds).length : 0, cruelty: play.cruelty | 0, txp: s.txp | 0, pending: play.pendingXP | 0,
-      status: 'active', conn: s.connName || '', rel: s.connRel || '', benefit: s.connBenefit || '', miasma: [], notes: s.notes || '' };
+      status: 'active', conn: s.connName || '', rel: s.connRel || '', benefit: s.connBenefit || '', miasma: [], notes: s.notes || '',
+      conds: play.conds && typeof play.conds === 'object' && !Array.isArray(play.conds) ? clone(play.conds) : {} };
     return pc;
   }
 
@@ -942,8 +1337,13 @@
       ['id', 'status', 'ad', 'miasma', 'notes', 'owed'].forEach(function (k) { if (k in existing) pc[k] = existing[k]; });
       (pc.owed || []).forEach(function (o) { applyOp(pc, o); });
       // A crow already in the combat tracker picks up the sheet's Stamina and wounds.
-      if (S() && S().combat) S().combat.list.forEach(function (c) { if (c.kind === 'pc' && c.pcId === pc.id) { c.st = Math.min(pc.st, c.stMax); c.wounds = pc.wounds; } });
+      if (S() && S().combat) S().combat.list.forEach(function (c) {
+        if (c.kind !== 'pc' || c.pcId !== pc.id) return;
+        c.st = Math.min(pc.st, c.stMax); c.wounds = pc.wounds; c.conds = clone(pc.conds || {});
+        if (!c.conds.Grabbed) delete c.grabbedBy;
+      });
       state.party[state.party.indexOf(existing)] = pc;
+      if (S() && S().combat) S().combat.list.forEach(function (c) { if (c.kind === 'pc' && c.pcId === pc.id) pullVitals(c); });
     } else state.party.push(pc);
     watchLinked(item);
     return pc;
@@ -996,6 +1396,7 @@
     if (o.wounds) p.wounds = clamp((p.wounds || 0) + o.wounds, 0, 10);
     if (o.cruelty) p.cruelty = Math.max(0, (p.cruelty || 0) + o.cruelty);
     if (typeof o.setCruelty === 'number') p.cruelty = o.setCruelty;
+    if (o.cond) { p.conds = p.conds || {}; Object.keys(o.cond).forEach(function (k) { if (o.cond[k]) p.conds[k] = true; else delete p.conds[k]; }); }
   }
   function sheetWin(p) {
     var f = p.link && statusFrames[p.link];
@@ -1031,6 +1432,8 @@
     $('camp-name').textContent = state.name || state.village.name || '';
   }
   function render() {
+    // A fight with linked crows needs their sheets loaded (Party status), whichever tab is open: hits land there.
+    if (tab !== 'party' && cloudOn() && S().combat.list.some(function (x) { var p = pcOf(x); return p && p.link; })) renderStatus();
     renderTabbar();
     renderSide();
     ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, world: renderWorld, bestiary: renderBestiary, tables: renderTables, rules: renderRules })[tab]();
@@ -1055,7 +1458,11 @@
     if (ui.dice) {
       var r = ui.dice;
       res = el('div', { class: 'result' }, [el('div', { class: 'r-head', text: r.label }),
-        r.r ? el('div', null, [el('div', { class: 'r-roll', text: testLine(r.r) }), tierChip(r.r), r.dmg ? el('div', null, [el('b', { text: r.dmg })]) : null, r.note ? el('div', { class: 'fine', text: r.note }) : null])
+        r.r ? el('div', null, [el('div', { class: 'r-roll', text: testLine(r.r) }), tierChip(r.r), r.dmg ? el('div', null, [el('b', { text: r.dmg })]) : null, r.note ? el('div', { class: 'fine', text: r.note }) : null, hitControls(r.hit)].concat((r.counters || []).map(function (k) {
+            if (k.act) return el('div', null, [el('span', { class: 'fine', text: k.by.name + '\u2019s counter: ' }), hitControls(k.act)]);
+            var cd = counterDamage(k.by, k.doom);
+            return cd && rxLeft(k.by) > 0 && !k.by.dead ? btn(k.by.name + ' counters ' + k.vs.name + ' (' + cd.n + ')', function () { k.act = counterAct(k.by, k.vs, k.doom); save(); render(); }, 'btn-small', 'A counter (reaction): its melee attack\u2019s tier 2 damage, tier 3 on a doom') : null;
+          })))
           : el('div', null, [el('b', { text: r.text })])]);
     }
     box.appendChild(el('div', null, [
@@ -1084,6 +1491,25 @@
     renderSideLog();
     renderInvite();
   }
+  /* What an action does, in words: "5 damage, prone", "regains 4 Stamina", "grabbed". */
+  function fxText(items) {
+    var f = items[0] || {}, parts = [];
+    if (f.damage) parts.push(f.damage + (f.piercing ? ' piercing' : '') + ' damage');
+    if (f.heal) parts.push('+' + f.heal + ' Stamina');
+    if (f.ad) parts.push('+' + f.ad + ' AD');
+    if (f.wounds) parts.push('heal ' + plural(f.wounds, 'wound'));
+    if (f.conds) Object.keys(f.conds).forEach(function (k) { parts.push((f.conds[k] ? '' : 'not ') + k.toLowerCase()); });
+    if (f.grab) parts.push('grabbed');
+    return parts.join(', ') || 'effect';
+  }
+  /* An action's effects (an attack, a counter, a stray shot, a heal, a grab): dealt, with Undo, or waiting for Apply. */
+  function hitControls(h) {
+    var items = h ? fxItems(h).filter(function (f) { return byId(f.id); }) : [];
+    if (!items.length) return null;
+    var names = items.map(function (f) { return byId(f.id).name; }).join(', '), what = fxText(items);
+    return el('span', { class: 'row center hit-ctl' }, h.applied ? [el('span', { class: 'chip ok', text: what + ' \u2192 ' + names }), btn('Undo', function () { undoAct(h); }, 'btn-small btn-ghost', 'Put ' + names + ' back as they were (Stamina, AD, wounds, conditions)')]
+      : [btn('Apply ' + what + ' \u2192 ' + names, function () { applyAct(h); }, 'btn-small btn-primary', 'Deal it (damage goes through AD first, then Stamina, then wounds)')]);
+  }
   function diceBtn(label, expr) {
     return btn(label, function () {
       var r = expr === 'd100' ? d100() : rollDice(expr);
@@ -1093,7 +1519,7 @@
   function d100() { var a = d(10), b = d(10), v = (a % 10) * 10 + (b % 10); if (v === 0) v = 100; return { total: v, detail: 'd100 [' + (a % 10) + ', ' + (b % 10) + ']' }; }
   function rollInitiative() {
     var r = d(10), first = r >= 6;
-    var c = S().combat; c.round = (c.round || 0) + (c.round ? 0 : 1); c.first = first ? 'crows' : 'foes';
+    var c = S().combat, fresh = !c.round; c.round = (c.round || 0) + (c.round ? 0 : 1); c.first = first ? 'crows' : 'foes'; if (fresh) newRound(c);
     feed('Initiative for round ' + c.round + ': **' + (first ? 'crows and allies first' : 'enemies first') + '**.');
     ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (first ? 'crows and allies act first' : 'enemies act first') };
     log('', 'Initiative for round ' + c.round + ': 1d10 = ' + r + ' → **' + (first ? 'crows and allies first' : 'enemies first') + '**.');
@@ -1192,10 +1618,14 @@
     var count = el('input', { type: 'number', class: 'tiny', min: 1, max: 30, value: addSel.n, 'aria-label': 'How many', onchange: function () { ui.addN = clamp(int(this.value, 1), 1, 30); } });
     var side = el('select', { class: 'in mini', 'aria-label': 'Side', onchange: function () { ui.addSide = this.value; } }, [el('option', { value: 'foe', text: 'Foe' }), el('option', { value: 'ally', text: 'Ally' })]);
     side.value = addSel.side;
+    var sit = ui.sit || (ui.sit = {});
+    function sitBtn(key, label, title) {
+      return el('button', { type: 'button', class: 'cond' + (sit[key] ? ' on' : ''), 'aria-pressed': sit[key] ? 'true' : 'false', title: title, text: label, onclick: function () { sit[key] = !sit[key]; render(); } });
+    }
     return [
       el('div', { class: 'round-box' }, [
         el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: 'Round' }), el('div', { class: 'val', text: String(c.round || '—') })]),
-        btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', function () { c.round = (c.round || 0) + 1; var r = d(10); c.first = r >= 6 ? 'crows' : 'foes'; ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (r >= 6 ? 'crows and allies act first' : 'enemies act first') };
+        btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', function () { c.round = (c.round || 0) + 1; var r = d(10); c.first = r >= 6 ? 'crows' : 'foes'; newRound(c); ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (r >= 6 ? 'crows and allies act first' : 'enemies act first') };
           var sur = c.round === 1 && c.surprise !== 'none' ? ' ' + (c.surprise === 'crows' ? 'The crows and their allies are' : 'The foes are') + ' surprised: no turn this round, and attacks against them get +1.' : '';
           log('', '**Round ' + c.round + '.** Initiative 1d10 = ' + r + ' → ' + (r >= 6 ? 'crows and allies first.' : 'enemies first.') + sur);
           feed('**Round ' + c.round + '.** ' + (r >= 6 ? 'Crows and allies act first.' : 'Enemies act first.') + sur); save(); render(); }, 'btn-primary'),
@@ -1211,25 +1641,44 @@
       ]),
       el('div', { class: 'row', style: 'margin-top:.6rem' }, [field('Add creature', select, 'grow'), field('How many', count), field('Side', side),
         btn('Add', function () { addCombatant(select.value, int(count.value, 1), side.value); log('', 'Added ' + int(count.value, 1) + ' × ' + select.value + ' to combat.'); render(); })]),
-      el('p', { class: 'fine', text: 'Monster attack buttons use the edge/bane set in the Dice panel plus the creature\'s own conditions (weakened, blessed, prone for melee). Damage goes through AD first (piercing skips it); vulnerable adds 1d6 automatically.' }),
+      el('div', { class: 'row center' }, [chk(c, 'autoMon', 'Deal creatures’ hits to their target automatically', { title: 'Off: a hit on a target waits in the Dice panel until you apply it' })]),
+      el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next creature roll:' }),
+        sitBtn('flank', 'Flanking', 'An ally of the attacker is on the opposite side of the target: edge on melee attacks'),
+        sitBtn('high', 'High ground', '1+ square above the target: edge on attacks'),
+        sitBtn('cover', 'Cover', 'The target is half behind something solid: bane on attacks (not for attacks that ignore cover)'),
+        sitBtn('dim', 'Dim light', 'Dim light or light concealment: bane (not for creatures marked ⌂ or ◐)'),
+        sitBtn('dark', 'Darkness', 'Darkness, heavy concealment, or an invisible target: double bane (not for ◐); against a silent mover, guess its square'),
+        sitBtn('adj', 'Ranged vs adjacent', 'A ranged attack against a creature next to the attacker: bane'),
+        sitBtn('charge', 'Charged 4+', 'It moved 4+ squares before attacking: a charging creature (big cat, wildcat, deer) deals its charge damage'),
+        el('label', { class: 'fine', title: 'Squares beyond the attack’s range: -2 each' }, ['Beyond range ', el('input', { type: 'number', class: 'tiny', min: 0, max: 10, value: sit.far || '', 'aria-label': 'Squares beyond range',
+          onchange: function () { sit.far = clamp(int(this.value, 0), 0, 10); } })])]),
+      el('p', { class: 'fine', text: 'Pick each creature’s target (⚄ picks one at random) and its attacks and maneuvers go at it. Its own conditions (weakened, blessed, prone, hidden, taunted) and the target’s (surprised, prone, grabbed, squeezing, unconscious) apply automatically, with the edge/bane set in the Dice panel and the battlefield buttons above (they reset after each roll). ' +
+        'A hit deals its damage and tier effects (weakened, prone, grabbed...) through AD, Stamina, and wounds, onto a crow’s own sheet (its worn armor and parry weapons absorb first), and can be undone from the Dice panel. A melee miss lets the target counter: a crow’s player is asked on their Play page.' }),
       el('div', { class: 'combat-list' }, c.list.length ? c.list.map(combatRow) : [el('p', { class: 'hint', text: 'No one in combat. Add creatures here, from the Bestiary, or from an encounter roll.' })]),
       livePanel()
     ];
   }
   function combatRow(c) {
-    var b = beast(c.cref), amt = el('input', { type: 'number', class: 'tiny', min: 0, max: 200, value: '', placeholder: 'dmg', 'aria-label': 'Amount' });
+    var b = beast(c.cref), cb = S().combat, amt = el('input', { type: 'number', class: 'tiny', min: 0, max: 200, value: '', placeholder: 'dmg', 'aria-label': 'Amount' });
     function amount() { return clamp(int(amt.value, 0), 0, 999); }
-    var slots = slotsOf(c);
+    var slots = slotsOf(c), linked = c.kind === 'pc' && pcOf(c) && pcOf(c).link && cloudOn(), g = byId(c.grabbedBy), holds = grabbing(c);
     var head = el('div', { class: 'cbt-top' }, [
       el('div', { class: 'cbt-name' }, [inp(c, 'name', { 'aria-label': 'Name' }),
-        el('div', { class: 'cbt-meta', text: c.kind === 'pc' ? 'Crow' : b ? b.t + ' · ' + b.sz + ' · P' + b.p + ' · speed ' + b.spd + ' · A ' + signed(b.c[0]) + ' M ' + signed(b.c[1]) + ' S ' + signed(b.c[2]) + (b.rx > 1 ? ' · ' + b.rx + ' reactions' : '') : '' })]),
+        el('div', { class: 'cbt-meta', text: c.kind === 'pc' ? 'Crow' + (linked ? ' · vitals from their sheet' : '') : b ? b.t + ' · ' + b.sz + ' · P' + b.p + ' · speed ' + b.spd + ' · A ' + signed(b.c[0]) + ' M ' + signed(b.c[1]) + ' S ' + signed(b.c[2]) + (b.rx > 1 ? ' · ' + b.rx + ' reactions' : '') : '' })]),
       el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Stam' }), btnPM('−', function () { var s0 = c.st; c.st = Math.max(0, c.st - 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); }), el('b', { text: String(c.st) }), el('span', { class: 'of', text: '/' + c.stMax }), btnPM('+', function () { var s0 = c.st; c.st = Math.min(c.stMax, c.st + 1); if (c.kind === 'pc') syncPC(c, s0, c.wounds); save(); render(); })]),
-      el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'AD' }), btnPM('−', function () { c.ad = Math.max(0, c.ad - 1); save(); render(); }), el('b', { text: String(c.ad) }), el('span', { class: 'of', text: '/' + c.adMax }), btnPM('+', function () { c.ad = c.ad + 1; c.adMax = Math.max(c.adMax, c.ad); save(); render(); })]),
+      el('span', { class: 'pool', title: linked ? 'From the crow’s worn armor and parry weapons (change it on their sheet)' : null }, [el('span', { class: 'lbl', text: 'AD' }), linked ? null : btnPM('−', function () { c.ad = Math.max(0, c.ad - 1); save(); render(); }), el('b', { text: String(c.ad) }), el('span', { class: 'of', text: '/' + c.adMax }), linked ? null : btnPM('+', function () { c.ad = c.ad + 1; c.adMax = Math.max(c.adMax, c.ad); save(); render(); })]),
       slots ? el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Wounds' }), btnPM('−', function () { var w0 = c.wounds; c.wounds = Math.max(0, c.wounds - 1); if (c.kind === 'pc') syncPC(c, c.st, w0); save(); render(); }), el('b', { text: String(c.wounds) }), el('span', { class: 'of', text: '/' + slots })]) : null,
       surprised(c) ? el('span', { class: 'chip warn', title: 'No turn in round 1; attacks against them get +1', text: 'surprised' }) : null,
-      c.kind === 'pc' && S().combat.round && c.done === S().combat.round ? el('span', { class: 'chip ok', title: 'The player marked this crow done for the round', text: 'done' }) : null,
+      c.kind === 'pc' && cb.round && c.done === cb.round ? el('span', { class: 'chip ok', title: 'The player marked this crow done for the round', text: 'done' }) : null,
+      c.kind !== 'pc' && cb.round ? el('button', { type: 'button', class: 'cond' + (c.acted === cb.round ? ' on' : ''), 'aria-pressed': c.acted === cb.round ? 'true' : 'false', title: 'Mark that it has taken its turn this round', text: c.acted === cb.round ? 'acted ✓' : 'acted',
+        onclick: function () { c.acted = c.acted === cb.round ? 0 : cb.round; save(); render(); } }) : null,
+      !c.dead ? el('span', { class: 'chip' + (rxLeft(c) > 0 ? '' : ' warn'), title: 'Reactions left this round (counters, opportunity attacks, readied actions)', text: 'rxn ' + Math.max(0, rxLeft(c)) + '/' + rxMax(c) }) : null,
       el('button', { type: 'button', class: 'x', title: 'Remove', 'aria-label': 'Remove ' + c.name, text: '×', onclick: function () { S().combat.list = S().combat.list.filter(function (x) { return x !== c; }); save(); render(); } })
     ]);
+    var tags = [g ? el('span', { class: 'chip warn', text: 'grabbed by ' + g.name }) : null,
+      holds.length ? el('span', { class: 'chip', text: 'grabbing ' + holds.map(function (x) { return x.name; }).join(', ') }) : null,
+      holds.length ? btn('Let go', function () { holds.forEach(function (x) { setCond(x, 'Grabbed', false); }); log('', c.name + ' lets go.'); feed('**' + c.name + '** lets go.'); save(); render(); }, 'btn-small btn-ghost') : null,
+      tauntOn(c) ? el('span', { class: 'chip warn', title: 'Its attacks that don’t include ' + c.taunt.name + ' take a bane, until ' + c.taunt.name + '’s next turn', text: 'taunted by ' + c.taunt.name }) : null].filter(Boolean);
     var mid = el('div', { class: 'cbt-mid' }, [amt,
       btn('Damage', function () { if (amount()) damage(c, amount(), false); }, 'btn-small'),
       btn('Piercing', function () { if (amount()) damage(c, amount(), true); }, 'btn-small'),
@@ -1237,17 +1686,36 @@
       c.dead ? btn('Revive', function () { c.dead = false; c.st = Math.max(1, c.st); save(); render(); }, 'btn-small btn-ghost') : btn('Mark dead', function () { c.dead = true; log('', c.name + ' is dead.'); feed('**' + c.name + '** is dead.'); save(); render(); }, 'btn-small btn-ghost'),
       el('div', { class: 'conds' }, REF.CONDITIONS.map(function (k) {
         return el('button', { type: 'button', class: 'cond' + (c.conds[k[0]] ? ' on' : ''), title: k[1], 'aria-pressed': c.conds[k[0]] ? 'true' : 'false', text: k[0],
-          onclick: function () { if (c.conds[k[0]]) delete c.conds[k[0]]; else c.conds[k[0]] = true; save(); render(); } });
-      }))
-    ]);
-    var atks = b && c.kind !== 'pc' ? el('div', { class: 'atk-btns' }, b.atk.map(function (a) {
-      return btn(a[0] + ' ' + signed(a[1]) + ' ' + a[2] + ' · ' + a[3] + '/' + a[4], function () { monsterAttack(c, a); }, 'btn-small atk-btn', a[5] || null);
-    }).concat(b.uses.map(function (u) {
-      var used = c.used[u[0]] || 0;
-      return el('span', { class: 'chip', title: u[1] + ' per ' + u[2].toLowerCase() }, [u[0] + ' ', el('span', { class: 'use-pips' }, Array.apply(null, Array(u[1])).map(function (_, i) {
-        return el('button', { type: 'button', class: 'upip' + (i < used ? ' used' : ''), 'aria-label': u[0] + ' use ' + (i + 1), onclick: function () { c.used[u[0]] = i < used ? i : i + 1; save(); render(); } });
-      })), ' /' + u[2]]);
-    }))) : null;
+          onclick: function () { setCond(c, k[0], !c.conds[k[0]]); save(); render(); } });
+      }).concat([['hidden', 'Hidden', 'Hidden: edge on its attacks; any aggressive action reveals it'], ['squeeze', 'Squeezing', 'Squeezing through a tight space: speed halved, attacks against it get +1']].map(function (k) {
+        return el('button', { type: 'button', class: 'cond st8' + (c[k[0]] ? ' on' : ''), title: k[2], 'aria-pressed': c[k[0]] ? 'true' : 'false', text: k[1],
+          onclick: function () { c[k[0]] = !c[k[0]]; save(); render(); } });
+      })))
+    ].concat(tags));
+    var atks = null;
+    if (b && c.kind !== 'pc') {
+      var tgts = !c.dead ? targetsFor(c) : [], two = b.atk.some(twoTargets);
+      var pick1 = function (key, label) {
+        return el('select', { class: 'in mini', 'aria-label': c.name + '’s ' + label, title: 'Who ' + c.name + '’s attacks and maneuvers go at', onchange: function () { c[key] = this.value || null; save(); render(); } },
+          [el('option', { value: '', text: label === 'target' ? 'Target: none' : '2nd target: none' })].concat(tgts.map(function (x) { return el('option', { value: x.id, text: '→ ' + x.name, selected: targetOf(c, key === 'tgt2' ? 2 : 1) === x || null }); })));
+      };
+      var pickTgt = tgts.length ? el('span', { class: 'tgt-pick' }, [pick1('tgt', 'target'),
+        el('button', { type: 'button', class: 'pm', text: '⚄', title: 'Pick a random ' + (c.kind === 'foe' ? 'crow or ally' : 'foe'), 'aria-label': 'Random target for ' + c.name,
+          onclick: function () { c.tgt = pick(tgts).id; save(); render(); } }), two ? pick1('tgt2', 'second target') : null]) : null;
+      var t = targetOf(c), m = meleeAtk(c), canMove = !c.dead && !c.conds.Unconscious;
+      atks = el('div', { class: 'atk-btns' }, [pickTgt].concat(b.atk.map(function (a) {
+        return btn(a[0] + ' ' + signed(a[1]) + ' ' + a[2] + ' · ' + a[3] + '/' + a[4], function () { monsterAttack(c, a); }, 'btn-small atk-btn', a[5] || null);
+      })).concat(canMove ? [
+        m && t && rxLeft(c) > 0 ? btn('Opportunity attack', function () { monsterAttack(c, m, { rxn: true }); }, 'btn-small btn-ghost', 'Reaction: ' + t.name + ' leaves its reach; it attacks with ' + m[0]) : null,
+        t && noBigger(t, c) ? btn('Grab', function () { monsterManeuver(c, 'grab'); }, 'btn-small btn-ghost', 'Maneuver, 2d10 + S against ' + t.name + ' (its size or smaller): T1 they may counter; T2 grabbed (push 1 or shift); T3 grabbed') : null,
+        t && noBigger(t, c) ? btn('Knockback', function () { monsterManeuver(c, 'knockback'); }, 'btn-small btn-ghost', 'Maneuver, 2d10 + S against ' + t.name + ' (its size or smaller): T1 they may counter; T2 push 1; T3 push 2') : null,
+        g ? btn('Escape Grab', function () { monsterManeuver(c, 'escape'); }, 'btn-small btn-ghost', 'Maneuver, 2d10 + A or S: T1 still grabbed; T2 free, but ' + g.name + ' may counter; T3 free and move 1') : null] : []).concat(b.uses.map(function (u) {
+        var used = c.used[u[0]] || 0;
+        return el('span', { class: 'chip', title: u[1] + ' per ' + u[2].toLowerCase() + ' (a crit regains one)' }, [u[0] + ' ', el('span', { class: 'use-pips' }, Array.apply(null, Array(u[1])).map(function (_, i) {
+          return el('button', { type: 'button', class: 'upip' + (i < used ? ' used' : ''), 'aria-label': u[0] + ' use ' + (i + 1), onclick: function () { c.used[u[0]] = i < used ? i : i + 1; save(); render(); } });
+        })), ' /' + u[2]]);
+      })));
+    }
     return el('div', { class: 'cbt ' + (c.kind === 'pc' ? 'pc' : c.kind === 'ally' ? 'ally' : '') + (c.dead ? ' dead' : '') }, [head, mid, atks,
       b && b.x && c.kind !== 'pc' ? el('div', { class: 'cbt-x', text: b.x }) : null]);
   }

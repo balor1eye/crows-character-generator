@@ -71,6 +71,18 @@ placeholder, and combat rows by creature name. If a button's wording changes, up
 `combat_encounter.js`. Each `check(condition, 'what it means')` adds one line to the report. When adding steps,
 re-query elements after anything that re-renders (most clicks do), because the old nodes are replaced.
 
+## The combat tracker's rules (`combat_engine.js`, run by `run_engine_test.py`)
+
+Creatures fight allied NPCs in the local build with the dice forced for each roll (no accounts or server), checking
+tier effects (grabbed, weakened and vulnerable, size limits), grabs ending when the grabber dies, Undo putting damage
+and conditions back, counters after a melee miss and reactions running out, attacks on 2 targets, fixed crit damage,
+"at 15 Stamina or less" bonuses, the target's state (prone, unconscious), battlefield buttons, hidden attackers,
+opportunity attacks, and the Grab, Knockback, and Escape Grab maneuvers.
+
+```bash
+python3 ref/test/run_engine_test.py
+```
+
 ## Live combat with a player (`run_live_combat_test.py`)
 
 Runs on the test instance only, in two headless Firefoxes: test_ref in the Ref Screen and test_player on the Play
@@ -78,7 +90,7 @@ page. The player shares a new crow, the Ref adds it to a new campaign and starts
 It checks that the fight shows on the Play page (foes' health words, not their Stamina), that an attack on the
 chosen target lands on that creature in the Ref Screen and comes back in the player's feed, that a described action
 and "done for this round" reach the Ref, that with automatic hits off a hit waits for Apply and Undo reverses it, and
-that ending the fight removes the Combat card. Everything it made is deleted afterwards (`--keep` leaves it).
+that a creature given the crow as its target hits it (and Undo takes that back), that a melee doom lets the target counter at tier 3, that a ranged doom hits the one other ally for the weapon's tier 3 damage, that a doom casting rolls a backlash the player sees, that the crow's AD comes from its own armor and a hit on it lands on the sheet (and Undo restores it there), that a monster's miss offers the player a counter with their sword, that a player's Grab, Taunt, healing spell, two-target spell, and reaction attack do what the rules say in the Ref Screen, that conditions go both ways (prone from the Ref, Stand Up from the player), and that ending the fight removes the Combat card. Everything it made is deleted afterwards (`--keep` leaves it).
 
 ```bash
 python3 ref/test/run_live_combat_test.py            # after server/deploy.sh; --headed shows both browsers

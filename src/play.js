@@ -231,24 +231,28 @@
     if (last && last.chaosPending) log(last.label + ': kept tier 1. ' + chaosRoll(last));
     if (window.CrowsCombat) window.CrowsCombat.superseded(last);   // a result still waiting goes to the Ref as it is
     var p = P(), ch = C.characteristics().values;
-    var vs = isAttack(opts) && window.CrowsCombat ? window.CrowsCombat.attackBonus() : null;   // +1 against a surprised target
+    // In a live fight: the target's state, the battlefield, and an ally's assist (combat.js).
+    var cm = window.CrowsCombat ? window.CrowsCombat.rollMods(opts, isAttack(opts)) : null;
     var extraE = p.conds.Blessed ? 1 : 0, extraB = p.conds.Weakened ? 1 : 0;
     if (isAttack(opts) && opts.melee && p.conds.Prone) extraB++;
+    var own = extraE + extraB;
+    if (cm) { extraE += cm.e; extraB += cm.b; }
     var net = netEdge(extraE, extraB);
     var a = d(10), b = d(10), nat = a + b;
     var bonus = net === 1 ? 2 : net === -1 ? -2 : 0;
-    var mod = (opts.charVal || 0) + (ui.mod || 0) + (opts.extraMod || 0) + bonus + (vs ? vs.n : 0);
+    var mod = (opts.charVal || 0) + (ui.mod || 0) + (opts.extraMod || 0) + bonus + (cm ? cm.mod : 0);
     var total = nat + mod;
     var crit = nat >= 19, doom = nat <= 3;
     if (p.conds.Unconscious && /Agility|Strength/.test(opts.charName || '')) doom = true;
     var tier = doom ? 1 : crit ? 3 : tierOf(total);
     if (!doom && !crit && net === 2) tier = Math.min(3, tier + 1);
     if (!doom && !crit && net === -2) tier = Math.max(1, tier - 1);
+    if (cm && cm.autoT3) tier = 3;   // attacks against an unconscious creature
     var r = { label: opts.label, opts: opts, dice: [a, b], nat: nat, mod: mod, total: total, net: net, crit: crit, doom: doom,
       baseTier: tier, tier: tier, exp: null, extra: [], conds: [] };
-    if (extraE) r.conds.push('blessed: edge');
-    if (extraB) r.conds.push((p.conds.Weakened ? 'weakened' : 'prone') + ': bane');
-    if (vs) r.conds.push(vs.why);
+    if (p.conds.Blessed) r.conds.push('blessed: edge');
+    if (own && (p.conds.Weakened || (isAttack(opts) && opts.melee && p.conds.Prone))) r.conds.push((p.conds.Weakened ? 'weakened' : 'prone') + ': bane');
+    if (cm) r.conds = r.conds.concat(cm.why);
     void ch;
     after(r);
     last = r;
@@ -257,8 +261,15 @@
     log(describe(r));
     C.render();
   }
+  /* Load a Reload weapon (crossbow): a maneuver before each attack. */
+  function reload(c) {
+    c.loaded = 1;
+    if (window.CrowsCombat) window.CrowsCombat.maneuver('Reload', null, 'loads the ' + c.key.toLowerCase());
+    commit('Loaded the ' + c.key.toLowerCase() + '.');
+  }
   function after(r) {
     var o = r.opts, p = P();
+    if (o.kind === 'attack' && o.card && o.card.loaded) delete o.card.loaded;   // a crossbow bolt is spent
     if (o.kind === 'attack' && o.ammo) {
       var q = findCarried(o.ammo);
       if (q) {
@@ -392,7 +403,8 @@
     var m = /12-16: (\d+)\s*\+\s*M[^;]*; 17\+: (\d+)\s*\+\s*M/.exec(it.txt);
     return { label: 'Cast ' + c.key.replace(/ Book$/, ''), charName: 'Mind', charVal: ch.Mind, kind: 'cast', group: 'Spellcasting', wtype: disc,
       melee: /Melee \d/.test(it.txt), ranged: /Ranged \d/.test(it.txt),
-      dmg: it.atk && m ? { t2: +m[1], t3: +m[2], brutal: false } : null, card: c, summary: it.txt };
+      dmg: (it.atk || /\bdam\b/.test(it.txt)) && m ? { t2: +m[1], t3: +m[2], brutal: false } : null, card: c, summary: it.txt,   // Minor Curse is an attack too
+      time: /Maneuver/.test(it.txt) ? 'mnv' : 'act' };
   }
 
   // ------------------------------------------------------------------ rest, dungeon turn, XP
@@ -698,12 +710,14 @@
         if (!a) return;
         var note = null, dis = !!c.thrown;
         if (c.thrown) note = 'Thrown: recover it first.';
+        else if (/\bReload\b/.test(it.txt) && !c.loaded) { note = 'Not loaded: reloading is a maneuver.'; dis = true; }
         else if (a.ammo) {
           var q = findCarried(a.ammo);
           note = q ? a.ammo.replace(/ of 20.*/, '') + ': ' + (typeof q.ammo === 'number' ? q.ammo : 20) + ' left' : 'No ' + a.ammo.toLowerCase() + ' carried!';
           dis = !q;
         }
-        row(c.key + ' (' + where(c) + ')', a.summary, function () { rollTest(a); }, 'Attack', dis, note);
+        row(c.key + ' (' + where(c) + ')', a.summary, function () { rollTest(a); }, 'Attack', dis, note,
+          /\bReload\b/.test(it.txt) && !c.loaded && !c.thrown ? btn('Reload', function () { reload(c); }, null, { title: 'A maneuver: load 1 ammo before each attack' }) : null);
         var t = weaponAttack(c, true);
         if (t) row('Throw ' + c.key.toLowerCase() + ' (' + where(c) + ')', t.summary, function () { rollTest(t); }, 'Throw', !!c.thrown,
           c.thrown ? 'Thrown: it\'s out of your hand until you recover it.' : null,
@@ -965,11 +979,72 @@
      * endConds: blessed, vulnerable, weakened end (with a rest) · dt: dungeon turn n ended (with a rest).
      */
     refChange: refChange, refOps: refQueue,
+    /* For the Ref Screen's combat tracker: this crow's vitals as the sheet has them (AD from worn armor and parry weapons). */
+    vitals: function () {
+      var abs = absorbers(), w = C.woundCount();
+      return { st: C.curStamina(), stMax: C.staminaMax(), ad: abs.reduce(function (t, c) { return t + C.adNow(c); }, 0),
+        adMax: abs.reduce(function (t, c) { return t + C.adMax(c); }, 0), wounds: w, conds: JSON.parse(JSON.stringify(P().conds)) };
+    },
     /* For combat.js: a roll's damage, and whether its result is final (no expertise to spend, no chaos roll waiting). */
-    damageOf: damageOf, final: function (r) { return !r.chaosPending && !expOptions(r).length; } };
+    damageOf: damageOf, final: function (r) { return !r.chaosPending && !expOptions(r).length; },
+    /* The weapon's tier 3 damage, which a ranged doom deals to an ally next to the target (tier 2 for an odd roll on a miss). */
+    allyDamage: function (r, tier) { return r.opts.dmg ? Math.max(0, tierDamage(r.opts, tier || 3)) : 0; },
+    /* For combat.js: roll a test (maneuvers, assists) through the dice panel, with expertise and conditions as usual. */
+    rollTest: function (o) { rollTest(o); },
+    /* The wielded melee weapons a crow could counter with: [{ key, t2, t3 }] (damage with the characteristic). */
+    meleeWeapons: function () {
+      return inHands().filter(function (c) { return !c.thrown && item(c.key).cat === 'weapon'; }).map(function (c) { return weaponAttack(c); })
+        .filter(function (o) { return o && o.melee; }).map(function (o) { return { key: o.card.key, t2: Math.max(0, tierDamage(o, 2)), t3: Math.max(0, tierDamage(o, 3)) }; });
+    },
+    /* Reload weapons in hand that aren't loaded. */
+    unloaded: function () { return inHands().filter(function (c) { return /\bReload\b/.test(item(c.key).txt) && !c.loaded && !c.thrown; }); },
+    reload: reload,
+    /* Shift +1 for each wielded Disengage weapon. */
+    disengage: function () { return inHands().filter(function (c) { return !c.thrown && /Disengage/.test(item(c.key).txt); }).length; },
+    /* Set or clear a condition on the sheet (Stand Up clears prone). */
+    setCond: function (k, on) { var p = P(); if (!!p.conds[k] === !!on) return; if (on) p.conds[k] = true; else delete p.conds[k]; commit((on ? 'Now ' : 'No longer ') + k.toLowerCase() + '.'); },
+    conds: function () { return P().conds; } };
 
+  /*
+   * A hit from the Ref Screen's combat tracker, dealt the way Take damage does it: vulnerable, then worn armor and parry
+   * weapons, then Stamina, then wounds. The vulnerable roll is kept in the op so a replay (refOps.redo) deals the same.
+   * o.result gets what happened, with the sheet as it was before (for o.restore, the tracker's Undo).
+   */
+  function refHit(o) {
+    var p = P(), parts = [], dmg = o.hit;
+    var before = { stamina: p.stamina, wounds: JSON.parse(JSON.stringify(p.wounds)), dmg: {} };
+    S().inv.forEach(function (c) { if (c.dmg) before.dmg[c.id] = c.dmg; });
+    if (p.conds.Vulnerable) { if (typeof o.vul !== 'number') o.vul = d(6); dmg += o.vul; parts.push('vulnerable +' + o.vul); }
+    var total = dmg;
+    if (!o.piercing) absorbers().filter(function (c) { return C.adNow(c) > 0; }).forEach(function (c) {
+      if (!dmg) return;
+      var a = Math.min(dmg, C.adNow(c)); c.dmg = (c.dmg || 0) + a; dmg -= a;
+      parts.push(c.key + ' absorbs ' + a);
+    });
+    else parts.push('piercing');
+    var cur = C.curStamina(), st = Math.min(dmg, cur);
+    if (st) { setStamina(cur - st); dmg -= st; parts.push('-' + st + ' Stamina'); }
+    if (dmg > 0) { var w = addWounds(dmg, 'w'); parts.push(w + ' wound' + (w === 1 ? '' : 's')); }
+    if (p.conds.Unconscious) { delete p.conds.Unconscious; parts.push('wakes up'); }   // any damage wakes a sleeper
+    o.result = { total: total, parts: parts, before: before };
+    return 'Hit for ' + o.hit + (o.piercing ? ' piercing' : '') + (o.from ? ' by ' + o.from : '') + ': ' + parts.join(', ') + '.' +
+      (C.woundCount() >= 10 ? ' All 10 backpack slots are wounded: your crow is dead.' : '');
+  }
+  function refRestore(b) {
+    var p = P();
+    p.stamina = b.stamina; p.wounds = JSON.parse(JSON.stringify(b.wounds || {}));
+    S().inv.forEach(function (c) { if (b.dmg && b.dmg[c.id]) c.dmg = b.dmg[c.id]; else delete c.dmg; });
+    return 'The Ref took back a hit: Stamina, wounds, and armor are as they were.';
+  }
   function refChange(o) {
     var p = P(), msgs = [], n;
+    if (o.hit) msgs.push(refHit(o));
+    if (o.restore) msgs.push(refRestore(o.restore));
+    if (o.cond) Object.keys(o.cond).forEach(function (k) {
+      if (CONDITIONS.indexOf(k) < 0 || !!p.conds[k] === !!o.cond[k]) return;
+      if (o.cond[k]) p.conds[k] = true; else delete p.conds[k];
+      msgs.push((o.cond[k] ? 'Now ' : 'No longer ') + k.toLowerCase() + '.');
+    });
     if (o.endDT) msgs.push(endDT(o.endDT));
     if (o.endConds && (n = endDTConditions())) msgs.push('Resting: ' + n);
     if (o.dt && P().dt !== o.dt) { P().dt = o.dt; msgs.push('Dungeon turn ' + o.dt + ' ended with the rest.'); }

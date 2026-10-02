@@ -384,3 +384,13 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
 .cbt-target .field { display: flex; align-items: center; gap: .45rem; margin: 0; }
 .cbt-sent { color: var(--ok); font-weight: 600; margin-top: .3rem; }
 .cbt-wait { align-items: center; margin-top: .4rem; gap: .4rem; }
+.cbt-turn { margin: .6rem 0; padding: .5rem .7rem; border: 1px solid var(--line); border-left: 4px solid var(--sel); border-radius: 6px; background: var(--slot); display: grid; gap: .35rem; }
+.cbt-pick { display: inline-flex; gap: .25rem; }
+.cbt-btns { gap: .35rem; margin: .2rem 0 .4rem; align-items: center; }
+.cbt-assist { display: inline-flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
+.cbt-assist select, .cbt-say input { padding: .3rem .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); min-height: 32px; }
+.cbt-prompt { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
+#play-combat .sit-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .4rem; margin: .4rem 0; }
+#play-combat .sit-row .cond { min-height: 30px; }
+#play-combat .sit-row input.mini { width: 3.6rem; }
+#cbt-act h3 { margin: .7rem 0 .2rem; }

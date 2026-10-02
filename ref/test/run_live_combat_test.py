@@ -34,6 +34,7 @@ function button(label, root, exact) {
 }
 function type(input, value) { input.value = value; input.dispatchEvent(new Event('input', { bubbles: true })); input.dispatchEvent(new Event('change', { bubbles: true })); }
 function combat() { return window.CrowsRef.state.session.combat; }
+function cbt(name) { return qa('#sec-combat .cbt').filter(function (r) { var i = q('.cbt-name input', r); return i && i.value === name; })[0]; }
 function row(name) { return qa('#play-combat .cbt-row').filter(function (r) { return text(q('.cbt-who b', r)).indexOf(name) === 0; })[0]; }
 """
 
@@ -77,6 +78,10 @@ def main():
         pwait("return !!window.CrowsCloud.recordId", "the new crow to be saved")
         char = p("return window.CrowsCloud.recordId")
         crow = p("return window.CrowsApp.state.name")
+        p("""var st = window.CrowsApp.state; st.inv = [{ id: 9001, key: 'Sword', qty: 1, area: 'hand', idx: 0 }, { id: 9002, key: 'Light Armor', qty: 1, area: 'pack', idx: 0 }];
+             window.CrowsApp.core.save(); window.CrowsApp.core.render();""")
+        assert p("return window.CrowsPlay.vitals().ad") == 9
+        ok("the crow carries a sword (Parry 4) and wears light armor (AD 5)")
         ok(f"player's new crow {crow} is saved (record {char}) and Play is open")
         link = pl.post("share.create", {"id": char})["link"]
 
@@ -98,6 +103,8 @@ def main():
         r("button('Start combat + initiative', q('#sec-combat')).click();")
         rwait("return combat().round === 1 && combat().list.length === 3", "round 1 with three combatants")
         ok("Ref starts round 1 with two Blood Creature A and the crow")
+        rwait("var x = combat().list.filter(function (x) { return x.kind === 'pc'; })[0]; return x.ad === 9 && x.adMax === 9", "the crow's AD from its sheet", 10)
+        ok("the tracker takes the crow's AD (9) from its own sheet: armor and parry weapon")
 
         pwait("var b = q('#play-combat'); return b && !b.hidden && !!row('Blood Creature A 2');", "the Combat card on the Play page")
         names = p("return qa('#play-combat .cbt-row .cbt-who b').map(text)")
@@ -142,7 +149,7 @@ def main():
         p("type(q('#play-combat input[aria-label=\"Other action\"]'), 'I kick sand in its eyes'); button('Send', q('#cbt-act')).click();")
         rwait("return combat().acts.some(function (a) { return a.text === 'I kick sand in its eyes' && a.type === 'declare'; })", "the described action")
         ok("a described action reaches the Ref")
-        p("button('Done for this round', q('#cbt-act')).click();")
+        p("button('Done for this round', q('#play-combat')).click();")
         rwait("var me = combat().list.filter(function (x) { return x.kind === 'pc'; })[0]; return me.done === 1", "done for round 1")
         assert "done" in r("return text(qa('#sec-combat .cbt.pc')[0])")
         ok("'done for this round' shows on the crow's row in the Ref Screen")
@@ -150,7 +157,7 @@ def main():
         ok("...and back on the player's page")
 
         # Automatic hits off: the next hit waits for Apply; Undo puts the creature back.
-        r("var l = qa('#sec-combat label.check').filter(function (x) { return /automatically/.test(text(x)); })[0]; q('input', l).click();")
+        r("var l = qa('#sec-combat label.check').filter(function (x) { return /Apply their actions automatically/.test(text(x)); })[0]; q('input', l).click();")
         assert r("return combat().auto") is False
         before = r("return combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0]")
         p("button('Target', row('Blood Creature A 1')).click();")
@@ -166,6 +173,141 @@ def main():
         undone = r("return combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0]")
         assert undone["st"] == before["st"] and undone["dead"] == before["dead"], undone
         ok("Undo puts the creature back")
+        r("var l = qa('#sec-combat label.check').filter(function (x) { return /Apply their actions automatically/.test(text(x)); })[0]; q('input', l).click();")
+        assert r("return combat().auto") is True
+
+        # A creature attacks the crow it targets: the hit lands on the crow, the player sees it coming, Undo takes it back.
+        crow_id = r("return combat().list.filter(function (x) { return x.kind === 'pc'; })[0].id")
+        r("""var row = cbt('Blood Creature A 1'), s = q('.tgt-pick select', row); s.value = arguments[0]; s.dispatchEvent(new Event('change'));""", crow_id)
+        assert r("return combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0].tgt") == crow_id
+        ok("Ref picks the crow as Blood Creature A 1's target")
+        pwait("return /attacking you/.test(text(row('Blood Creature A 1')))", "the player to see who it's attacking")
+        ok("the player sees Blood Creature A 1 is attacking them")
+        hp = "var x = combat().list.filter(function (x) { return x.kind === 'pc'; })[0]; return x.st + x.ad;"
+        hp0 = r(hp)
+        r("""var M = window.Math, rnd = M.random; M.random = function () { return 0.999; };
+             try { button('Claws', cbt('Blood Creature A 1')).click(); } finally { M.random = rnd; }""")
+        assert "→ " + crow in r("return text(q('#side-dice .result'))")
+        assert r(hp) == hp0 - 3, (hp0, r(hp))
+        ok("its crit (Claws, 3 damage) lands on the crow automatically")
+        pwait("return window.CrowsPlay.vitals().ad === 6", "the hit on the player's own sheet", 10)
+        ok("...through the crow's own armor on the player's sheet (AD 9 -> 6)")
+        assert crow in p("return text(q('#play-combat .cbt-feed'))")
+        r("button('Undo', q('#side-dice .result')).click();")
+        assert r(hp) == hp0
+        pwait("return window.CrowsPlay.vitals().ad === 9", "the Undo on the player's sheet", 10)
+        ok("Undo in the Dice panel takes the hit back, on the sheet too")
+
+        # A melee doom: the target counters at tier 3.
+        p("button('Target', row('Blood Creature A 1')).click();")
+        p("""var M = window.Math, rnd = M.random; M.random = function () { return 0; };
+             try { var atk = qa('#play-attacks .atk').filter(function (x) { return /Unarmed/.test(text(x)); })[0]; button('Attack', atk).click(); }
+             finally { M.random = rnd; }""")
+        rwait("return combat().acts.some(function (a) { return a.doom && a.melee; })", "the doom to reach the Ref")
+        assert "doom" in r("return text(q('#sec-combat .live-acts li'))")
+        r("button('Blood Creature A 1 counters (3)', q('#sec-combat .live-acts')).click();")
+        assert r(hp) == hp0 - 3, (hp0, r(hp))
+        ok("after a melee doom the Ref's button has the target counter at tier 3 (3 damage to the crow)")
+        r("button('Undo', q('#sec-combat .live-acts li')).click();")
+        assert r(hp) == hp0
+        ok("...and the counter can be undone")
+
+        # A ranged doom hits a random ally next to the target; a doom casting is a backlash.
+        r("""var box = q('#sec-combat'); var s = q('select[aria-label=Creature]', box); s.value = 'Sword Warrior (P4)'; s.dispatchEvent(new Event('change'));
+             type(q('input[aria-label=\"How many\"]', box), '1'); var side = q('select[aria-label=Side]', box); side.value = 'ally'; side.dispatchEvent(new Event('change'));
+             button('Add', box, true).click();""")
+        rwait("return combat().list.some(function (x) { return x.kind === 'ally'; })", "the ally to join")
+        camp_id = r("return window.CrowsCloud.recordId")
+        tgt1 = r("return combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0].id")
+        pl.post("combat.act", {"id": char, "campaign": camp_id, "action": {"type": "attack", "target": tgt1, "label": "Attack with Shortbow",
+                                                                          "tier": 1, "doom": True, "ranged": True, "allyDamage": 5}})
+        pl.post("combat.act", {"id": char, "campaign": camp_id, "action": {"type": "attack", "target": tgt1, "label": "Cast Firebolt", "tier": 1,
+                                                                          "doom": True, "cast": True, "rank": 2, "backlash": True}})
+        rwait("return combat().acts.filter(function (a) { return a.doom; }).length === 3", "both dooms")
+        ally = "var x = combat().list.filter(function (x) { return x.kind === 'ally'; })[0]; return x.st + x.ad;"
+        a0 = r(ally)
+        r("button('Hit a random ally (5)', q('#sec-combat .live-acts')).click();")
+        assert r(ally) == a0 - 5, (a0, r(ally))
+        ok("after a ranged doom the Ref's button hits the only other ally (Sword Warrior) for the weapon's tier 3 damage")
+        r("button('Roll backlash (d100 + 2)', q('#sec-combat .live-acts')).click();")
+        bl = r("return combat().acts.filter(function (a) { return a.backlash; })[0].backlashText")
+        assert bl and bl.startswith("Backlash "), bl
+        pwait("return /suffers a backlash/.test(text(q('#play-combat .cbt-feed')))", "the backlash in the player's feed")
+        ok("after a doom casting the Ref rolls the backlash (" + bl[:60] + "...), and the player sees it")
+
+        # The player's side of a monster's miss: a counter offered on the Play page, with their sword.
+        r("""var M = window.Math, rnd = M.random; M.random = function () { return 0; };
+             try { button('Claws', cbt('Blood Creature A 1')).click(); } finally { M.random = rnd; }""")
+        pwait("return !!q('#play-combat .cbt-prompt')", "the counter offer on the Play page")
+        offer = p("return text(q('#play-combat .cbt-prompt'))")
+        assert "Counter Blood Creature A 1" in offer and "with Sword" in offer, offer
+        ok("when Blood Creature A 1 misses the crow with a doom, the Play page offers a counter with the sword (tier 3)")
+        b0 = r("var x = combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0]; return x.st + x.ad;")
+        p("button('Counter Blood Creature A 1', q('#play-combat .cbt-prompt')).click();")
+        rwait("return combat().acts.some(function (a) { return a.rxn && /Counter with Sword/.test(a.label); })", "the counter in the Ref Screen")
+        b1 = r("var x = combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0]; return x.st + x.ad;")
+        assert b1 < b0, (b0, b1)
+        pwait("return !q('#play-combat .cbt-prompt')", "the offer to go away")
+        ok("the player's counter lands on Blood Creature A 1 as a reaction, and the offer goes away")
+
+        # A player's Grab (tier 3) on the second creature.
+        p("button('Target', row('Blood Creature A 2')).click();")
+        p("""var M = window.Math, rnd = M.random; M.random = function () { return 0.999; };
+             try { button('Grab Blood Creature A 2', q('#cbt-act')).click(); } finally { M.random = rnd; }""")
+        rwait("var x = combat().list.filter(function (x) { return x.name === 'Blood Creature A 2'; })[0]; return x.conds.Grabbed && !!x.grabbedBy", "the grab in the Ref Screen")
+        pwait("return /grabbed by/.test(text(row('Blood Creature A 2')))", "the grab on the Play page")
+        ok("the player's Grab (tier 3) grabs Blood Creature A 2, shown on both pages")
+
+        # Taunt: the taunted creature's attacks at anyone else take a bane.
+        r("""var box = q('#sec-combat'); var s = q('select[aria-label=Creature]', box); s.value = 'Blood Creature A'; s.dispatchEvent(new Event('change'));
+             type(q('input[aria-label=\"How many\"]', box), '1'); var side = q('select[aria-label=Side]', box); side.value = 'foe'; side.dispatchEvent(new Event('change'));
+             button('Add', box, true).click();""")
+        pwait("return !!row('Blood Creature A 3')", "the third creature on the Play page")
+        p("button('Target', row('Blood Creature A 3')).click();")
+        p("button('Taunt Blood Creature A 3', q('#cbt-act')).click();")
+        rwait("var x = combat().list.filter(function (x) { return x.name === 'Blood Creature A 3'; })[0]; return !!x.taunt", "the taunt")
+        ally_id = r("return combat().list.filter(function (x) { return x.kind === 'ally'; })[0].id")
+        r("""var row = cbt('Blood Creature A 3'), s = q('.tgt-pick select', row); s.value = arguments[0]; s.dispatchEvent(new Event('change'));""", ally_id)
+        r("button('Claws', cbt('Blood Creature A 3')).click();")
+        assert "taunted by " + crow in r("return text(q('#side-dice .result'))")
+        ok("after the crow's Taunt, Blood Creature A 3's attack on someone else takes a bane")
+
+        # Conditions both ways: the Ref knocks the crow prone, the player stands up.
+        r("button('Prone', q('.conds', qa('#sec-combat .cbt.pc')[0])).click();")
+        pwait("return !!window.CrowsPlay.conds().Prone && !!q('#cbt-act') && /Stand Up/.test(text(q('#cbt-act')))", "prone on the sheet")
+        ok("the Ref marks the crow prone: it's on the player's sheet, and Stand Up appears")
+        p("button('Stand Up', q('#cbt-act')).click();")
+        rwait("return !combat().list.filter(function (x) { return x.kind === 'pc'; })[0].conds.Prone", "the crow to stand")
+        ok("Stand Up clears prone on the sheet and in the Ref Screen")
+
+        # A player's healing spell and a spell on 2 targets (sent as the sheet sends them).
+        sw = r("var x = combat().list.filter(function (x) { return x.kind === 'ally'; })[0]; return [x.id, x.st];")
+        r("var x = combat().list.filter(function (x) { return x.kind === 'ally'; })[0]; x.st = Math.max(1, x.st - 5);")
+        sw_st = r("return combat().list.filter(function (x) { return x.kind === 'ally'; })[0].st")
+        pl.post("combat.act", {"id": char, "campaign": camp_id, "action": {"type": "attack", "label": "Cast Minor Healing", "tier": 2, "cast": True,
+                                                                          "heal": 3, "targets": [{"id": sw[0], "name": "Sword Warrior"}]}})
+        rwait("return combat().list.filter(function (x) { return x.kind === 'ally'; })[0].st === arguments[0]".replace("arguments[0]", str(sw_st + 3)), "the heal")
+        ok("a player's healing spell heals its target (+3 Stamina)")
+        foes = r("return combat().list.filter(function (x) { return x.kind === 'foe' && !x.dead; }).map(function (x) { return [x.id, x.name, x.st + x.ad]; })")
+        pl.post("combat.act", {"id": char, "campaign": camp_id, "action": {"type": "attack", "label": "Cast Spark", "tier": 2, "cast": True, "damage": 1,
+                                                                          "targets": [{"id": f[0], "name": f[1]} for f in foes[:2]]}})
+        rwait("return combat().acts.some(function (a) { return a.label === 'Cast Spark' && a.applied; })", "the spark")
+        after = r("return combat().list.filter(function (x) { return x.kind === 'foe'; }).map(function (x) { return [x.id, x.st + x.ad]; })")
+        hit = [f for f in foes[:2] if dict(after)[f[0]] == f[2] - 1]
+        assert len(hit) == len(foes[:2]), (foes, after)
+        ok(f"a spell on {len(foes[:2])} targets hits each of them with one roll")
+
+        # Next round: an opportunity attack is a reaction.
+        r("button('Next round + initiative', q('#sec-combat')).click();")
+        pwait("return /^Round\\s*2$/.test(text(q('#play-combat .cbt-head .vital')))", "round 2 on the Play page")
+        p("q('#cbt-act input[type=checkbox]').click();")
+        p("""var M = window.Math, rnd = M.random; M.random = function () { return 0.6; };
+             try { var atk = qa('#play-attacks .atk').filter(function (x) { return /^Sword/.test(text(x)); })[0]; button('Attack', atk).click(); }
+             finally { M.random = rnd; }""")
+        rwait("return combat().acts.some(function (a) { return a.rxn && /Attack with Sword/.test(a.label); })", "the opportunity attack")
+        assert r("var x = combat().list.filter(function (x) { return x.kind === 'pc'; })[0]; return x.rx && x.rx.r === 2 && x.rx.n === 1")
+        pwait("return /Reaction: used/.test(text(q('#play-combat .cbt-turn')))", "the reaction to show as used")
+        ok("the player's attack marked as a reaction goes to the Ref as one, and uses the crow's reaction for round 2")
 
         # The end.
         r("button('End combat', q('#sec-combat')).click();")
@@ -175,7 +317,7 @@ def main():
     except Exception as e:
         print("FAILED:", e)
         for name, wd, script in (("player", P, "return [text(q('#toast')), text(q('.roll-result'))]"),
-                                 ("Ref", R, "return [text(q('#toast')), JSON.stringify(combat().acts), combat().lastAct]")):
+                                 ("Ref", R, "return [text(q('#toast')), text(q('#sec-combat .live-acts')), text(q('#side-dice .result')), combat().lastAct]")):
             try:
                 print(f"  {name} page:", wd.js(JS + script))
             except Exception as e2:

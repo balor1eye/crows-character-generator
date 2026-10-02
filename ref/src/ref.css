@@ -376,3 +376,9 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .live-acts { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .3rem; font-size: .9rem; }
 .live-acts li { display: flex; align-items: center; gap: .5rem; flex-wrap: wrap; border-top: 1px solid var(--line); padding-top: .3rem; }
 .live-acts .log-t { min-width: 2rem; color: var(--muted); font-size: .8rem; }
+.tgt-pick { display: inline-flex; align-items: center; gap: .25rem; }
+.tgt-pick select { width: auto; min-height: 30px; padding: .15rem .3rem; max-width: 12rem; }
+.hit-ctl { gap: .35rem; margin-top: .35rem; }
+.sit-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .4rem; margin: .5rem 0 .2rem; }
+.sit-row .cond { min-height: 30px; }
+.cond.st8 { border-style: dashed; }

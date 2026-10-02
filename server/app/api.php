@@ -967,7 +967,10 @@ function a_notes_dismiss(): array {
  * id), whose version is the newest action's id, reads new ones with combat.actions, and applies them.
  */
 const COMBAT_MAX_BYTES = 200000;
-const ACTION_TYPES = ['attack', 'declare', 'done', 'undone'];
+const ACTION_TYPES = ['attack', 'maneuver', 'taunt', 'ready', 'assist', 'assistUsed', 'declare', 'done', 'undone'];
+const MANEUVERS = ['Move', 'Shift', 'Stand Up', 'Draw From Pack', 'Draw From Belt', 'Pick Up Item', 'Dump Backpack', 'Reload', 'Command Pet',
+    'Grab', 'Escape Grab', 'Knockback', 'Jump'];
+const COMBAT_CONDS = ['Blessed', 'Grabbed', 'Prone', 'Vulnerable', 'Weakened', 'Unconscious'];
 
 function combat_campaign_id(): int {
     $id = body()['campaign'] ?? ($_GET['campaign'] ?? 0);
@@ -1054,15 +1057,39 @@ function clean_action($a): array {
     if (!in_array($type, ACTION_TYPES, true)) fail('Unknown kind of action.');
     $txt = function (string $k, int $n) use ($a): string { $v = $a[$k] ?? ''; return is_string($v) ? clip($v, $n) : ''; };
     $num = function (string $k, int $lo, int $hi) use ($a): int { $v = $a[$k] ?? 0; return is_numeric($v) ? max($lo, min($hi, (int)$v)) : $lo; };
-    $out = ['type' => $type, 'round' => $num('round', 0, 9999), 'text' => $txt('text', 400)];
-    if ($type === 'attack' || $type === 'declare') {
+    $flag = function (string $k) use ($a): bool { return !empty($a[$k]); };
+    $out = ['type' => $type, 'round' => $num('round', 0, 9999), 'text' => $txt('text', 400), 'rxn' => $flag('rxn'), 'prompt' => $txt('prompt', 40)];
+    if (in_array($type, ['attack', 'maneuver', 'taunt', 'declare', 'ready'], true)) {
         $out['target'] = $txt('target', 40);
         $out['targetName'] = $txt('targetName', 80);
+        // Up to 6 targets (one roll for all: spells and attacks on several creatures).
+        $ts = is_array($a['targets'] ?? null) ? array_slice($a['targets'], 0, 6) : [];
+        $out['targets'] = array_values(array_filter(array_map(function ($t) {
+            if (!is_array($t) || !is_string($t['id'] ?? null)) return null;
+            return ['id' => clip($t['id'], 40), 'name' => is_string($t['name'] ?? null) ? clip($t['name'], 80) : ''];
+        }, $ts)));
+    }
+    if ($type === 'attack' || $type === 'maneuver' || $type === 'assist') {
+        $out += ['tier' => $num('tier', 0, 3), 'crit' => $flag('crit'), 'doom' => $flag('doom')];
     }
     if ($type === 'attack') {
-        $out += ['label' => $txt('label', 120), 'tier' => $num('tier', 1, 3), 'crit' => !empty($a['crit']), 'doom' => !empty($a['doom']),
-                 'damage' => $num('damage', 0, 999), 'piercing' => !empty($a['piercing']), 'cast' => !empty($a['cast'])];
+        $conds = is_array($a['conds'] ?? null) ? array_values(array_intersect(COMBAT_CONDS, array_filter($a['conds'], 'is_string'))) : [];
+        $size = is_string($a['condMaxSize'] ?? null) && preg_match('/^[TSMLH]$/', $a['condMaxSize']) ? $a['condMaxSize'] : '';
+        $out += ['label' => $txt('label', 120), 'damage' => $num('damage', 0, 999), 'piercing' => $flag('piercing'), 'cast' => $flag('cast'),
+                 // Spell and weapon effects on each target.
+                 'heal' => $num('heal', 0, 99), 'ad' => $num('ad', 0, 99), 'healWounds' => $num('healWounds', 0, 10), 'conds' => $conds,
+                 'condMaxSize' => $size, 'push' => $num('push', 0, 10),
+                 // For the Ref's options after a miss, a doom, or a crit: a counter (melee), a stray hit on an ally (ranged: the
+                 // weapon's tier 2 or 3 damage), a backlash (a spell of this rank), or a lost limb (Dismember).
+                 'melee' => $flag('melee'), 'ranged' => $flag('ranged'), 'allyDamage' => $num('allyDamage', 0, 999),
+                 'allyDamage2' => $num('allyDamage2', 0, 999), 'rank' => $num('rank', 0, 9), 'backlash' => $flag('backlash'), 'dismember' => $flag('dismember')];
     }
+    if ($type === 'maneuver') {
+        $name = $a['name'] ?? '';
+        if (!in_array($name, MANEUVERS, true)) fail('Unknown maneuver.');
+        $out += ['name' => $name, 'jump' => $num('jump', 0, 20)];
+    }
+    if ($type === 'assist') $out += ['assistTo' => $txt('assistTo', 40), 'bonus' => $num('bonus', -1, 2)];
     return $out;
 }
 
