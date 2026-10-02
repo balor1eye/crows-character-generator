@@ -61,7 +61,7 @@
           el('div', { class: 'row' }, [btn('Export text', function () { download(logText(h.n, h.title, h.date, h.log), 'Crows_Session_' + h.n + '.txt', 'text/plain'); }, 'btn-small'),
             btn('Delete', function () { if (confirm('Delete the archived log of session ' + h.n + '?')) { state.history = state.history.filter(function (x) { return x !== h; }); save(); render(); } }, 'btn-small btn-ghost btn-danger')])
         ]);
-      })) : el('p', { class: 'hint', text: 'Archive a session from the Session tab\'s log to keep it here.' })
+      })) : el('p', { class: 'hint', text: 'Starting the next session (Session tab) puts the last one\'s log here.' })
     ]);
   }
   function randomNPC() {

@@ -75,7 +75,6 @@
     return text;
   }
 
-  function refOps(fn) { return function (a) { var q = window.CrowsPlay && window.CrowsPlay.refOps; return q ? q[fn](a) : null; }; }
   function init() {
     bind();
     var s = load();
@@ -88,8 +87,6 @@
       getData: exportState,
       valid: validState,
       apply: function (data) { clearSelection(); adopt(clone(data)); render(); },
-      // Changes the Ref Screen sent to a linked sheet (play.js), redone on top if the player saved meanwhile.
-      refOps: { start: refOps('start'), saved: refOps('saved'), canRedo: refOps('canRedo'), redo: refOps('redo') },
       fresh: function () { clearSelection(); randomCrow(); render(); },
       name: function (c) { return c.name || 'Unnamed crow'; },
       summary: function (c) {
@@ -107,7 +104,7 @@
         // Changes now arrive within a second or two: say what changed each time, or if that can't be told, just
         // that something did, once in a while.
         var t = Date.now(), what = describeChange(before);
-        if ((what || t - lastRemote > 30000) && !(window.CrowsRefView && window.CrowsRefView.status)) {
+        if (what || t - lastRemote > 30000) {
           toast((refView ? 'The player changed this character' : 'Changed by your Ref or on another device') + (what ? ': ' + what : '.'), what ? 6000 : 0);
         }
         lastRemote = t;
@@ -116,7 +113,7 @@
     });
   }
 
-  A.add({ updateSaveBox: updateSaveBox, describeChange: describeChange, refOps: refOps, init: init });
+  A.add({ updateSaveBox: updateSaveBox, describeChange: describeChange, init: init });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

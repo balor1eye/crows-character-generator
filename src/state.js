@@ -29,13 +29,13 @@
   var uid = 1;
 
   // ------------------------------------------------------------------ helpers
-  var Dom = window.CrowsDom, Dice = window.CrowsDice, Rules = window.CrowsRules;   // src/shared/
+  var Dom = window.CrowsDom, Dice = window.CrowsDice, Rules = window.CrowsRules, Sheet = window.CrowsSheet;   // src/shared/
   var $ = Dom.$, el = Dom.el, fmt = Dom.fmt, signed = Dom.signed, clone = Dom.clone, d = Dice.d, pick = Dice.pick;
   function norm(s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
   var DIE = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
   function toast(msg, ms) { Dom.toast(msg, ms || 2600); }
   function bg() { return CROWS.BACKGROUNDS[state.bg]; }
-  function item(key) { return CROWS.ITEMS[key] || { cat: 'misc', st: 1, sl: 1, gc: 0, txt: '' }; }
+  function item(key) { return Sheet.item(key); }
 
   // ------------------------------------------------------------------ trait lookups
   var TREE_BY_NAME = {};
@@ -110,57 +110,14 @@
   }
   function allocTotal() { return Object.keys(state.esAlloc).reduce(function (s, k) { return s + state.esAlloc[k]; }, 0); }
 
-  // ------------------------------------------------------------------ derived character
-  function characteristics() {
-    var b = bg();
-    var two = b.two.indexOf(state.twoChar) >= 0 ? state.twoChar : b.two[0];
-    var others = CROWS.CHARS.filter(function (c) { return c !== two; });
-    var high = others.indexOf(state.highChar) >= 0 ? state.highChar : others[0];
-    var low = others[0] === high ? others[1] : others[0];
-    var v = {};
-    v[two] = 2;
-    if (state.pattern === 'm12') { v[high] = 2; v[low] = -1; } else { v[high] = 1; v[low] = 0; }
-    var base = clone(v), extraStamina = 0;
-    state.charBonus.forEach(function (c) {
-      if (!c) return;
-      if (CROWS.CHARS.every(function (k) { return v[k] >= 4; })) { extraStamina += 2; return; }
-      if (v[c] < 4) v[c]++;
-    });
-    return { values: v, base: base, two: two, high: high, low: low, extraStamina: extraStamina };
-  }
-  function expertiseUses() {
-    var out = {}, b = bg();
-    Object.keys(b.exp).forEach(function (k) { out[k] = b.exp[k]; });
-    Object.keys(state.esAlloc).forEach(function (k) { out[k] = (out[k] || 0) + state.esAlloc[k]; });
-    return out;
-  }
-  function staminaMax() {
-    var s = bg().stamina;
-    state.esBonus.forEach(function (o) { if (o === 'stamina') s += 2; else if (o === 'mix') s += 1; });
-    return s + characteristics().extraStamina;
-  }
-  function curStamina() {
-    var m = staminaMax(), p = state.play.stamina;
-    return p === null ? m : Math.max(0, Math.min(m, p));
-  }
-  function adMax(card) {
-    var it = item(card.key), m = /Parry (\d+)/.exec(it.txt);
-    return it.ad || (m ? +m[1] : 0);
-  }
-  function adNow(card) { return Math.max(0, adMax(card) - (card.dmg || 0)); }
-  function woundCount() { return Object.keys(state.play.wounds).length; }
-  function armorInfo() {
-    var worn = null, shield = null;
-    state.inv.forEach(function (c) {
-      var it = item(c.key);
-      if (it.cat === 'armor' && c.area === 'pack' && (!worn || it.ad > item(worn.key).ad)) worn = c;
-      if (it.cat === 'shield' && c.area === 'hand') shield = c;
-    });
-    var parts = [], total = 0;
-    if (worn) { parts.push(item(worn.key).ad + ' ' + worn.key.replace(' Armor', '').toLowerCase()); total += item(worn.key).ad; }
-    if (shield) { parts.push(item(shield.key).ad + ' shield'); total += item(shield.key).ad; }
-    return { total: total, text: parts.length ? parts.join(' + ') : '0', worn: worn, shield: shield };
-  }
+  // ------------------------------------------------------------------ derived character (src/shared/sheet.js)
+  function characteristics() { return Sheet.characteristics(state); }
+  function expertiseUses() { return Sheet.expertiseUses(state); }
+  function staminaMax() { return Sheet.staminaMax(state); }
+  function curStamina() { return Sheet.curStamina(state); }
+  var adMax = Sheet.adMax, adNow = Sheet.adNow;
+  function woundCount() { return Sheet.woundCount(state); }
+  function armorInfo() { return Sheet.armorInfo(state); }
 
   // ------------------------------------------------------------------ state lifecycle
   function freshState(bgIndex) {
@@ -175,25 +132,8 @@
       play: freshPlay()
     };
   }
-  // Live, at-the-table state (Play mode). stamina null = at maximum; wounds maps backpack slot index -> 'w' or 's' (starvation).
-  // dt = the last dungeon turn the Ref ended; lastRest = { dt, by: 'self' | 'ref', t, extras } (see play.js doRest);
-  // xpClaims = treasure the player asked their Ref to award XP for, while the crow is in a campaign; claimsAnswered = the ids
-  // the Ref answered (the Ref only adds to this list, and only the player's sheet changes xpClaims, so the two never clash).
-  function freshPlay() {
-    return { stamina: null, cruelty: 0, conds: {}, spent: {}, temp: {}, wounds: {}, dt: 0, miasma: false,
-      pendingXP: 0, xpLog: [], log: [], magic: {}, magicMulti: {}, petStam: {}, got: [], xpClaims: [], claimsAnswered: [], lastRest: null };
-  }
-  function normalizePlay(p) {
-    var base = freshPlay();
-    if (!p || typeof p !== 'object') return base;
-    Object.keys(base).forEach(function (k) {
-      if (base[k] === null) return;
-      if (!(k in p) || typeof p[k] !== typeof base[k] || Array.isArray(p[k]) !== Array.isArray(base[k]) || p[k] === null) p[k] = base[k];
-    });
-    if (p.stamina !== null && typeof p.stamina !== 'number') p.stamina = null;
-    p.xpClaims = p.xpClaims.filter(function (c) { return c && p.claimsAnswered.indexOf(c.id) < 0; });
-    return p;
-  }
+  // Live, at-the-table state (Play mode): see freshPlay in src/shared/sheet.js.
+  var freshPlay = Sheet.freshPlay, normalizePlay = Sheet.normalizePlay;
   // Per-card live values kept across saves: ud = usage dice left, dmg = AD lost, ammo = shots left,
   // thrown = 1 while a thrown weapon is out of hand (Play mode: Recover clears it).
   var CARD_LIVE = ['ud', 'dmg', 'ammo', 'thrown'];

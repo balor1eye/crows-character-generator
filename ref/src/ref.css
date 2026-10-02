@@ -28,6 +28,9 @@ p { margin: .3rem 0; }
 .tabbar button[aria-selected="true"] { background: var(--accent); color: #fff; opacity: 1; }
 .tabbar button:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
 .tabbar .badge { display: inline-block; margin-left: .35rem; background: var(--sel); color: #1f1d1e; border-radius: 999px; padding: 0 .4rem; font-size: .72rem; }
+.tab-group { display: flex; flex-wrap: wrap; align-items: flex-end; gap: 2px; }
+@media (min-width: 700px) { .tab-group + .tab-group { margin-left: .5rem; padding-left: .5rem; border-left: 1px solid #4a4546; } }
+.tab-group-label { align-self: center; padding: 0 .35rem 0 .1rem; color: #a49d9f; font-size: .64rem; font-weight: 700; text-transform: uppercase; letter-spacing: .07em; }
 
 /* Buttons */
 .btn { display: inline-flex; align-items: center; justify-content: center; gap: .3rem; padding: .45rem .8rem; border-radius: 6px;
@@ -159,10 +162,9 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .round-box .stat { min-width: 70px; }
 
 /* Party */
-.side-invite { border-top: 1px solid var(--line); padding-top: .7rem; }
-.side-invite .row { gap: .4rem; }
-.side-invite .fine { margin: .2rem 0 .45rem; }
-.side-invite .badge { display: inline-block; border-radius: 999px; padding: 0 .45rem; font-size: .72rem; font-weight: 700; background: var(--accent); color: #fff; }
+#sec-invite .row { gap: .4rem; }
+#sec-invite .fine { margin: .2rem 0 .45rem; }
+#sec-invite h2 .badge { display: inline-block; margin-left: .5rem; border-radius: 999px; padding: 0 .5rem; font: 700 .78rem var(--font); background: var(--accent); color: #fff; vertical-align: middle; }
 .join-reqs { list-style: none; margin: .5rem 0 0; padding: 0; }
 .join-reqs li { display: flex; flex-direction: column; gap: .3rem; padding: .45rem 0; border-top: 1px solid var(--line); font-size: .88rem; }
 .invite-link { margin-top: .5rem; display: flex; flex-direction: column; gap: .35rem; }
@@ -175,7 +177,9 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .st-head { display: flex; align-items: center; gap: .45rem; min-width: 0; }
 .row > .st-head { flex: 1; }
 .st-head b { font: bold 1.05rem var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.st-frame { width: 100%; height: 320px; border: 0; display: block; background: transparent; }
+.st-dmg { gap: .4rem; }
+.st-dmg .in.tiny { width: 4.2rem; }
+.st-tile .conds .cond { min-height: 26px; padding: .1rem .5rem; font-size: .76rem; }
 .st-stam { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
 .st-stam .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
 .st-stam b { font: bold 1.5rem var(--serif); }
@@ -292,6 +296,8 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .side-dice .btn-row .btn { padding: .3rem .2rem; font-size: .85rem; }
 .side-log ol { list-style: none; padding: 0; margin: 0; font-size: .82rem; }
 .side-log li { padding: .25rem 0; border-bottom: 1px solid var(--line); }
+.side-note { gap: .3rem; margin: 0 0 .4rem; }
+.side-note .in { min-width: 0; padding: .3rem .45rem; font-size: .85rem; }
 .log-t { color: var(--muted); font-size: .72rem; margin-right: .3rem; font-variant-numeric: tabular-nums; }
 .log-list { list-style: none; padding: 0; margin: 0 0 .6rem; max-height: 420px; overflow: auto; font-size: .88rem; }
 .log-list li { padding: .3rem 0; border-bottom: 1px solid var(--line); }
@@ -308,7 +314,7 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
   .side { position: static; order: -1; }
   .side-inner { max-height: none; display: grid; grid-template-columns: repeat(auto-fit, minmax(250px, 1fr)); }
   .side-log ol { max-height: 180px; overflow: auto; }
-  .side-invite { grid-column: 1 / -1; }
+  .side-log ol.all { max-height: 60vh; }
   .rules-tools { top: 0; }
   body[data-tab="session"] .side-timer { display: none; }
 }

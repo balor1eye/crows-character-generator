@@ -1,7 +1,7 @@
 # UX streamlining plan (remaining phases)
 
-Done: phase 0 (party rests and XP claims on linked sheets) and phase 1 (src/shared/, split app.js and ref.js), in 658e657.
-Remaining phases, in this order: **2, 5, 6, 3, 4**. Do one phase per session, then commit (see Workflow). Tick its boxes here and
+Done: phase 0 (party rests and XP claims on linked sheets) and phase 1 (src/shared/, split app.js and ref.js), in 658e657;
+phase 2; phase 5. Remaining phases, in this order: **6, 3, 4**. Do one phase per session, then commit (see Workflow). Tick its boxes here and
 commit this file with it.
 
 ## Workflow (every phase)
@@ -32,8 +32,8 @@ commit this file with it.
 
 ## How the code is put together
 
-- **Character Generator**: src/index.html loads, in order: shared/dom.js, dice.js, rules.js (window.CrowsDom, CrowsDice,
-  CrowsRules), cloud.js, refview.js, layout.js, then state.js, inventory.js, build-view.js, pdf.js, app.js (namespace
+- **Character Generator**: src/index.html loads, in order: shared/dom.js, dice.js, rules.js, sheet.js (window.CrowsDom, CrowsDice,
+  CrowsRules, CrowsSheet), cloud.js, refview.js, layout.js, then state.js, inventory.js, build-view.js, pdf.js, app.js (namespace
   **window.CrowsGen**), then play.js and combat.js. play.js and combat.js use `window.CrowsApp.core`, which app.js sets.
 - **Ref Screen**: ref/src/index.html loads the same shared files, then ref-core.js, ref-encounters.js, ref-travel.js,
   ref-session.js, ref-combat.js, ref-village.js, ref-party.js, ref-reference.js, ref.js (namespace **window.CrowsRefApp**).
@@ -49,10 +49,13 @@ commit this file with it.
   - Ref Screen: `render()` in ref-core.js dispatches on `tab`; `renderTabbar`/`setTab` are there too.
   - Pages are blocks that src/layout.js can rearrange: section ids are block ids, and new sections need entries there (see
     `layoutSync` in play.js, and `CrowsLayout.init` in ref.js).
-- **Ref → player sheet**: `sheetOp(p, op)` (ref-party.js) applies `op` to the party entry (`applyOp`) and delivers it to the linked
-  sheet's `CrowsPlay.refChange(op)`, which runs in a hidden iframe per crow (Party status, `renderStatus`/`sheetWin`). That sheet saves
-  through `link.save`. The fields a Ref may write are SHARED_FIELDS in server/app/api.php and LINK_FIELDS in src/cloud.js, and the
-  two must match.
+- **Sheet math**: src/shared/sheet.js (window.CrowsSheet) does a crow's derived numbers and the Ref's changes on a character object
+  (the saved form). state.js and play.js run it on the open crow; the Ref Screen runs it on linked crows.
+- **Ref → player sheet**: `sheetOp(p, op)` (ref-party.js). A linked crow: the Ref Screen keeps the player's character from
+  `link.get` (`sheets[link]`, `sheetOf(p)`), makes the change with `CrowsSheet.applyRefChange`, queues the op in `p.owed`, and saves
+  the shared fields with `link.save` (`sendSheet`, `CrowsCloud.linkDiff`); on a 409 the queued ops are redone on the player's
+  copy. Otherwise `applyOp` changes the party entry. The fields a Ref may write are SHARED_FIELDS in server/app/api.php and
+  LINK_FIELDS in src/cloud.js, and the two must match.
 - **Live fight**: the Ref Screen publishes with `publicCombat()`/`publish()` (ref-combat.js → `combat.publish`). The player reads
   `combat.mine` in src/combat.js (`load`, `renderView`, `renderAct`, `targetBar`) and sends `combat.act`.
 
@@ -83,24 +86,28 @@ commit this file with it.
 
 ## Phase 5: Ref Screen (ref/src/)
 
-- [ ] **Tab groups**: TABS in ref-core.js becomes groups — Run (session, encounters, travel), Campaign (party, village, world),
+- [x] **Tab groups**: TABS in ref-core.js becomes groups — Run (session, encounters, travel), Campaign (party, village, world),
   Reference (bestiary, tables, rules). Show the group labels in the tab bar (`renderTabbar`); tab ids stay the same.
-- [ ] **One combat tracker**: `renderCombat` (Session) shows only a summary line and a "Go to the fight" button when an encounter is
+- [x] **One combat tracker**: `renderCombat` (Session) shows only a summary line and a "Go to the fight" button when an encounter is
   running (`runningEnc()`). Otherwise it keeps the full `combatUI(false)`. Don't remove `combatUI`: `renderEncRun` uses it.
-- [ ] **Sidebar**: drop the `sec-log` card (`renderLogCard`) from Session, and give the sidebar log (`renderSideLog`) a "Show all"
+- [x] **Sidebar**: drop the `sec-log` card (`renderLogCard`) from Session, and give the sidebar log (`renderSideLog`) a "Show all"
   toggle in its place (its "full log" link points at `sec-log` now: repoint it). Move
   `renderInvite` output from `#side-invite` into a new `sec-invite` card on the Party page (index.html + layout block lists).
-- [ ] **Party status without iframes**:
+- [x] **Party status without iframes**:
   - Move the body of `CrowsPlay.refChange` (play.js) and the sheet math it needs into a shared function that works on a character
     object: `applyRefChange(char, op)` in a new src/shared/sheet.js, used by play.js and the Ref Screen.
   - The Ref Screen then applies ops to `link.get` data and saves with `link.save` (fields as `flushLinked` in cloud.js does,
     including the 409 merge).
   - Draw lightweight tiles from that data, replacing the iframes in `renderStatus`.
   - Biggest task; keep the iframe path until the live tests pass on the new one.
-- [ ] **Sessions**: a Start session button (session `n` +1, archive the log the way the History card does) and End session
+- [x] **Sessions**: a Start session button (session `n` +1, archive the log the way the History card does) and End session
   (pre-filled XP award from open claims (`allClaims()`) with the greed bonus, and a reminder to end the village cycle).
-- [ ] Tests: run_combat_test.py and run_live_*.py click tabs by name (`button('Party', q('#tabbar'))`), so keep the button labels.
+- [x] Tests: run_combat_test.py and run_live_*.py click tabs by name (`button('Party', q('#tabbar'))`), so keep the button labels.
   Add live-test checks that a Ref's hit lands on the sheet without an iframe.
+- Done as described, plus: the iframe path is gone (refview.js `&view=status`, `CrowsPlay.refChange` and the `refOps` redo queue in
+  play.js/app.js/cloud.js, and `frame-src` in the Ref Screen's CSP). The Session tab's log card became the **Session** card
+  (`sec-sess`: title, date, Start/End session, Export log); the note box moved to the sidebar log. End session fills `ui.award`
+  from the claims (a treasure several crows claimed counts once) and goes no further: the Ref checks it and presses Award.
 
 ## Phase 6: session state for players (ref-combat.js, src/combat.js, src/play.js)
 

@@ -193,7 +193,8 @@ def main():
         assert r(hp) == hp0 - 3, (hp0, r(hp))
         ok("its crit (Claws, 3 damage) lands on the crow automatically")
         pwait("return window.CrowsPlay.vitals().ad === 6", "the hit on the player's own sheet", 10)
-        ok("...through the crow's own armor on the player's sheet (AD 9 -> 6)")
+        assert r("return !document.querySelector('iframe')")
+        ok("...through the crow's own armor on the player's sheet (AD 9 -> 6), dealt by the Ref Screen itself (no iframe)")
         assert crow in p("return text(q('#play-combat .cbt-feed'))")
         r("button('Undo', q('#side-dice .result')).click();")
         assert r(hp) == hp0

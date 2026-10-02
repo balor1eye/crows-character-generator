@@ -29,8 +29,7 @@ def app_policy(path, extra=''):
 def main():
     public, app = sys.argv[1], sys.argv[2]
     gen = app_policy(os.path.join(public, 'Crows_Character_Generator.html'))
-    # The Ref Screen's Party tab embeds each linked crow's live Vitals (the generator, same origin).
-    ref = app_policy(os.path.join(app, 'Crows_Ref_Screen.html'), "frame-src 'self'; ")
+    ref = app_policy(os.path.join(app, 'Crows_Ref_Screen.html'))
     portal = "script-src 'self'; " + COMMON
     block = ('<IfModule mod_headers.c>\n'
              '  <Files "index.html">\n    Header always set Content-Security-Policy "%s"\n  </Files>\n'

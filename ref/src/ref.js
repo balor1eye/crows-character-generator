@@ -8,7 +8,7 @@
   var addFromLink = f('addFromLink'), endDT = f('endDT'), freshState = f('freshState'), importCharacter = f('importCharacter'),
       isCampaign = f('isCampaign'), linkToken = f('linkToken'), liveChanged = f('liveChanged'), load = f('load'), loadInvites = f('loadInvites'),
       log = f('log'), pauseTimer = f('pauseTimer'), refreshLinked = f('refreshLinked'), render = f('render'), repairObjects = f('repairObjects'),
-      rollTravelEncounter = f('rollTravelEncounter'), S = f('S'), save = f('save'), setTab = f('setTab'), startNew = f('startNew'),
+      rollTravelEncounter = f('rollTravelEncounter'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), startNew = f('startNew'),
       startTimer = f('startTimer'), test = f('test'), tick = f('tick'), withDefaults = f('withDefaults');
   var $ = A.$, clone = A.clone, el = A.el, TAB_KEY = A.TAB_KEY, TABS = A.TABS, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -95,7 +95,10 @@
     });
   }
 
-  window.CrowsRef = { get state() { return state; }, rollTravelEncounter: rollTravelEncounter, endDT: endDT, test: test, importCharacter: function (s) { var r = importCharacter(s); save(); render(); return r; } };
+  window.CrowsRef = { get state() { return state; },
+    /* A linked crow's character as this screen has it (with the Ref's unsaved changes), for tests. */
+    sheet: function (linkId) { var p = state.party.filter(function (x) { return x.link === linkId; })[0]; return p ? sheetOf(p) : null; },
+    rollTravelEncounter: rollTravelEncounter, endDT: endDT, test: test, importCharacter: function (s) { var r = importCharacter(s); save(); render(); return r; } };
 
   A.add({ download: download, fileBase: fileBase, init: init });
 

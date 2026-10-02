@@ -64,6 +64,7 @@ var CROWS = [['Ash', 11, 'Strength', 9], ['Briar', 7, 'Agility', 7], ['Corvin', 
 
 (async function () {
   /* ---------------------------------------------------------------- 1. an empty campaign */
+  check(qa('#tabbar .tab-group-label').map(text).join() === 'Run,Campaign,Reference', 'the tab bar groups its tabs: Run, Campaign, Reference');
   goTab('Village');
   var nameIn = qa('#sec-village input').filter(function (i) { return i.placeholder === 'optional'; })[0];
   type(nameIn, 'Combat test ' + new Date().toISOString().slice(0, 16));
@@ -168,7 +169,9 @@ var CROWS = [['Ash', 11, 'Strength', 9], ['Briar', 7, 'Agility', 7], ['Corvin', 
   /* ---------------------------------------------------------------- 9. the Session tab knows */
   goTab('Session');
   check(/Running encounter: Ambush at the ford/.test(text(q('#sec-combat .run-note'))), 'the Session tab\'s combat card links to the running encounter');
-  goTab('Encounters');
+  check(!q('#sec-combat .cbt') && /round 2, 1 foe standing/.test(text(q('#sec-combat'))), '...with a summary of the fight instead of a second tracker');
+  click('Go to the fight', q('#sec-combat'));
+  check(document.body.getAttribute('data-tab') === 'encounters' && !run().hidden, 'Go to the fight opens the Encounters tab');
 
   /* ---------------------------------------------------------------- 10. treasure XP for the four players */
   type(q('textarea', run()), 'The thieves carried a silver locket.');
@@ -203,6 +206,30 @@ var CROWS = [['Ash', 11, 'Strength', 9], ['Briar', 7, 'Agility', 7], ['Corvin', 
   check(logHas('Encounter ends: Ambush at the ford.'), 'the log says the encounter ended');
   check(pc('Dove').st === 0 && pc('Dove').wounds === 2 && pc('Ash').st === 9, 'the crows keep their Stamina and wounds after the fight');
   check(confirms.length === 0, 'no confirmation was needed along the way');
+
+  /* ---------------------------------------------------------------- 12. the sidebar log, and the next session */
+  var n = saved().log.length;
+  check(n > 14 && qa('#side-log li').length === 14, 'the sidebar log shows the last 14 entries');
+  click('Show all', q('#side-log'));
+  check(qa('#side-log li').length === n, '...and Show all shows all ' + n);
+  click('Show recent', q('#side-log'));
+  goTab('Session');
+  check(/Session 1 ?in progress/.test(text(q('#sec-sess'))), 'session 1 is in progress');
+  var ref = window.CrowsRef.state;   // two crows claim the same treasure
+  ref.party[0].claims = [{ id: 'k1', desc: 'Silver locket', gc: 300, n: 4 }]; ref.party[1].claims = [{ id: 'k2', desc: 'silver locket', gc: 300, n: 4 }];
+  click('End session 1', q('#sec-sess'));
+  var aw = window.CrowsRefApp.ui.award;
+  check(saved().session.live === false && aw && aw.gc === 300 && aw.players === 4 && aw.claims.length === 2,
+    'End session fills in the XP award from the claims: the locket once, split four ways, answering both claims');
+  check(/End the village cycle/.test(text(q('#sec-sess'))), '...and reminds the Ref to end the village cycle');
+  click('Go to the XP award', q('#sec-sess'));
+  check(document.body.getAttribute('data-tab') === 'party' && /Silver locket/.test(text(q('#sec-xp .claims'))), 'Go to the XP award opens the Experience card');
+  goTab('Session');
+  n = saved().log.length;
+  click('Start session 2', q('#sec-sess'));
+  var s2 = saved();
+  check(s2.session.n === 2 && s2.session.live === true && s2.log.length === 1 && /Session 2 begins/.test(s2.log[0].s), 'Start session 2 begins a new log');
+  check(s2.history.length === 1 && s2.history[0].n === 1 && s2.history[0].log.length === n, '...and archives session 1\'s log');
 
   return { ok: true, steps: steps, campaign: saved(), recordId: window.CrowsCloud && window.CrowsCloud.recordId || null };
 })().then(done, function (err) { done({ ok: false, error: err.message, steps: steps, confirms: confirms }); });

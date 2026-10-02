@@ -1311,6 +1311,391 @@ CROWS.NAME_IDEAS = {
 
 </script>
 <script>
+/*
+ * The sheet math shared by Play mode (src/play.js, src/state.js) and the Ref Screen (ref/src/ref-party.js): a crow's derived
+ * numbers (Stamina max, AD, wounds...) and the changes a Ref makes to it (applyRefChange), done on a character object in its
+ * saved form (exportState in state.js: bg, inv, pets, txp, play...). No DOM. Needs CROWS (src/game-data.js) and src/shared/
+ * dom.js (fmt), dice.js, rules.js. window.CrowsSheet.
+ */
+(function () {
+  'use strict';
+  var Dice = window.CrowsDice, Rules = window.CrowsRules, fmt = window.CrowsDom.fmt, d = Dice.d;
+  var CONDITIONS = ['Blessed', 'Grabbed', 'Prone', 'Vulnerable', 'Weakened', 'Unconscious'];
+  var MAGIC_SLOTS = ['Head', 'Neck', 'Waist', 'Arms', 'Finger', 'Feet'];
+  var PET_FEED = { 'Riding Horse': 2 };
+
+  function clone(v) { return JSON.parse(JSON.stringify(v)); }
+  function item(key) { return CROWS.ITEMS[key] || { cat: 'misc', st: 1, sl: 1, gc: 0, txt: '' }; }
+  function bg(c) { return CROWS.BACKGROUNDS[c.bg]; }
+
+  // ------------------------------------------------------------------ derived numbers
+  function characteristics(c) {
+    var b = bg(c);
+    var two = b.two.indexOf(c.twoChar) >= 0 ? c.twoChar : b.two[0];
+    var others = CROWS.CHARS.filter(function (k) { return k !== two; });
+    var high = others.indexOf(c.highChar) >= 0 ? c.highChar : others[0];
+    var low = others[0] === high ? others[1] : others[0];
+    var v = {};
+    v[two] = 2;
+    if (c.pattern === 'm12') { v[high] = 2; v[low] = -1; } else { v[high] = 1; v[low] = 0; }
+    var base = clone(v), extraStamina = 0;
+    (c.charBonus || []).forEach(function (k) {
+      if (!k) return;
+      if (CROWS.CHARS.every(function (x) { return v[x] >= 4; })) { extraStamina += 2; return; }
+      if (v[k] < 4) v[k]++;
+    });
+    return { values: v, base: base, two: two, high: high, low: low, extraStamina: extraStamina };
+  }
+  function expertiseUses(c) {
+    var out = {}, b = bg(c), alloc = c.esAlloc || {};
+    Object.keys(b.exp).forEach(function (k) { out[k] = b.exp[k]; });
+    Object.keys(alloc).forEach(function (k) { out[k] = (out[k] || 0) + alloc[k]; });
+    return out;
+  }
+  function staminaMax(c) {
+    var s = bg(c).stamina;
+    (c.esBonus || []).forEach(function (o) { if (o === 'stamina') s += 2; else if (o === 'mix') s += 1; });
+    return s + characteristics(c).extraStamina;
+  }
+  function curStamina(c) {
+    var m = staminaMax(c), p = c.play.stamina;
+    return p === null ? m : Math.max(0, Math.min(m, p));
+  }
+  function setStamina(c, v) { var m = staminaMax(c); v = Math.max(0, Math.min(m, v)); c.play.stamina = v >= m ? null : v; }
+  function adMax(card) {
+    var it = item(card.key), m = /Parry (\d+)/.exec(it.txt);
+    return it.ad || (m ? +m[1] : 0);
+  }
+  function adNow(card) { return Math.max(0, adMax(card) - (card.dmg || 0)); }
+  function woundCount(c) { return Object.keys(c.play.wounds).length; }
+  function armorInfo(c) {
+    var worn = null, shield = null;
+    c.inv.forEach(function (x) {
+      var it = item(x.key);
+      if (it.cat === 'armor' && x.area === 'pack' && (!worn || it.ad > item(worn.key).ad)) worn = x;
+      if (it.cat === 'shield' && x.area === 'hand') shield = x;
+    });
+    var parts = [], total = 0;
+    if (worn) { parts.push(item(worn.key).ad + ' ' + worn.key.replace(' Armor', '').toLowerCase()); total += item(worn.key).ad; }
+    if (shield) { parts.push(item(shield.key).ad + ' shield'); total += item(shield.key).ad; }
+    return { total: total, text: parts.length ? parts.join(' + ') : '0', worn: worn, shield: shield };
+  }
+
+  // ------------------------------------------------------------------ live (Play) state
+  // stamina null = at maximum; wounds maps backpack slot index -> 'w' or 's' (starvation).
+  // dt = the last dungeon turn the Ref ended; lastRest = { dt, by: 'self' | 'ref', t, extras } (see doRest);
+  // xpClaims = treasure the player asked their Ref to award XP for, while the crow is in a campaign; claimsAnswered = the ids
+  // the Ref answered (the Ref only adds to this list, and only the player's sheet changes xpClaims, so the two never clash).
+  function freshPlay() {
+    return { stamina: null, cruelty: 0, conds: {}, spent: {}, temp: {}, wounds: {}, dt: 0, miasma: false,
+      pendingXP: 0, xpLog: [], log: [], magic: {}, magicMulti: {}, petStam: {}, got: [], xpClaims: [], claimsAnswered: [], lastRest: null };
+  }
+  function normalizePlay(p) {
+    var base = freshPlay();
+    if (!p || typeof p !== 'object') return base;
+    Object.keys(base).forEach(function (k) {
+      if (base[k] === null) return;
+      if (!(k in p) || typeof p[k] !== typeof base[k] || Array.isArray(p[k]) !== Array.isArray(base[k]) || p[k] === null) p[k] = base[k];
+    });
+    if (p.stamina !== null && typeof p.stamina !== 'number') p.stamina = null;
+    p.xpClaims = p.xpClaims.filter(function (x) { return x && p.claimsAnswered.indexOf(x.id) < 0; });
+    return p;
+  }
+  /* The sheet's log, newest first (Play's Session log card). */
+  function addLog(c, msg) {
+    var l = c.play.log;
+    l.unshift({ t: Date.now(), m: msg });
+    if (l.length > 200) l.length = 200;
+  }
+
+  // ------------------------------------------------------------------ inventory
+  function carried(c) { return c.inv.filter(function (x) { return x.area !== 'none'; }); }
+  function inHands(c) { return c.inv.filter(function (x) { return x.area === 'hand'; }).sort(function (a, b) { return a.idx - b.idx; }); }
+  function cardById(c, id) { for (var i = 0; i < c.inv.length; i++) if (c.inv[i].id === id) return c.inv[i]; return null; }
+  function findCarried(c, key) { return carried(c).filter(function (x) { return x.key === key; })[0] || null; }
+  /* The backpack's 10 slots: the id of the card in each, or null. */
+  function packOcc(c) {
+    var occ = [], i;
+    for (i = 0; i < 10; i++) occ.push(null);
+    c.inv.forEach(function (x) {
+      if (x.area !== 'pack') return;
+      for (var k = 0; k < item(x.key).sl; k++) if (x.idx + k < 10) occ[x.idx + k] = x.id;
+    });
+    return occ;
+  }
+  function udInfo(key) {
+    var m = /UD:?\s*(\d+)\s*\(([^)]*)\)/.exec(item(key).txt);
+    if (!m) return null;
+    var f = m[2];
+    return { max: +m[1], useless: /Useless/.test(f), refuel: /Refuel/.test(f), rest: /Rest/.test(f), activate: /Activate/.test(f), dt: /DT/.test(f), fuel: /oil/i.test(f) ? 'Oil Flask' : null };
+  }
+  function udNow(card) { var u = udInfo(card.key); return u ? (typeof card.ud === 'number' ? Math.min(card.ud, u.max) : u.max) : 0; }
+  function removeCard(c, card) { c.inv = c.inv.filter(function (x) { return x !== card; }); }
+  /* Consume one item from a stack. */
+  function useOne(c, card) {
+    card.qty--; delete card.ud;
+    if (card.qty <= 0) removeCard(c, card);
+  }
+  /* Roll a card's usage dice: each 1 or 2 is removed. */
+  function rollUD(c, card, why) {
+    var u = udInfo(card.key), n = udNow(card);
+    if (!u || n <= 0) return card.key + ' has no usage dice left.';
+    var r = []; for (var i = 0; i < n; i++) r.push(d(6));
+    var lost = r.filter(function (x) { return x <= 2; }).length;
+    card.ud = n - lost;
+    var msg = card.key + ' UD' + (why ? ' (' + why + ')' : '') + ': rolled ' + r.join(', ') + (lost ? ' - lost ' + lost + ', ' + card.ud + ' left' : ' - no loss');
+    if (card.ud === 0) {
+      if (u.useless) { msg += '. It is used up'; useOne(c, card); if (card.qty > 0) msg += ' (' + card.qty + ' left in the stack)'; }
+      else if (u.refuel) msg += '. Needs refuelling (' + (u.fuel || 'fuel') + ')';
+      else if (u.rest) msg += '. Recharges on a rest';
+    }
+    return msg + '.';
+  }
+
+  // ------------------------------------------------------------------ damage and wounds
+  /* What soaks damage: worn armor, then the parry weapons in hand (a thrown one isn't in hand to parry with). */
+  function absorbers(c) {
+    var ai = armorInfo(c), out = [];
+    if (ai.worn) out.push(ai.worn);
+    inHands(c).forEach(function (x) { if (!x.thrown && adMax(x) > 0 && out.indexOf(x) < 0) out.push(x); });
+    return out;
+  }
+  /* Put n wounds in backpack slots: empty slots first, then the highest-numbered ones. Returns how many fit. */
+  function addWounds(c, n, kind) {
+    var p = c.play, occ = packOcc(c), placed = 0;
+    var order = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
+    var free = order.filter(function (i) { return !p.wounds[i] && occ[i] === null; })
+      .concat(order.filter(function (i) { return !p.wounds[i] && occ[i] !== null; }));
+    for (var k = 0; k < n && k < free.length; k++) { p.wounds[free[k]] = kind || 'w'; placed++; }
+    return placed;
+  }
+  /* Heal n ordinary wounds, freeing item slots first (restores speed). Returns how many were healed. */
+  function healWounds(c, n) {
+    var p = c.play, occ = packOcc(c), healed = 0;
+    var ws = Object.keys(p.wounds).map(Number).filter(function (i) { return p.wounds[i] === 'w'; })
+      .sort(function (a, b) { return (occ[b] !== null) - (occ[a] !== null) || b - a; });
+    for (var k = 0; k < n && k < ws.length; k++) { delete p.wounds[ws[k]]; healed++; }
+    return healed;
+  }
+  /*
+   * Deal damage to this crow (the rules' order, Rules.damage): vulnerable, then the absorbers given (worn armor, shields,
+   * parry weapons) unless piercing, then Stamina, then wounds. vul: a vulnerable roll already made. Returns { parts, total, vul }.
+   */
+  function dealDamage(c, amount, piercing, abs, vul) {
+    var p = c.play, cur = curStamina(c), parts = [];
+    var r = Rules.damage({ amount: amount, vulnerable: !!p.conds.Vulnerable, vul: vul, piercing: piercing, ad: abs.map(adNow),
+      stamina: cur, woundRoom: 10 - woundCount(c) });
+    if (r.vul) parts.push('vulnerable +' + r.vul);
+    if (piercing) parts.push('piercing');
+    abs.forEach(function (x, i) { if (r.absorbed[i]) { x.dmg = (x.dmg || 0) + r.absorbed[i]; parts.push(x.key + ' absorbs ' + r.absorbed[i] + ' (AD ' + adNow(x) + ' left)'); } });
+    if (r.stamina) { setStamina(c, cur - r.stamina); parts.push('-' + r.stamina + ' Stamina'); }
+    if (r.total - r.stamina - r.absorbed.reduce(function (t, a) { return t + a; }, 0) > 0) { var w = addWounds(c, r.wounds, 'w'); parts.push(w + ' wound' + (w === 1 ? '' : 's')); }
+    return { parts: parts, total: r.total, vul: r.vul };
+  }
+  /* The numbers the Ref Screen shows and the combat tracker uses (AD from worn armor and parry weapons). */
+  function vitals(c) {
+    var abs = absorbers(c);
+    return { st: curStamina(c), stMax: staminaMax(c), ad: abs.reduce(function (t, x) { return t + adNow(x); }, 0),
+      adMax: abs.reduce(function (t, x) { return t + adMax(x); }, 0), wounds: woundCount(c), conds: clone(c.play.conds), cruelty: c.play.cruelty };
+  }
+
+  // ------------------------------------------------------------------ rest, dungeon turn, XP
+  /* Blessed, vulnerable, and weakened end (the end of a DT, or halfway through a rest). */
+  function endDTConditions(c) {
+    var p = c.play, ended = Rules.DT_CONDITIONS.filter(function (k) { return p.conds[k]; });
+    ended.forEach(function (k) { delete p.conds[k]; });
+    return ended.length ? ended.join(', ') + ' ended.' : '';
+  }
+  // Rules: more than one magic item equipped in the same slot -> can't rest; 1d6 wounds at the end of each DT.
+  function overloadedSlots(c) { var m = c.play.magicMulti || {}; return MAGIC_SLOTS.filter(function (k) { return m[k]; }); }
+  /* The end of dungeon turn n, as the Ref Screen's "End DT" sends it (refChange endDT); players can't end one themselves. */
+  function endDT(c, n) {
+    var p = c.play, msgs = [], ended = endDTConditions(c);
+    p.dt = n;
+    if (ended) msgs.push(ended);
+    inHands(c).forEach(function (x) { var u = udInfo(x.key); if (u && u.dt && udNow(x) > 0) msgs.push(rollUD(c, x, 'end of DT')); });
+    var over = overloadedSlots(c);
+    if (over.length) {
+      var w = d(6), placed = addWounds(c, w, 'w');
+      msgs.push('Two magic items in one slot (' + over.join(', ') + '): chaos deals 1d6 = ' + w + ' wound' + (w === 1 ? '' : 's') + (placed < w ? ' (' + placed + ' fit)' : '') + '.');
+      if (woundCount(c) >= 10) msgs.push('All 10 backpack slots are wounded: your crow is dead.');
+    }
+    return 'End of dungeon turn ' + n + '. ' + (msgs.join(' ') || 'Nothing in hand burns down.');
+  }
+  function caretakerBonus(c) { return (c.prosperity || 0) >= 6 ? 3 : 2; }
+  function surgicalKit(c) { return carried(c).filter(function (x) { return x.key === 'Surgical Kit' && udNow(x) > 0; })[0] || null; }
+  function foodCards(c) { return carried(c).filter(function (x) { return x.key === 'Ration' || x.key === 'Hearty Ration'; }); }
+  /*
+   * A rest's effects on this crow, whoever started it: the player's Rest button, or the Ref Screen finishing the party's
+   * rest (refChange rest). o: food ('Ration', 'Hearty Ration', 'none', or empty for a ration carried), activity (+ repair,
+   * study, useKit), tended, tendedKit, caretaker, miasma, xp (false: pending XP waits), by ('self' or 'ref'), dt (the DT
+   * the rest used up). Returns { ok, msg }. Records play.lastRest, so the same rest isn't taken twice (see refRest).
+   */
+  function doRest(c, o) {
+    var p = c.play, msgs = [];
+    var over = overloadedSlots(c);
+    if (over.length) return { ok: false, msg: 'You can\'t rest with two magic items in one slot (' + over.join(', ') + ').' };
+    p.lastRest = { dt: o.dt, by: o.by || 'self', t: Date.now() };
+    var foods = foodCards(c);
+    var food = o.food === 'none' ? null : foods.filter(function (x) { return x.key === (o.food || 'Ration'); })[0] || foods[0] || null;
+    if (!food) {
+      var sw = addWounds(c, 1, 's');
+      return { ok: true, msg: 'No food: no rest benefits' + (sw ? ' and 1 starvation wound' : '') + '.' };
+    }
+    var hearty = food.key === 'Hearty Ration';
+    useOne(c, food);
+    msgs.push('Ate a ' + food.key.toLowerCase() + '.');
+    var starve = Object.keys(p.wounds).filter(function (i) { return p.wounds[i] === 's'; });
+    starve.forEach(function (i) { delete p.wounds[i]; });
+    if (starve.length) msgs.push('Starvation wounds gone (' + starve.length + ').');
+    setStamina(c, staminaMax(c));
+    msgs.push('Stamina full.');
+    var uses = expertiseUses(c);
+    p.temp = {};
+    if (o.miasma) {
+      Object.keys(p.spent).forEach(function (k) { p.spent[k] = Math.min(p.spent[k], uses[k] || 0); if (!p.spent[k]) delete p.spent[k]; });
+      msgs.push('In the Miasma: expertise uses are NOT restored. Make your Miasma RR.');
+    } else {
+      p.spent = {};
+      msgs.push('Expertise uses restored.');
+      if (p.cruelty) { p.cruelty = 0; msgs.push('Rested free of the Miasma: all cruelty lost.'); }
+    }
+    c.inv.forEach(function (x) { var u = udInfo(x.key); if (u && u.rest && udNow(x) < u.max) { x.ud = u.max; msgs.push(x.key + ' recharged.'); } });
+    CONDITIONS.forEach(function (k) { if (k !== 'Grabbed') delete p.conds[k]; });
+    var heal = 1 + (hearty ? 1 : 0) + restActivity(c, o, msgs);
+    var h = healWounds(c, heal);
+    if (h) msgs.push('Healed ' + h + ' wound' + (h === 1 ? '' : 's') + '.');
+    // pets eat animal feed
+    (c.pets || []).forEach(function (pet, i) {
+      var need = PET_FEED[pet] || 1, have = carried(c).filter(function (x) { return x.key === 'Animal Feed'; }).reduce(function (t, x) { return t + x.qty; }, 0);
+      if (have >= need) {
+        for (var k = 0; k < need; k++) useOne(c, findCarried(c, 'Animal Feed'));
+        delete p.petStam[i]; msgs.push('Your ' + pet.toLowerCase() + ' ate and rested.');
+      } else msgs.push('Your ' + pet.toLowerCase() + ' had no animal feed (no rest benefit).');
+    });
+    if (p.pendingXP && o.xp !== false) msgs.push(applyXP(c));
+    return { ok: true, msg: msgs.join(' ') };
+  }
+  /* The rest activity and the healing others give (Tend Wounds on me, my Caretaker): adds to msgs, returns the extra wounds healed. */
+  function restActivity(c, o, msgs) {
+    var p = c.play;
+    if (o.activity === 'repair') {
+      var rc = cardById(c, +o.repair);
+      if (rc) { rc.dmg = 0; msgs.push('Repaired ' + rc.key + ' to full AD.'); }
+    } else if (o.activity === 'study' && o.study) {
+      p.temp[o.study] = 1; msgs.push('Studied a lore book: +1 use of ' + o.study + ' until the next rest.');
+    } else if (o.activity === 'Tend Wounds') {
+      var kit = o.useKit ? surgicalKit(c) : null;
+      if (kit) msgs.push('Tended an ally\'s wounds with a surgical kit: they lose 3 wounds instead of 1. ' + rollUD(c, kit, 'Tend Wounds'));
+      else msgs.push('Tended an ally\'s wounds: they lose 2 wounds instead of 1.');
+    } else if (o.activity) msgs.push('Rest activity: ' + o.activity + '.');
+    return (o.tended ? 1 : 0) + (o.tended && o.tendedKit ? 1 : 0) + (o.caretaker ? caretakerBonus(c) : 0);
+  }
+  /*
+   * The Ref Screen finished the party's rest (refChange rest: { dt, miasma, xp }). Skipped if this crow already rested
+   * from its own sheet during that dungeon turn (in the last 12 hours, so an old rest on an unsynced DT doesn't count).
+   */
+  function refRest(c, r) {
+    var p = c.play, lr = p.lastRest;
+    if (lr && lr.by === 'self' && lr.dt === r.dt && Date.now() - lr.t < 12 * 3600000) {
+      p.dt = r.dt;
+      return 'The party rested (DT ' + r.dt + '). You had already rested from your sheet this dungeon turn, so nothing more happens.';
+    }
+    var res = doRest(c, { by: 'ref', dt: r.dt, miasma: !!r.miasma || p.miasma, xp: r.xp });
+    p.dt = r.dt;
+    return res.ok ? 'Rested with the party (DT ' + r.dt + '). ' + res.msg : 'The party rested (DT ' + r.dt + '), but you couldn\'t: ' + res.msg;
+  }
+  function applyXP(c) {
+    var p = c.play, before = Rules.esBonusCount(c.txp), cb = Rules.charBonusCount(c.txp), gained = p.pendingXP;
+    c.txp = Math.min(999999, c.txp + gained); p.pendingXP = 0;
+    var msg = 'Gained ' + fmt(gained) + ' XP (TXP ' + fmt(c.txp) + ').';
+    var nb = Rules.esBonusCount(c.txp) - before, nc = Rules.charBonusCount(c.txp) - cb;
+    if (nb) msg += ' New Expertise & Stamina bonus' + (nb > 1 ? 'es' : '') + ' (' + nb + '): choose in Build > Advancement.';
+    if (nc) msg += ' New characteristic bonus' + (nc > 1 ? 'es' : '') + ' (' + nc + ').';
+    return msg;
+  }
+
+  // ------------------------------------------------------------------ the Ref's changes
+  /*
+   * A hit from the Ref Screen's combat tracker, dealt the way Take damage does it: vulnerable, then worn armor and parry
+   * weapons, then Stamina, then wounds. The vulnerable roll is kept in the op so a replay deals the same.
+   * o.result gets what happened, with the sheet as it was before (for o.restore, the tracker's Undo).
+   */
+  function refHit(c, o) {
+    var p = c.play;
+    var before = { stamina: p.stamina, wounds: clone(p.wounds), dmg: {} };
+    c.inv.forEach(function (x) { if (x.dmg) before.dmg[x.id] = x.dmg; });
+    var res = dealDamage(c, o.hit, !!o.piercing, absorbers(c).filter(function (x) { return adNow(x) > 0; }), o.vul), parts = res.parts;
+    if (res.vul) o.vul = res.vul;
+    if (p.conds.Unconscious) { delete p.conds.Unconscious; parts.push('wakes up'); }   // any damage wakes a sleeper
+    o.result = { total: res.total, parts: parts, before: before };
+    return 'Hit for ' + o.hit + (o.piercing ? ' piercing' : '') + (o.from ? ' by ' + o.from : '') + ': ' + parts.join(', ') + '.' +
+      (woundCount(c) >= 10 ? ' All 10 backpack slots are wounded: your crow is dead.' : '');
+  }
+  function refRestore(c, b) {
+    var p = c.play;
+    p.stamina = b.stamina; p.wounds = clone(b.wounds || {});
+    c.inv.forEach(function (x) { if (b.dmg && b.dmg[x.id]) x.dmg = b.dmg[x.id]; else delete x.dmg; });
+    return 'The Ref took back a hit: Stamina, wounds, and armor are as they were.';
+  }
+  /*
+   * A change the Ref Screen made to crow c (combat, rests, Miasma, XP), applied as steps rather than final values, so it adds
+   * to whatever the player did meanwhile and can be replayed on a newer copy of the sheet. Any of:
+   * hit (+ piercing, from, vul): damage, see refHit · restore: a hit taken back (o.result.before of that hit) ·
+   * cond ({ name: true/false }): conditions on or off · rest ({ dt, miasma, xp }): the party's rest, applied in full (see refRest) ·
+   * claims: XP claims the Ref answered (ids) · endDT: dungeon turn n ended · endConds: blessed, vulnerable, weakened end (with a rest) ·
+   * dt: dungeon turn n ended (with a rest) · xp (+ desc, gc, n): pending XP · apply: pending XP into TXP · full: full Stamina ·
+   * st: Stamina +/- · wounds: ordinary wounds +/- · cruelty: +/- · setCruelty: a new value.
+   * Returns what happened, as sentences for the sheet's log (empty if nothing did).
+   */
+  function applyRefChange(c, o) {
+    var p = c.play, msgs = [], n;
+    if (o.hit) msgs.push(refHit(c, o));
+    if (o.restore) msgs.push(refRestore(c, o.restore));
+    if (o.cond) Object.keys(o.cond).forEach(function (k) {
+      if (CONDITIONS.indexOf(k) < 0 || !!p.conds[k] === !!o.cond[k]) return;
+      if (o.cond[k]) p.conds[k] = true; else delete p.conds[k];
+      msgs.push((o.cond[k] ? 'Now ' : 'No longer ') + k.toLowerCase() + '.');
+    });
+    if (o.rest) msgs.push(refRest(c, o.rest));
+    if (o.claims) {   // the player's own sheet takes them off its list (normalizePlay), even if they hadn't reached this copy yet
+      o.claims.forEach(function (id) { if (p.claimsAnswered.indexOf(id) < 0) p.claimsAnswered.push(id); });
+      if (p.claimsAnswered.length > 50) p.claimsAnswered.splice(0, p.claimsAnswered.length - 50);
+      if (!o.xp) msgs.push('The Ref answered your XP claim without an award.');
+    }
+    if (o.endDT) msgs.push(endDT(c, o.endDT));
+    if (o.endConds && (n = endDTConditions(c))) msgs.push('Resting: ' + n);
+    if (o.dt && p.dt !== o.dt) { p.dt = o.dt; msgs.push('Dungeon turn ' + o.dt + ' ended with the rest.'); }
+    if (o.xp) {
+      p.pendingXP = Math.max(0, p.pendingXP + o.xp);
+      p.xpLog.unshift({ t: Date.now(), desc: o.desc || 'Treasure', gc: o.gc | 0, n: o.n | 0 || 1, xp: o.xp });
+      if (p.xpLog.length > 100) p.xpLog.length = 100;
+      msgs.push((o.desc || 'Treasure') + (o.gc ? ' worth ' + fmt(o.gc) + ' gc' : '') + ': ' + fmt(o.xp) + ' XP (applies after the next rest).');
+    }
+    if (o.apply && p.pendingXP) msgs.push(applyXP(c));
+    if (o.full && curStamina(c) < staminaMax(c)) { setStamina(c, staminaMax(c)); msgs.push('Back to full Stamina.'); }
+    if (o.st) {
+      n = curStamina(c); setStamina(c, n + o.st); n = curStamina(c) - n;
+      if (n) msgs.push((n > 0 ? 'Regained ' : 'Lost ') + Math.abs(n) + ' Stamina (' + curStamina(c) + '/' + staminaMax(c) + ').');
+    }
+    if (o.wounds > 0 && (n = addWounds(c, o.wounds, 'w'))) msgs.push(n + ' wound' + (n === 1 ? '' : 's') + (woundCount(c) >= 10 ? ': all 10 backpack slots are wounded, your crow is dead.' : '.'));
+    if (o.wounds < 0 && (n = healWounds(c, -o.wounds))) msgs.push('Healed ' + n + ' wound' + (n === 1 ? '' : 's') + '.');
+    if (o.cruelty) { p.cruelty = Math.max(0, p.cruelty + o.cruelty); msgs.push('Cruelty ' + p.cruelty + '.'); }
+    if (typeof o.setCruelty === 'number' && p.cruelty !== o.setCruelty) { p.cruelty = Math.max(0, o.setCruelty); msgs.push('Cruelty ' + p.cruelty + '.'); }
+    return msgs;
+  }
+
+  window.CrowsSheet = { CONDITIONS: CONDITIONS, MAGIC_SLOTS: MAGIC_SLOTS, item: item, bg: bg, characteristics: characteristics,
+    expertiseUses: expertiseUses, staminaMax: staminaMax, curStamina: curStamina, setStamina: setStamina, adMax: adMax, adNow: adNow,
+    woundCount: woundCount, armorInfo: armorInfo, freshPlay: freshPlay, normalizePlay: normalizePlay, addLog: addLog,
+    carried: carried, inHands: inHands, cardById: cardById, findCarried: findCarried, packOcc: packOcc, udInfo: udInfo, udNow: udNow,
+    useOne: useOne, rollUD: rollUD, absorbers: absorbers, addWounds: addWounds, healWounds: healWounds, dealDamage: dealDamage, vitals: vitals,
+    endDTConditions: endDTConditions, overloadedSlots: overloadedSlots, endDT: endDT, caretakerBonus: caretakerBonus, surgicalKit: surgicalKit,
+    foodCards: foodCards, doRest: doRest, restActivity: restActivity, refRest: refRest, applyXP: applyXP, applyRefChange: applyRefChange };
+})();
+
+</script>
+<script>
 /* Trait trees extracted from Crows Characters Book (Playtest 2). Generated by build/extract_traits. */
 var CROWS_TRAIT_TREES = [
 {
@@ -7476,21 +7861,25 @@ var CROWS_TRAIT_TREES = [
     });
   }
 
-  /* The Ref's save: just the shared fields that differ from what the server last had. */
-  function flushLinked(data, json) {
-    var fields = {}, from = {}, n = 0, snap = cfg.refOps ? cfg.refOps.start() : null;
+  /* The shared fields (LINK_FIELDS) that differ between b and data, as link.save takes them: { fields, base }, or null. */
+  function linkDiff(b, data) {
+    var fields = {}, from = {}, n = 0;
     LINK_FIELDS.forEach(function (f) {
-      var lv = getPath(data, f.path), bv = getPath(base, f.path);
+      var lv = getPath(data, f.path), bv = getPath(b, f.path);
       if (!same(lv, bv)) { fields[f.name] = lv === undefined ? null : lv; from[f.name] = bv === undefined ? null : bv; n++; }
     });
-    if (!n) { lastSent = json; status('saved', 'Saved'); return; }   // nothing the Ref may change was changed
+    return n ? { fields: fields, base: from } : null;
+  }
+  /* The Ref's save: just the shared fields that differ from what the server last had. */
+  function flushLinked(data, json) {
+    var diff = linkDiff(base, data);
+    if (!diff) { lastSent = json; status('saved', 'Saved'); return; }   // nothing the Ref may change was changed
     inFlight = true; again = false;
     status('saving', 'Saving…');
-    call('POST', 'link.save', '', { id: linkId, fields: fields, base: from }).then(function (j) {
+    call('POST', 'link.save', '', { id: linkId, fields: diff.fields, base: diff.base }).then(function (j) {
       retryMs = 0;
       var item = j.item;
       rec.version = item.version;
-      if (snap) cfg.refOps.saved(snap);
       // Show the player's latest too, unless the Ref has changed something new meanwhile.
       if (JSON.stringify(cfg.getData()) === json) adoptRemote(item, item.data);
       else base = item.data;
@@ -7540,15 +7929,6 @@ var CROWS_TRAIT_TREES = [
   function mergeIn(item, thenSave) {
     if (!cfg.valid(item.data)) return;
     var before = cfg.getData();            // for onRemote to say what changed
-    // Unsaved here are only changes sent from the Ref Screen, which are steps (Stamina -1, XP +130): take the
-    // player's version and redo them on top. (A value merge would drop one of two equal hits as "the same".)
-    if (linkId && cfg.refOps && cfg.refOps.canRedo()) {
-      adoptRemote(item, item.data);
-      cfg.refOps.redo();
-      if (cfg.onRemote) cfg.onRemote(before);
-      flush();
-      return;
-    }
     var local = before;
     var m = linkId ? mergeLinked(base, local, item.data) : merge3(base, local, item.data);
     if (m.clashes.length) return clash(item, m.clashes);
@@ -7788,6 +8168,8 @@ var CROWS_TRAIT_TREES = [
 
     /* Call fn(user) once it's known who is logged in (user is null for a guest, offline, or without the accounts server). */
     afterMe: function (fn) { if (meDone) fn(user); else meWaiting.push(fn); },
+    /* For the Ref Screen: what link.save needs to turn the linked character `b` into `data` ({ fields, base }), or null if nothing it may change differs. */
+    linkDiff: function (b, data) { return linkDiff(b, data); },
     /* For the Ref Screen: calls the API with this page's login. */
     api: function (method, action, query, body) { return call(method, action, query, body); }
   };
@@ -7802,11 +8184,8 @@ var CROWS_TRAIT_TREES = [
  * The whole sheet is shown, Build and Play, but only the Play mode vitals (Stamina, AD, wounds, conditions,
  * cruelty, coins), equipment, and notes can be changed: every other control is disabled and clicks/keys/drags
  * on it are stopped before the app sees them. The server enforces the same rule (it applies only those fields
- * from a Ref, plus the XP the Ref Screen awards through CrowsPlay.refChange), so this is about a clear UI, not trust.
+ * from a Ref, plus the rests, XP, and hits the Ref Screen makes through link.save), so this is about a clear UI, not trust.
  * The Ref's own character in this browser is left alone (app.js skips its local autosave here).
- *
- * &view=status is the condensed form the Ref Screen's Party tab embeds for each linked crow: just the Vitals
- * card, with the sheet's own buttons working on the whole character, live. It tells the Ref Screen its height.
  */
 (function () {
   'use strict';
@@ -7817,38 +8196,13 @@ var CROWS_TRAIT_TREES = [
   var ALWAYS_OK = 'summary, details > summary, a[href]';   // expanding sections and following links is just reading
   var BLOCKED_EVENTS = ['click', 'dblclick', 'mousedown', 'pointerdown', 'touchstart', 'keydown', 'input', 'change', 'dragstart', 'drop', 'dragover'];
 
-  var STATUS = /[?&]view=status(&|$)/.test(location.search);
   document.body.classList.add('ref-view', 'ref-loading');
-  if (STATUS) document.body.classList.add('ref-status');
 
   var css = 'body.ref-view #btn-random,body.ref-view #btn-new,body.ref-view .actions .file-btn{display:none}' +
     'body.ref-loading .layout{visibility:hidden}' +
     '.ref-banner{margin:12px auto 0;padding:.6rem clamp(16px,2vw,40px)}' +
     '.ref-banner p{margin:0;padding:.6rem .8rem;border-left:4px solid var(--sel);background:var(--card);border-radius:6px;font-size:.92rem}' +
-    'body.ref-view .ref-locked{cursor:not-allowed}' +
-    // The condensed status view: only the Vitals card, without its title, headings, or rules text.
-    'html:has(body.ref-status){background:transparent}' +
-    'body.ref-status{margin:0;padding:0;background:transparent;min-height:0}' +
-    '.st-hide{display:none!important}' +
-    '.st-path{display:block!important;margin:0!important;padding:0!important;max-width:none!important;border:0!important;background:transparent!important;box-shadow:none!important}' +
-    'body.ref-loading #play-vitals{visibility:hidden}' +
-    'body.ref-status #play-vitals{display:block;margin:0;padding:.2rem 0 .1rem;border:0;box-shadow:none;background:transparent}' +
-    'body.ref-status #play-vitals>h2,body.ref-status #play-vitals h3,body.ref-status .info-toggle,body.ref-status #cond-info{display:none}' +
-    'body.ref-status #play-vitals .conds,body.ref-status #play-vitals .dmg-row{margin:.45rem 0 0}' +
-    'body.ref-status .vital-top{grid-template-columns:minmax(0,1.1fr) minmax(0,1fr);gap:.4rem}' +
-    'body.ref-status .vital-grid{grid-template-columns:repeat(4,minmax(0,1fr));gap:.4rem;margin-top:.4rem}' +
-    'body.ref-status .vital{padding:.3rem .4rem}body.ref-status .vital .lbl{font-size:.6rem}' +
-    'body.ref-status .vital .val b{font-size:1.15rem}body.ref-status .vital.big .val b{font-size:1.6rem}' +
-    'body.ref-status .vital .fine{font-size:.65rem}body.ref-status .meter{margin:.2rem 0}' +
-    'body.ref-status .pm-row{gap:3px;flex-wrap:wrap}body.ref-status .pm-row .btn{padding:.1rem .4rem;min-height:26px}' +
-    'body.ref-status .pm-row input{width:3.2rem;min-width:0}' +
-    'body.ref-status .conds .cond{min-height:26px;padding:.1rem .5rem}' +
-    'body.ref-status .dmg-row{display:flex;flex-wrap:wrap;align-items:center;gap:.3rem .45rem}' +
-    'body.ref-status .dmg-row .field{display:inline-flex;flex-direction:row;align-items:center;gap:.3rem;margin:0}' +
-    'body.ref-status .dmg-row input[type=number]{width:3.6rem}body.ref-status .dmg-row .spacer{display:none}' +
-    'body.ref-status .wound-grid{grid-template-columns:repeat(10,minmax(0,1fr));gap:3px;margin-top:.45rem}' +
-    'body.ref-status .wslot{min-height:0;padding:1px 3px}body.ref-status .wslot .it{font-size:.6rem}body.ref-status .wslot .wk{font-size:.55rem}' +
-    'body.ref-status .toast{bottom:4px}';
+    'body.ref-view .ref-locked{cursor:not-allowed}';
   var st = document.createElement('style'); st.textContent = css; document.head.appendChild(st);
 
   function inMain(n) { return n && n.closest && n.closest('.layout'); }
@@ -7878,35 +8232,13 @@ var CROWS_TRAIT_TREES = [
   new MutationObserver(function () { if (!pending) { pending = true; requestAnimationFrame(lock); } })
     .observe(document.body, { childList: true, subtree: true });
 
-  if (STATUS) {
-    // Hide everything but the Vitals card (left in place, so the sheet's own styles still apply to it),
-    // and keep the Ref Screen told of its height.
-    var vit = document.getElementById('play-vitals');
-    for (var n = vit; n.parentNode !== document.body; n = n.parentNode) {
-      n.parentNode.classList.add('st-path');
-      Array.prototype.forEach.call(n.parentNode.children, function (sib) { if (sib !== n) sib.classList.add('st-hide'); });
-    }
-    Array.prototype.forEach.call(document.body.children, function (sib) { if (sib !== n && sib.id !== 'toast' && sib.tagName !== 'SCRIPT') sib.classList.add('st-hide'); });
-    document.body.classList.add('st-path');
-    var sent = 0;
-    var tell = function (always) {
-      var h = Math.ceil(vit.getBoundingClientRect().height) + 2;
-      if ((h !== sent || always === true) && window.parent !== window) { sent = h; window.parent.postMessage({ crowsStatus: true, h: h, loaded: loaded }, location.origin); }
-    };
-    if (window.ResizeObserver) new ResizeObserver(tell).observe(vit);
-    window.addEventListener('load', tell);
-  }
-
   var loaded = false;
   window.CrowsRefView = {
-    /* True in the condensed view embedded in the Ref Screen (&view=status). */
-    status: STATUS,
     /* True once the player's character is in (before that the page holds this browser's own character). */
     get loaded() { return loaded; },
     /* The character is loaded: show it with a banner saying what the Ref can do. */
     ready: function (name, owner) {
       loaded = true;
-      if (STATUS) { document.body.classList.remove('ref-loading'); tell(true); return; }   // the Ref Screen may have changes waiting
       var b = document.getElementById('ref-banner');
       if (!b) {
         b = document.createElement('div'); b.id = 'ref-banner'; b.className = 'ref-banner';
@@ -8396,13 +8728,13 @@ var CROWS_TRAIT_TREES = [
   var uid = 1;
 
   // ------------------------------------------------------------------ helpers
-  var Dom = window.CrowsDom, Dice = window.CrowsDice, Rules = window.CrowsRules;   // src/shared/
+  var Dom = window.CrowsDom, Dice = window.CrowsDice, Rules = window.CrowsRules, Sheet = window.CrowsSheet;   // src/shared/
   var $ = Dom.$, el = Dom.el, fmt = Dom.fmt, signed = Dom.signed, clone = Dom.clone, d = Dice.d, pick = Dice.pick;
   function norm(s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
   var DIE = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
   function toast(msg, ms) { Dom.toast(msg, ms || 2600); }
   function bg() { return CROWS.BACKGROUNDS[state.bg]; }
-  function item(key) { return CROWS.ITEMS[key] || { cat: 'misc', st: 1, sl: 1, gc: 0, txt: '' }; }
+  function item(key) { return Sheet.item(key); }
 
   // ------------------------------------------------------------------ trait lookups
   var TREE_BY_NAME = {};
@@ -8477,57 +8809,14 @@ var CROWS_TRAIT_TREES = [
   }
   function allocTotal() { return Object.keys(state.esAlloc).reduce(function (s, k) { return s + state.esAlloc[k]; }, 0); }
 
-  // ------------------------------------------------------------------ derived character
-  function characteristics() {
-    var b = bg();
-    var two = b.two.indexOf(state.twoChar) >= 0 ? state.twoChar : b.two[0];
-    var others = CROWS.CHARS.filter(function (c) { return c !== two; });
-    var high = others.indexOf(state.highChar) >= 0 ? state.highChar : others[0];
-    var low = others[0] === high ? others[1] : others[0];
-    var v = {};
-    v[two] = 2;
-    if (state.pattern === 'm12') { v[high] = 2; v[low] = -1; } else { v[high] = 1; v[low] = 0; }
-    var base = clone(v), extraStamina = 0;
-    state.charBonus.forEach(function (c) {
-      if (!c) return;
-      if (CROWS.CHARS.every(function (k) { return v[k] >= 4; })) { extraStamina += 2; return; }
-      if (v[c] < 4) v[c]++;
-    });
-    return { values: v, base: base, two: two, high: high, low: low, extraStamina: extraStamina };
-  }
-  function expertiseUses() {
-    var out = {}, b = bg();
-    Object.keys(b.exp).forEach(function (k) { out[k] = b.exp[k]; });
-    Object.keys(state.esAlloc).forEach(function (k) { out[k] = (out[k] || 0) + state.esAlloc[k]; });
-    return out;
-  }
-  function staminaMax() {
-    var s = bg().stamina;
-    state.esBonus.forEach(function (o) { if (o === 'stamina') s += 2; else if (o === 'mix') s += 1; });
-    return s + characteristics().extraStamina;
-  }
-  function curStamina() {
-    var m = staminaMax(), p = state.play.stamina;
-    return p === null ? m : Math.max(0, Math.min(m, p));
-  }
-  function adMax(card) {
-    var it = item(card.key), m = /Parry (\d+)/.exec(it.txt);
-    return it.ad || (m ? +m[1] : 0);
-  }
-  function adNow(card) { return Math.max(0, adMax(card) - (card.dmg || 0)); }
-  function woundCount() { return Object.keys(state.play.wounds).length; }
-  function armorInfo() {
-    var worn = null, shield = null;
-    state.inv.forEach(function (c) {
-      var it = item(c.key);
-      if (it.cat === 'armor' && c.area === 'pack' && (!worn || it.ad > item(worn.key).ad)) worn = c;
-      if (it.cat === 'shield' && c.area === 'hand') shield = c;
-    });
-    var parts = [], total = 0;
-    if (worn) { parts.push(item(worn.key).ad + ' ' + worn.key.replace(' Armor', '').toLowerCase()); total += item(worn.key).ad; }
-    if (shield) { parts.push(item(shield.key).ad + ' shield'); total += item(shield.key).ad; }
-    return { total: total, text: parts.length ? parts.join(' + ') : '0', worn: worn, shield: shield };
-  }
+  // ------------------------------------------------------------------ derived character (src/shared/sheet.js)
+  function characteristics() { return Sheet.characteristics(state); }
+  function expertiseUses() { return Sheet.expertiseUses(state); }
+  function staminaMax() { return Sheet.staminaMax(state); }
+  function curStamina() { return Sheet.curStamina(state); }
+  var adMax = Sheet.adMax, adNow = Sheet.adNow;
+  function woundCount() { return Sheet.woundCount(state); }
+  function armorInfo() { return Sheet.armorInfo(state); }
 
   // ------------------------------------------------------------------ state lifecycle
   function freshState(bgIndex) {
@@ -8542,25 +8831,8 @@ var CROWS_TRAIT_TREES = [
       play: freshPlay()
     };
   }
-  // Live, at-the-table state (Play mode). stamina null = at maximum; wounds maps backpack slot index -> 'w' or 's' (starvation).
-  // dt = the last dungeon turn the Ref ended; lastRest = { dt, by: 'self' | 'ref', t, extras } (see play.js doRest);
-  // xpClaims = treasure the player asked their Ref to award XP for, while the crow is in a campaign; claimsAnswered = the ids
-  // the Ref answered (the Ref only adds to this list, and only the player's sheet changes xpClaims, so the two never clash).
-  function freshPlay() {
-    return { stamina: null, cruelty: 0, conds: {}, spent: {}, temp: {}, wounds: {}, dt: 0, miasma: false,
-      pendingXP: 0, xpLog: [], log: [], magic: {}, magicMulti: {}, petStam: {}, got: [], xpClaims: [], claimsAnswered: [], lastRest: null };
-  }
-  function normalizePlay(p) {
-    var base = freshPlay();
-    if (!p || typeof p !== 'object') return base;
-    Object.keys(base).forEach(function (k) {
-      if (base[k] === null) return;
-      if (!(k in p) || typeof p[k] !== typeof base[k] || Array.isArray(p[k]) !== Array.isArray(base[k]) || p[k] === null) p[k] = base[k];
-    });
-    if (p.stamina !== null && typeof p.stamina !== 'number') p.stamina = null;
-    p.xpClaims = p.xpClaims.filter(function (c) { return c && p.claimsAnswered.indexOf(c.id) < 0; });
-    return p;
-  }
+  // Live, at-the-table state (Play mode): see freshPlay in src/shared/sheet.js.
+  var freshPlay = Sheet.freshPlay, normalizePlay = Sheet.normalizePlay;
   // Per-card live values kept across saves: ud = usage dice left, dmg = AD lost, ammo = shots left,
   // thrown = 1 while a thrown weapon is out of hand (Play mode: Recover clears it).
   var CARD_LIVE = ['ud', 'dmg', 'ammo', 'thrown'];
@@ -9637,7 +9909,6 @@ var CROWS_TRAIT_TREES = [
     return text;
   }
 
-  function refOps(fn) { return function (a) { var q = window.CrowsPlay && window.CrowsPlay.refOps; return q ? q[fn](a) : null; }; }
   function init() {
     bind();
     var s = load();
@@ -9650,8 +9921,6 @@ var CROWS_TRAIT_TREES = [
       getData: exportState,
       valid: validState,
       apply: function (data) { clearSelection(); adopt(clone(data)); render(); },
-      // Changes the Ref Screen sent to a linked sheet (play.js), redone on top if the player saved meanwhile.
-      refOps: { start: refOps('start'), saved: refOps('saved'), canRedo: refOps('canRedo'), redo: refOps('redo') },
       fresh: function () { clearSelection(); randomCrow(); render(); },
       name: function (c) { return c.name || 'Unnamed crow'; },
       summary: function (c) {
@@ -9669,7 +9938,7 @@ var CROWS_TRAIT_TREES = [
         // Changes now arrive within a second or two: say what changed each time, or if that can't be told, just
         // that something did, once in a while.
         var t = Date.now(), what = describeChange(before);
-        if ((what || t - lastRemote > 30000) && !(window.CrowsRefView && window.CrowsRefView.status)) {
+        if (what || t - lastRemote > 30000) {
           toast((refView ? 'The player changed this character' : 'Changed by your Ref or on another device') + (what ? ': ' + what : '.'), what ? 6000 : 0);
         }
         lastRemote = t;
@@ -9678,7 +9947,7 @@ var CROWS_TRAIT_TREES = [
     });
   }
 
-  A.add({ updateSaveBox: updateSaveBox, describeChange: describeChange, refOps: refOps, init: init });
+  A.add({ updateSaveBox: updateSaveBox, describeChange: describeChange, init: init });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
@@ -9699,8 +9968,8 @@ var CROWS_TRAIT_TREES = [
   var MODE_KEY = 'crows-pt2-mode';
   var SUBTAB_KEY = 'crows-pt2-play-subtab';
   var SUBTABS = [['now', 'Now'], ['rest', 'Rest & turns'], ['items', 'Items'], ['growth', 'Growth'], ['log', 'Log']];
-  var CONDITIONS = ['Blessed', 'Grabbed', 'Prone', 'Vulnerable', 'Weakened', 'Unconscious'];
-  var Dice = window.CrowsDice, Rules = window.CrowsRules;   // src/shared/
+  var Dice = window.CrowsDice, Rules = window.CrowsRules, Sheet = window.CrowsSheet;   // src/shared/
+  var CONDITIONS = Sheet.CONDITIONS;
   var DT_CONDITIONS = Rules.DT_CONDITIONS; // end at the end of a dungeon turn
   // Rules book, Conditions (condensed). Shown as tooltips on the condition buttons.
   var CONDITION_RULES = {
@@ -9713,8 +9982,7 @@ var CROWS_TRAIT_TREES = [
   };
   var LORE = ['Historical Lore', 'Magic Lore', 'Monster Lore', 'Nature Lore', 'Religious Lore'];
   var AMMO = { Shortbow: 'Quiver of 20 Arrows', Longbow: 'Quiver of 20 Arrows', Crossbow: 'Case of 20 Crossbow Bolts' };
-  var MAGIC_SLOTS = ['Head', 'Neck', 'Waist', 'Arms', 'Finger', 'Feet'];
-  var PET_FEED = { 'Riding Horse': 2 };
+  var MAGIC_SLOTS = Sheet.MAGIC_SLOTS;
 
   // UI-only state (not saved with the character).
   var ui = { condInfo: false, eb: 0, mod: 0, dmg: '', pierce: false, first: '', heal: '', coins: '', tDesc: '', tGc: '', tPlayers: 4, xpAmt: '',
@@ -9729,31 +9997,14 @@ var CROWS_TRAIT_TREES = [
     l.unshift({ t: Date.now(), m: msg });
     if (l.length > 200) l.length = 200;
   }
-  function commit(msg) { if (msg) log(msg); if (!applyingRef) handEdits++; C.render(); }
-
-  /*
-   * Changes the Ref Screen sends (refChange) are steps (Stamina -1, XP +130), not final values. Until saved they're
-   * kept here, so if the player saved at the same moment, they're replayed on top of the player's version instead
-   * of asking which one to keep. Only when nothing was changed by hand here meanwhile (handEdits), since a hand
-   * change is a final value that can't be replayed.
-   */
-  var refOps = [], applyingRef = false, handEdits = 0, handSaved = 0;
-  var refQueue = {
-    start: function () { return { n: refOps.length, hand: handEdits }; },   // a save is being sent
-    saved: function (snap) { refOps.splice(0, snap.n); handSaved = snap.hand; },   // ...and it went through
-    canRedo: function () { return refOps.length > 0 && handEdits === handSaved; },
-    redo: function () { var ops = refOps; refOps = []; ops.forEach(refChange); }
-  };
+  function commit(msg) { if (msg) log(msg); C.render(); }
 
   // ------------------------------------------------------------------ mode switch
-  // The Ref Screen's condensed status view is always Play mode, without changing this browser's choice.
-  var FORCED = window.CrowsRefView && window.CrowsRefView.status ? 'play' : null;
   // On the accounts site Play has its own address, play (the same page, see server/public/.htaccess); opening it starts in Play.
   var GEN = 'Crows_Character_Generator.html', PLAY = 'play';
-  if (/\/play$/.test(location.pathname) && !FORCED) try { localStorage.setItem(MODE_KEY, 'play'); } catch (e) { /* storage unavailable */ }
-  function mode() { if (FORCED) return FORCED; try { return localStorage.getItem(MODE_KEY) === 'play' ? 'play' : 'build'; } catch (e) { return 'build'; } }
+  if (/\/play$/.test(location.pathname)) try { localStorage.setItem(MODE_KEY, 'play'); } catch (e) { /* storage unavailable */ }
+  function mode() { try { return localStorage.getItem(MODE_KEY) === 'play' ? 'play' : 'build'; } catch (e) { return 'build'; } }
   function setMode(m) {
-    if (FORCED) return;
     try { localStorage.setItem(MODE_KEY, m); } catch (e) { /* storage unavailable */ }
     applyMode(m);
     C.render();
@@ -9795,7 +10046,7 @@ var CROWS_TRAIT_TREES = [
   }
   /* Show this mode's address. Only where the accounts server answered: elsewhere there's no play address to go to. */
   function syncAddress() {
-    if (FORCED || !window.CrowsCloud || !window.CrowsCloud.server) return;
+    if (!window.CrowsCloud || !window.CrowsCloud.server) return;
     var dir = location.pathname.replace(/[^\/]*$/, ''), page = mode() === 'play' ? PLAY : GEN;
     var search = location.search.replace(/([?&])mode=[^&]*&?/, '$1').replace(/[?&]$/, '');
     if (location.pathname === dir + page && search === location.search) return;
@@ -9818,51 +10069,23 @@ var CROWS_TRAIT_TREES = [
   }
 
   // ------------------------------------------------------------------ inventory helpers
-  function carried() { return S().inv.filter(function (c) { return c.area !== 'none'; }); }
-  function inHands() { return S().inv.filter(function (c) { return c.area === 'hand'; }).sort(function (a, b) { return a.idx - b.idx; }); }
+  // The sheet math lives in src/shared/sheet.js (shared with the Ref Screen); these run it on this crow.
+  function carried() { return Sheet.carried(S()); }
+  function inHands() { return Sheet.inHands(S()); }
   function where(c) {
     if (c.area === 'none') return 'Not carried';
     var sp = C.spanOf(c, c.area);
     return (c.area === 'hand' ? (sp > 1 ? 'Hands ' : 'Hand ') : c.area === 'belt' ? 'Belt ' : 'Backpack ') + (c.idx + 1) + (sp > 1 ? '\u2013' + (c.idx + sp) : '');
   }
-  function udInfo(key) {
-    var m = /UD:?\s*(\d+)\s*\(([^)]*)\)/.exec(item(key).txt);
-    if (!m) return null;
-    var f = m[2];
-    return { max: +m[1], useless: /Useless/.test(f), refuel: /Refuel/.test(f), rest: /Rest/.test(f), activate: /Activate/.test(f), dt: /DT/.test(f), fuel: /oil/i.test(f) ? 'Oil Flask' : null };
-  }
-  function udNow(c) { var u = udInfo(c.key); return u ? (typeof c.ud === 'number' ? Math.min(c.ud, u.max) : u.max) : 0; }
+  var udInfo = Sheet.udInfo, udNow = Sheet.udNow;
   function removeCard(c) { S().inv = S().inv.filter(function (x) { return x !== c; }); }
-  function useOne(c) { // consume one item from a stack
-    c.qty--; delete c.ud;
-    if (c.qty <= 0) removeCard(c);
-  }
-  function findCarried(key) { return carried().filter(function (c) { return c.key === key; })[0] || null; }
-  // Roll a card's usage dice: each 1 or 2 is removed.
-  function rollUD(c, why) {
-    var u = udInfo(c.key), n = udNow(c);
-    if (!u || n <= 0) return c.key + ' has no usage dice left.';
-    var r = []; for (var i = 0; i < n; i++) r.push(d(6));
-    var lost = r.filter(function (x) { return x <= 2; }).length;
-    c.ud = n - lost;
-    var msg = c.key + ' UD' + (why ? ' (' + why + ')' : '') + ': rolled ' + r.join(', ') + (lost ? ' - lost ' + lost + ', ' + c.ud + ' left' : ' - no loss');
-    if (c.ud === 0) {
-      if (u.useless) { msg += '. It is used up'; useOne(c); if (c.qty > 0) msg += ' (' + c.qty + ' left in the stack)'; }
-      else if (u.refuel) msg += '. Needs refuelling (' + (u.fuel || 'fuel') + ')';
-      else if (u.rest) msg += '. Recharges on a rest';
-    }
-    return msg + '.';
-  }
+  function useOne(c) { Sheet.useOne(S(), c); }   // consume one item from a stack
+  function findCarried(key) { return Sheet.findCarried(S(), key); }
+  function rollUD(c, why) { return Sheet.rollUD(S(), c, why); }   // each usage die rolling 1 or 2 is removed
 
   // ------------------------------------------------------------------ vitals helpers
-  function setStamina(v) { var m = C.staminaMax(); v = Math.max(0, Math.min(m, v)); P().stamina = v >= m ? null : v; }
-  function absorbers() {
-    var ai = C.armorInfo(), out = [];
-    if (ai.worn) out.push(ai.worn);
-    // A thrown parry weapon isn't in hand to parry with.
-    inHands().forEach(function (c) { if (!c.thrown && C.adMax(c) > 0 && out.indexOf(c) < 0) out.push(c); });
-    return out;
-  }
+  function setStamina(v) { Sheet.setStamina(S(), v); }
+  function absorbers() { return Sheet.absorbers(S()); }
   function speed() {
     var p = P(), occ = C.occupancy(), slow = 0;
     Object.keys(p.wounds).forEach(function (i) { if (occ.pack[+i] !== null) slow++; });
@@ -9871,38 +10094,10 @@ var CROWS_TRAIT_TREES = [
     if (p.conds.Prone) return { v: Math.floor(base / 2), note: (note ? note + ', ' : '') + 'halved (prone)' };
     return { v: base, note: note };
   }
-  // Put n wounds in backpack slots: empty slots first, then the highest-numbered ones.
-  function addWounds(n, kind) {
-    var p = P(), occ = C.occupancy(), placed = 0;
-    var order = [9, 8, 7, 6, 5, 4, 3, 2, 1, 0];
-    var free = order.filter(function (i) { return !p.wounds[i] && occ.pack[i] === null; })
-      .concat(order.filter(function (i) { return !p.wounds[i] && occ.pack[i] !== null; }));
-    for (var k = 0; k < n && k < free.length; k++) { p.wounds[free[k]] = kind || 'w'; placed++; }
-    return placed;
-  }
-  // Heal n ordinary wounds, freeing item slots first (restores speed).
-  function healWounds(n) {
-    var p = P(), occ = C.occupancy(), healed = 0;
-    var ws = Object.keys(p.wounds).map(Number).filter(function (i) { return p.wounds[i] === 'w'; })
-      .sort(function (a, b) { return (occ.pack[b] !== null) - (occ.pack[a] !== null) || b - a; });
-    for (var k = 0; k < n && k < ws.length; k++) { delete p.wounds[ws[k]]; healed++; }
-    return healed;
-  }
-  /*
-   * Deal damage to this crow (the rules' order, Rules.damage): vulnerable, then the absorbers given (worn armor, shields,
-   * parry weapons) unless piercing, then Stamina, then wounds. vul: a vulnerable roll already made. Returns { parts, total, vul }.
-   */
-  function dealDamage(amount, piercing, abs, vul) {
-    var p = P(), cur = C.curStamina(), parts = [];
-    var r = Rules.damage({ amount: amount, vulnerable: !!p.conds.Vulnerable, vul: vul, piercing: piercing, ad: abs.map(function (c) { return C.adNow(c); }),
-      stamina: cur, woundRoom: 10 - C.woundCount() });
-    if (r.vul) parts.push('vulnerable +' + r.vul);
-    if (piercing) parts.push('piercing');
-    abs.forEach(function (c, i) { if (r.absorbed[i]) { c.dmg = (c.dmg || 0) + r.absorbed[i]; parts.push(c.key + ' absorbs ' + r.absorbed[i] + ' (AD ' + C.adNow(c) + ' left)'); } });
-    if (r.stamina) { setStamina(cur - r.stamina); parts.push('-' + r.stamina + ' Stamina'); }
-    if (r.total - r.stamina - r.absorbed.reduce(function (t, a) { return t + a; }, 0) > 0) { var w = addWounds(r.wounds, 'w'); parts.push(w + ' wound' + (w === 1 ? '' : 's')); }
-    return { parts: parts, total: r.total, vul: r.vul };
-  }
+  function addWounds(n, kind) { return Sheet.addWounds(S(), n, kind); }   // empty slots first, then the highest-numbered ones
+  function healWounds(n) { return Sheet.healWounds(S(), n); }   // freeing item slots first (restores speed)
+  /* Damage in the rules' order: vulnerable, then the absorbers given unless piercing, then Stamina, then wounds. */
+  function dealDamage(amount, piercing, abs, vul) { return Sheet.dealDamage(S(), amount, piercing, abs, vul); }
   function takeDamage() {
     var p = P(), amt = parseInt(ui.dmg, 10);
     if (!(amt > 0)) { C.toast('Enter the damage first.'); return; }
@@ -10114,97 +10309,14 @@ var CROWS_TRAIT_TREES = [
   }
 
   // ------------------------------------------------------------------ rest, dungeon turn, XP
-  /* The end of dungeon turn n, as the Ref Screen's "End DT" sends it (refChange endDT); players can't end one here. */
-  function endDT(n) {
-    var p = P(), msgs = [], ended = endDTConditions();
-    p.dt = n;
-    if (ended) msgs.push(ended);
-    inHands().forEach(function (c) { var u = udInfo(c.key); if (u && u.dt && udNow(c) > 0) msgs.push(rollUD(c, 'end of DT')); });
-    var over = overloadedSlots();
-    if (over.length) {
-      var w = d(6), placed = addWounds(w, 'w');
-      msgs.push('Two magic items in one slot (' + over.join(', ') + '): chaos deals 1d6 = ' + w + ' wound' + (w === 1 ? '' : 's') + (placed < w ? ' (' + placed + ' fit)' : '') + '.');
-      if (C.woundCount() >= 10) msgs.push('All 10 backpack slots are wounded: your crow is dead.');
-    }
-    return 'End of dungeon turn ' + n + '. ' + (msgs.join(' ') || 'Nothing in hand burns down.');
-  }
-  /* Blessed, vulnerable, and weakened end (the end of a DT, or halfway through a rest). */
-  function endDTConditions() {
-    var p = P(), ended = DT_CONDITIONS.filter(function (k) { return p.conds[k]; });
-    ended.forEach(function (k) { delete p.conds[k]; });
-    return ended.length ? ended.join(', ') + ' ended.' : '';
-  }
-  // Rules: more than one magic item equipped in the same slot -> can't rest; 1d6 wounds at the end of each DT.
-  function overloadedSlots() { var m = P().magicMulti || {}; return MAGIC_SLOTS.filter(function (k) { return m[k]; }); }
-  function caretakerBonus() { return (S().prosperity || 0) >= 6 ? 3 : 2; }
-  function surgicalKit() { return carried().filter(function (c) { return c.key === 'Surgical Kit' && udNow(c) > 0; })[0] || null; }
-  function foodCards() { return carried().filter(function (c) { return c.key === 'Ration' || c.key === 'Hearty Ration'; }); }
-  /*
-   * A rest's effects on this crow, whoever started it: the player's Rest button, or the Ref Screen finishing the party's
-   * rest (refChange rest). o: food ('Ration', 'Hearty Ration', 'none', or empty for a ration carried), activity (+ repair,
-   * study, useKit), tended, tendedKit, caretaker, miasma, xp (false: pending XP waits), by ('self' or 'ref'), dt (the DT
-   * the rest used up). Returns { ok, msg }. Records p.lastRest, so the same rest isn't taken twice (see refRest).
-   */
-  function doRest(o) {
-    var s = S(), p = P(), msgs = [];
-    var over = overloadedSlots();
-    if (over.length) return { ok: false, msg: 'You can\'t rest with two magic items in one slot (' + over.join(', ') + ').' };
-    p.lastRest = { dt: o.dt, by: o.by || 'self', t: Date.now() };
-    var foods = foodCards();
-    var food = o.food === 'none' ? null : foods.filter(function (c) { return c.key === (o.food || 'Ration'); })[0] || foods[0] || null;
-    if (!food) {
-      var sw = addWounds(1, 's');
-      return { ok: true, msg: 'No food: no rest benefits' + (sw ? ' and 1 starvation wound' : '') + '.' };
-    }
-    var hearty = food.key === 'Hearty Ration';
-    useOne(food);
-    msgs.push('Ate a ' + food.key.toLowerCase() + '.');
-    var starve = Object.keys(p.wounds).filter(function (i) { return p.wounds[i] === 's'; });
-    starve.forEach(function (i) { delete p.wounds[i]; });
-    if (starve.length) msgs.push('Starvation wounds gone (' + starve.length + ').');
-    setStamina(C.staminaMax());
-    msgs.push('Stamina full.');
-    var uses = C.expertiseUses();
-    p.temp = {};
-    if (o.miasma) {
-      Object.keys(p.spent).forEach(function (k) { p.spent[k] = Math.min(p.spent[k], uses[k] || 0); if (!p.spent[k]) delete p.spent[k]; });
-      msgs.push('In the Miasma: expertise uses are NOT restored. Make your Miasma RR.');
-    } else {
-      p.spent = {};
-      msgs.push('Expertise uses restored.');
-      if (p.cruelty) { p.cruelty = 0; msgs.push('Rested free of the Miasma: all cruelty lost.'); }
-    }
-    s.inv.forEach(function (c) { var u = udInfo(c.key); if (u && u.rest && udNow(c) < u.max) { c.ud = u.max; msgs.push(c.key + ' recharged.'); } });
-    CONDITIONS.forEach(function (k) { if (k !== 'Grabbed') delete p.conds[k]; });
-    var heal = 1 + (hearty ? 1 : 0) + restActivity(o, msgs);
-    var h = healWounds(heal);
-    if (h) msgs.push('Healed ' + h + ' wound' + (h === 1 ? '' : 's') + '.');
-    // pets eat animal feed
-    s.pets.forEach(function (pet, i) {
-      var need = PET_FEED[pet] || 1, feed, have = carried().filter(function (c) { return c.key === 'Animal Feed'; }).reduce(function (t, c) { return t + c.qty; }, 0);
-      if (have >= need) {
-        for (var k = 0; k < need; k++) { feed = findCarried('Animal Feed'); useOne(feed); }
-        delete p.petStam[i]; msgs.push('Your ' + pet.toLowerCase() + ' ate and rested.');
-      } else msgs.push('Your ' + pet.toLowerCase() + ' had no animal feed (no rest benefit).');
-    });
-    if (p.pendingXP && o.xp !== false) msgs.push(applyXP());
-    return { ok: true, msg: msgs.join(' ') };
-  }
-  /* The rest activity and the healing others give (Tend Wounds on me, my Caretaker): adds to msgs, returns the extra wounds healed. */
-  function restActivity(o, msgs) {
-    var p = P();
-    if (o.activity === 'repair') {
-      var rc = C.cardById(+o.repair);
-      if (rc) { rc.dmg = 0; msgs.push('Repaired ' + rc.key + ' to full AD.'); }
-    } else if (o.activity === 'study' && o.study) {
-      p.temp[o.study] = 1; msgs.push('Studied a lore book: +1 use of ' + o.study + ' until the next rest.');
-    } else if (o.activity === 'Tend Wounds') {
-      var kit = o.useKit ? surgicalKit() : null;
-      if (kit) msgs.push('Tended an ally\'s wounds with a surgical kit: they lose 3 wounds instead of 1. ' + rollUD(kit, 'Tend Wounds'));
-      else msgs.push('Tended an ally\'s wounds: they lose 2 wounds instead of 1.');
-    } else if (o.activity) msgs.push('Rest activity: ' + o.activity + '.');
-    return (o.tended ? 1 : 0) + (o.tended && o.tendedKit ? 1 : 0) + (o.caretaker ? caretakerBonus() : 0);
-  }
+  function overloadedSlots() { return Sheet.overloadedSlots(S()); }   // two magic items in one slot: no rest, 1d6 wounds each DT
+  function caretakerBonus() { return Sheet.caretakerBonus(S()); }
+  function surgicalKit() { return Sheet.surgicalKit(S()); }
+  function foodCards() { return Sheet.foodCards(S()); }
+  /* A rest's effects on this crow (Sheet.doRest): returns { ok, msg }. */
+  function doRest(o) { return Sheet.doRest(S(), o); }
+  /* The rest activity and the healing others give: adds to msgs, returns the extra wounds healed. */
+  function restActivity(o, msgs) { return Sheet.restActivity(S(), o, msgs); }
   /* The rest choices made on the Rest card. */
   function restChoices() {
     return { food: ui.ration, activity: ui.activity, repair: ui.repair, study: ui.study, useKit: ui.useKit, tended: ui.tended, tendedKit: ui.tendedKit,
@@ -10230,29 +10342,7 @@ var CROWS_TRAIT_TREES = [
     clearRestChoices();
     commit(msgs.length ? 'During the rest: ' + msgs.join(' ') : 'Nothing more from the rest.');
   }
-  /*
-   * The Ref Screen finished the party's rest (refChange rest: { dt, miasma, xp }). Skipped if this crow already rested
-   * from its own sheet during that dungeon turn (in the last 12 hours, so an old rest on an unsynced DT doesn't count).
-   */
-  function refRest(r) {
-    var p = P(), lr = p.lastRest;
-    if (lr && lr.by === 'self' && lr.dt === r.dt && Date.now() - lr.t < 12 * 3600000) {
-      p.dt = r.dt;
-      return 'The party rested (DT ' + r.dt + '). You had already rested from your sheet this dungeon turn, so nothing more happens.';
-    }
-    var res = doRest({ by: 'ref', dt: r.dt, miasma: !!r.miasma || p.miasma, xp: r.xp });
-    p.dt = r.dt;
-    return res.ok ? 'Rested with the party (DT ' + r.dt + '). ' + res.msg : 'The party rested (DT ' + r.dt + '), but you couldn\'t: ' + res.msg;
-  }
-  function applyXP() {
-    var s = S(), p = P(), before = C.esBonusCount(s.txp), cb = C.charBonusCount(s.txp), gained = p.pendingXP;
-    s.txp = Math.min(999999, s.txp + gained); p.pendingXP = 0;
-    var msg = 'Gained ' + fmt(gained) + ' XP (TXP ' + fmt(s.txp) + ').';
-    var nb = C.esBonusCount(s.txp) - before, nc = C.charBonusCount(s.txp) - cb;
-    if (nb) msg += ' New Expertise & Stamina bonus' + (nb > 1 ? 'es' : '') + ' (' + nb + '): choose in Build > Advancement.';
-    if (nc) msg += ' New characteristic bonus' + (nc > 1 ? 'es' : '') + ' (' + nc + ').';
-    return msg;
-  }
+  function applyXP() { return Sheet.applyXP(S()); }
   var nextAt = Rules.nextBonusAt;
 
 
@@ -10889,23 +10979,8 @@ var CROWS_TRAIT_TREES = [
   $('tab-play').addEventListener('click', function () { setMode('play'); });
   applyMode(mode());
   window.CrowsPlay = { render: render, setMode: setMode, syncAddress: syncAddress, loadCampaign: loadCampaign, joined: joined,
-    /* Back to full Stamina, as the Full button does (the Ref Screen's "Everyone to full Stamina"). */
-    fullStamina: function () { if (C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); commit('Back to full Stamina.'); } },
-    /*
-     * A change the Ref Screen made to this crow (combat, rests, Miasma, XP), applied as changes rather than
-     * overwritten values, so it adds to whatever the player did meanwhile. Any of:
-     * xp (+ desc, gc, n): pending XP · apply: pending XP into TXP · full: full Stamina · st: Stamina +/- ·
-     * wounds: ordinary wounds +/- · cruelty: +/- · setCruelty: a new value · endDT: dungeon turn n ended ·
-     * endConds: blessed, vulnerable, weakened end (with a rest) · dt: dungeon turn n ended (with a rest) ·
-     * rest ({ dt, miasma, xp }): the party's rest, applied in full (see refRest) · claims: XP claims the Ref answered (ids).
-     */
-    refChange: refChange, refOps: refQueue,
-    /* For the Ref Screen's combat tracker: this crow's vitals as the sheet has them (AD from worn armor and parry weapons). */
-    vitals: function () {
-      var abs = absorbers(), w = C.woundCount();
-      return { st: C.curStamina(), stMax: C.staminaMax(), ad: abs.reduce(function (t, c) { return t + C.adNow(c); }, 0),
-        adMax: abs.reduce(function (t, c) { return t + C.adMax(c); }, 0), wounds: w, conds: JSON.parse(JSON.stringify(P().conds)) };
-    },
+    /* For tests and combat.js: this crow's vitals as the sheet has them (AD from worn armor and parry weapons). */
+    vitals: function () { return Sheet.vitals(S()); },
     /* For combat.js: a roll's damage, and whether its result is final (no expertise to spend, no chaos roll waiting). */
     damageOf: damageOf, final: function (r) { return !r.chaosPending && !expOptions(r).length; },
     /* The weapon's tier 3 damage, which a ranged doom deals to an ally next to the target (tier 2 for an odd roll on a miss). */
@@ -10929,68 +11004,6 @@ var CROWS_TRAIT_TREES = [
     note: function (msg) { commit(msg); },
     /* Redraw the Items card (the fight's ground changed). */
     items: function () { if ($('play') && mode() === 'play') renderItems(); } };
-
-  /*
-   * A hit from the Ref Screen's combat tracker, dealt the way Take damage does it: vulnerable, then worn armor and parry
-   * weapons, then Stamina, then wounds. The vulnerable roll is kept in the op so a replay (refOps.redo) deals the same.
-   * o.result gets what happened, with the sheet as it was before (for o.restore, the tracker's Undo).
-   */
-  function refHit(o) {
-    var p = P(), parts = [], dmg = o.hit;
-    var before = { stamina: p.stamina, wounds: JSON.parse(JSON.stringify(p.wounds)), dmg: {} };
-    S().inv.forEach(function (c) { if (c.dmg) before.dmg[c.id] = c.dmg; });
-    var res = dealDamage(dmg, !!o.piercing, absorbers().filter(function (c) { return C.adNow(c) > 0; }), o.vul), total = res.total;
-    if (res.vul) o.vul = res.vul;
-    parts = res.parts;
-    if (p.conds.Unconscious) { delete p.conds.Unconscious; parts.push('wakes up'); }   // any damage wakes a sleeper
-    o.result = { total: total, parts: parts, before: before };
-    return 'Hit for ' + o.hit + (o.piercing ? ' piercing' : '') + (o.from ? ' by ' + o.from : '') + ': ' + parts.join(', ') + '.' +
-      (C.woundCount() >= 10 ? ' All 10 backpack slots are wounded: your crow is dead.' : '');
-  }
-  function refRestore(b) {
-    var p = P();
-    p.stamina = b.stamina; p.wounds = JSON.parse(JSON.stringify(b.wounds || {}));
-    S().inv.forEach(function (c) { if (b.dmg && b.dmg[c.id]) c.dmg = b.dmg[c.id]; else delete c.dmg; });
-    return 'The Ref took back a hit: Stamina, wounds, and armor are as they were.';
-  }
-  function refChange(o) {
-    var p = P(), msgs = [], n;
-    if (o.hit) msgs.push(refHit(o));
-    if (o.restore) msgs.push(refRestore(o.restore));
-    if (o.cond) Object.keys(o.cond).forEach(function (k) {
-      if (CONDITIONS.indexOf(k) < 0 || !!p.conds[k] === !!o.cond[k]) return;
-      if (o.cond[k]) p.conds[k] = true; else delete p.conds[k];
-      msgs.push((o.cond[k] ? 'Now ' : 'No longer ') + k.toLowerCase() + '.');
-    });
-    if (o.rest) msgs.push(refRest(o.rest));
-    if (o.claims) {   // the player's own sheet takes them off its list (normalizePlay), even if they hadn't reached this copy yet
-      o.claims.forEach(function (id) { if (p.claimsAnswered.indexOf(id) < 0) p.claimsAnswered.push(id); });
-      if (p.claimsAnswered.length > 50) p.claimsAnswered.splice(0, p.claimsAnswered.length - 50);
-      if (!o.xp) msgs.push('The Ref answered your XP claim without an award.');
-    }
-    if (o.endDT) msgs.push(endDT(o.endDT));
-    if (o.endConds && (n = endDTConditions())) msgs.push('Resting: ' + n);
-    if (o.dt && P().dt !== o.dt) { P().dt = o.dt; msgs.push('Dungeon turn ' + o.dt + ' ended with the rest.'); }
-    if (o.xp) {
-      p.pendingXP = Math.max(0, p.pendingXP + o.xp);
-      p.xpLog.unshift({ t: Date.now(), desc: o.desc || 'Treasure', gc: o.gc | 0, n: o.n | 0 || 1, xp: o.xp });
-      if (p.xpLog.length > 100) p.xpLog.length = 100;
-      msgs.push((o.desc || 'Treasure') + (o.gc ? ' worth ' + fmt(o.gc) + ' gc' : '') + ': ' + fmt(o.xp) + ' XP (applies after the next rest).');
-    }
-    if (o.apply && p.pendingXP) msgs.push(applyXP());
-    if (o.full && C.curStamina() < C.staminaMax()) { setStamina(C.staminaMax()); msgs.push('Back to full Stamina.'); }
-    if (o.st) {
-      n = C.curStamina(); setStamina(n + o.st); n = C.curStamina() - n;
-      if (n) msgs.push((n > 0 ? 'Regained ' : 'Lost ') + Math.abs(n) + ' Stamina (' + C.curStamina() + '/' + C.staminaMax() + ').');
-    }
-    if (o.wounds > 0 && (n = addWounds(o.wounds, 'w'))) msgs.push(n + ' wound' + (n === 1 ? '' : 's') + (C.woundCount() >= 10 ? ': all 10 backpack slots are wounded, your crow is dead.' : '.'));
-    if (o.wounds < 0 && (n = healWounds(-o.wounds))) msgs.push('Healed ' + n + ' wound' + (n === 1 ? '' : 's') + '.');
-    if (o.cruelty) { p.cruelty = Math.max(0, p.cruelty + o.cruelty); msgs.push('Cruelty ' + p.cruelty + '.'); }
-    if (typeof o.setCruelty === 'number' && p.cruelty !== o.setCruelty) { p.cruelty = Math.max(0, o.setCruelty); msgs.push('Cruelty ' + p.cruelty + '.'); }
-    refOps.push(o);
-    applyingRef = true;
-    try { if (msgs.length) commit(msgs.join(' ')); } finally { applyingRef = false; }
-  }
 })();
 
 </script>

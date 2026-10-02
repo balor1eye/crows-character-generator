@@ -20,7 +20,8 @@ first check that didn't hold, and the run stops there.
 
 ### What it covers
 
-1. **Empty campaign.** It names the campaign and checks that it starts empty.
+1. **Empty campaign.** The tab bar shows its groups (Run, Campaign, Reference). It names the campaign and checks that
+   it starts empty.
 2. **Four players.** It imports four Character Generator save files through the Party tab's file input: Ash
    (Bodyguard, 9 Stamina), Briar (Archer, 7), Corvin (Acolyte of the Warrior, 9), and Dove (Assassin, 5).
 3. **Builds the encounter by hand.** In the Encounters tab it creates "Ambush at the ford" with a place, set-up
@@ -36,13 +37,17 @@ first check that didn't hold, and the run stops there.
    an ally joins the running encounter.
 8. **Morale.** One thief at 0 Stamina gives the "half the human foes are down" cue. Then the undead die and
    the other thief is marked dead, giving "every foe is down" and "0 of 5 foes standing".
-9. **The Session tab** shows that an encounter is running.
+9. **The Session tab** shows that an encounter is running, as a summary (round, foes standing) instead of a second
+   tracker, and "Go to the fight" opens the Encounters tab.
 10. **Treasure XP.** Notes typed during the fight are kept. "Award treasure XP" opens the Party tab labelled
     with the encounter, and 400 gc gives each of the four crows 100 pending XP.
 11. **Ending it** ("The crows won"). The tracker clears, and the encounter is resolved and shown. Its notes get
     the summary: rounds, fallen, foes still standing, allies, each crow's Stamina and wounds, and corpses to
     harvest. The crows keep their wounds, and no confirmation dialog came up.
-12. **Reload.** The campaign is the same after reloading the page.
+12. **The sidebar log and the next session.** The sidebar log shows the last 14 entries, or all of them. Two crows
+    claim the same treasure; End session fills in the XP award from it once (split four ways, answering both claims)
+    and reminds the Ref of the village cycle, and Start session 2 archives session 1's log and starts a new one.
+13. **Reload.** The campaign is the same after reloading the page.
 
 With `--test-instance` it also checks the campaign record the page autosaved to the server, through the API:
 its name, the four crows and their pending XP, Dove's wounds, the encounter's summary, and the cleared tracker.
@@ -101,7 +106,7 @@ page. The player shares a new crow, the Ref adds it to a new campaign and starts
 It checks that the fight shows on the Play page (foes' health words, not their Stamina), that an attack on the
 chosen target lands on that creature in the Ref Screen and comes back in the player's feed, that a described action
 and "done for this round" reach the Ref, that with automatic hits off a hit waits for Apply and Undo reverses it, and
-that a creature given the crow as its target hits it (and Undo takes that back), that a melee doom lets the target counter at tier 3, that a ranged doom hits the one other ally for the weapon's tier 3 damage, that a doom casting rolls a backlash the player sees, that the crow's AD comes from its own armor and a hit on it lands on the sheet (and Undo restores it there), that a monster's miss offers the player a counter with their sword, that a player's Grab, Taunt, healing spell, two-target spell, and reaction attack do what the rules say in the Ref Screen, that conditions go both ways (prone from the Ref, Stand Up from the player), that unattended items work (a dropped sword, the Ref's hidden and visible items, a creature picking one up and dropping it when it dies, a pickup into a free hand and a two-handed one refused, Dump Backpack, and what's left behind logged at the end), and that ending the fight removes the Combat card. Everything it made is deleted afterwards (`--keep` leaves it).
+that a creature given the crow as its target hits it (and Undo takes that back), that a melee doom lets the target counter at tier 3, that a ranged doom hits the one other ally for the weapon's tier 3 damage, that a doom casting rolls a backlash the player sees, that the crow's AD comes from its own armor and a hit on it lands on the sheet, dealt by the Ref Screen itself with no iframe (and Undo restores it there), that a monster's miss offers the player a counter with their sword, that a player's Grab, Taunt, healing spell, two-target spell, and reaction attack do what the rules say in the Ref Screen, that conditions go both ways (prone from the Ref, Stand Up from the player), that unattended items work (a dropped sword, the Ref's hidden and visible items, a creature picking one up and dropping it when it dies, a pickup into a free hand and a two-handed one refused, Dump Backpack, and what's left behind logged at the end), and that ending the fight removes the Combat card. Everything it made is deleted afterwards (`--keep` leaves it).
 
 ```bash
 python3 ref/test/run_live_combat_test.py            # after server/deploy.sh; --headed shows both browsers
@@ -114,7 +119,9 @@ Ref finishing a rest must do the whole rest on the player's sheet (a ration eate
 use back, the dungeon turn recorded), and the Rest card must say the crow rested with the party. After the player rests
 from their own sheet, the Ref's next rest that dungeon turn must skip the crow (no second ration). In the campaign, the
 player's treasure becomes an XP claim: it must show on the Ref's Experience card (with a badge on the Party tab), and
-using it for the award must give the player the pending XP and take the claim off both lists.
+using it for the award must give the player the pending XP and take the claim off both lists. Last, a hit dealt
+from the crow's Party status tile must land on the player's sheet and in its log, with no iframe on the Ref Screen,
+and leave nothing waiting to save.
 
 ```bash
 python3 ref/test/run_live_rest_test.py              # after server/deploy.sh; --headed shows both browsers

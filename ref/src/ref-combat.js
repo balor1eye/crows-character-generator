@@ -9,7 +9,7 @@
   var activePCs = f('activePCs'), beast = f('beast'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
       clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), field = f('field'), hitControls = f('hitControls'), inp = f('inp'),
       int = f('int'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
-      rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), sheetOp = f('sheetOp'), sheetWin = f('sheetWin'),
+      rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), sheetOp = f('sheetOp'),
       test = f('test'), testLine = f('testLine');
   var $ = A.$, clone = A.clone, d = A.d, d100 = A.d100, el = A.el, netEdges = A.netEdges, pick = A.pick, plural = A.plural, Rules = A.Rules,
       signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
@@ -72,10 +72,10 @@
    */
   function damage(c, amount, piercing, opts) {
     opts = opts || {};
-    var p = pcOf(c), w = p && p.link && cloudOn() ? sheetWin(p) : null, out = null;
-    if (w) {
+    var p = pcOf(c), out = null;
+    if (sheetOf(p)) {
       var o = { hit: amount, piercing: !!piercing, from: opts.from || '' };
-      sheetOp(p, o);   // the frame is ready, so it's dealt now and o.result says how
+      sheetOp(p, o);   // the sheet is loaded, so it's dealt now and o.result says how
       if (o.result) {
         pullVitals(c);
         var dead = c.wounds >= 10;
@@ -100,7 +100,7 @@
       else if (c.wounds >= slots) { c.dead = true; fate = ' — dead (every slot wounded).'; }
       else fate = b && b.t === 'Human' ? ' — at 0 Stamina: a lone human flees; a group reduced by half flees.' : ' — at 0 Stamina: animals flee.';
     }
-    // A linked crow whose sheet isn't open here yet gets the hit itself when it opens (its own armor decides); others get the change.
+    // A linked crow whose sheet isn't loaded here yet gets the hit itself when it loads (its own armor decides); others get the change.
     if (p && p.link && cloudOn()) sheetOp(p, { hit: amount, piercing: !!piercing, from: opts.from || '' });
     else if (c.kind === 'pc') syncPC(c, st0, w0);
     log('', '**' + c.name + '** takes ' + total + (piercing ? ' piercing' : '') + ' damage (' + (parts.join(', ') || 'no effect') + ')' + fate);
@@ -123,9 +123,9 @@
   }
   /* A linked crow's vitals as its sheet has them (Stamina, AD from its armor and parry weapons, wounds, conditions). */
   function pullVitals(x) {
-    var p = pcOf(x), w = p && p.link && cloudOn() ? sheetWin(p) : null;
-    if (!w || !w.CrowsPlay.vitals) return false;
-    var v = w.CrowsPlay.vitals(), was = JSON.stringify([x.st, x.stMax, x.ad, x.adMax, x.wounds, x.conds]);
+    var sheet = sheetOf(pcOf(x)), p = pcOf(x);
+    if (!sheet) return false;
+    var v = window.CrowsSheet.vitals(sheet), was = JSON.stringify([x.st, x.stMax, x.ad, x.adMax, x.wounds, x.conds]);
     x.st = v.st; x.stMax = v.stMax; x.ad = v.ad; x.adMax = v.adMax; x.wounds = v.wounds; x.conds = v.conds;
     if (!x.conds.Grabbed) delete x.grabbedBy;
     p.st = v.st; p.wounds = v.wounds; p.conds = clone(v.conds);
@@ -761,11 +761,17 @@
     ]);
   }
 
+  function friends(n) { return n === 1 ? '1 crow or ally' : n + ' crows and allies'; }
+  /* The Session tab's combat card: the tracker, or while an encounter is running (its tracker is on the Encounters tab), a summary. */
   function renderCombat() {
     var c = S().combat, living = c.list.filter(function (x) { return !x.dead && x.kind === 'foe'; }), run = runningEnc();
-    card('sec-combat', el('h2', null, ['Combat', el('small', { text: living.length ? plural(living.length, 'foe') + ' standing' : 'tracker' })]), [
-      run ? el('div', { class: 'pending run-note' }, [el('b', { text: 'Running encounter: ' }), encLink(run.id, run.name || 'untitled'), '. End it from the Encounters tab to save the result.']) : null
-    ].concat(combatUI(false)));
+    var head = el('h2', null, ['Combat', el('small', { text: living.length ? plural(living.length, 'foe') + ' standing' : 'tracker' })]);
+    if (!run) { card('sec-combat', head, combatUI(false)); return; }
+    card('sec-combat', head, [el('div', { class: 'pending run-note row center' }, [
+      el('span', { class: 'grow' }, [el('b', { text: 'Running encounter: ' }), encLink(run.id, run.name || 'untitled'),
+        ' \u00b7 ' + (c.round ? 'round ' + c.round + ', ' : 'not started, ') + plural(living.length, 'foe') + ' standing, ' +
+        friends(c.list.filter(function (x) { return !x.dead && x.kind !== 'foe'; }).length) + '.']),
+      btn('Go to the fight', function () { setTab('encounters'); }, 'btn-small btn-primary', 'The fight\u2019s tracker is on the Encounters tab, with the encounter')])]);
   }
   /* The combat tracker's controls and list, for the Session tab and for a running encounter (inRun). */
   function combatUI(inRun) {

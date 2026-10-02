@@ -5,15 +5,15 @@
   'use strict';
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var activePCs = f('activePCs'), addsText = f('addsText'), addToCombatBtn = f('addToCombatBtn'), btn = f('btn'), card = f('card'), chk = f('chk'),
+  var activePCs = f('activePCs'), addsText = f('addsText'), addToCombatBtn = f('addToCombatBtn'), allClaims = f('allClaims'), btn = f('btn'), card = f('card'), chk = f('chk'),
       currentPlace = f('currentPlace'), download = f('download'), dungeonEN = f('dungeonEN'), encounterCheck = f('encounterCheck'),
       encounterResultBox = f('encounterResultBox'), field = f('field'), greedBonus = f('greedBonus'), inp = f('inp'), log = f('log'),
       logItem = f('logItem'), lookup = f('lookup'), more = f('more'), nowStamp = f('nowStamp'), pauseTimer = f('pauseTimer'),
       pendingEnc = f('pendingEnc'), pendingFrom = f('pendingFrom'), pendingText = f('pendingText'), render = f('render'),
       renderCombat = f('renderCombat'), resetTimer = f('resetTimer'), rollDungeonTable = f('rollDungeonTable'), runEncBtn = f('runEncBtn'),
-      S = f('S'), save = f('save'), sel = f('sel'), sheetOp = f('sheetOp'), startTimer = f('startTimer'), today = f('today'),
+      S = f('S'), save = f('save'), sel = f('sel'), setTab = f('setTab'), sheetOp = f('sheetOp'), startTimer = f('startTimer'), today = f('today'),
       travelCalc = f('travelCalc');
-  var d = A.d, el = A.el, fmt = A.fmt, plural = A.plural, Rules = A.Rules, toast = A.toast, ui = A.ui;
+  var $ = A.$, d = A.d, el = A.el, fmt = A.fmt, plural = A.plural, Rules = A.Rules, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
   var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
@@ -161,9 +161,9 @@
         el('li', { text: 'Outside dungeons, 2 in-game hours = 1 DT.' })
       ])])
     ]);
+    renderSessionCard();
     renderCombat();
     renderRest();
-    renderLogCard();
     card('sec-quick', 'Quick Reference', [el('dl', { class: 'kv' }, REF.QUICK.reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, [])),
       more('Conditions', [el('dl', { class: 'kv' }, REF.CONDITIONS.reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, []))])]);
   }
@@ -199,22 +199,61 @@
     ];
     card('sec-rest', el('h2', null, ['Rest', r.active ? el('span', { class: 'chip accent', text: r.half ? 'second half' : 'in progress' }) : null]), kids);
   }
-  function renderLogCard() {
-    var note = { t: '' };
-    var list = el('ol', { class: 'log-list' }, state.log.slice().reverse().map(logItem));
-    var noteIn = inp(note, 't', { placeholder: 'Add a note to the log…', 'aria-label': 'Log note' });
-    noteIn.addEventListener('keydown', function (e) { if (e.key === 'Enter' && note.t.trim()) { log('note', note.t.trim()); render(); } });
-    card('sec-log', el('h2', null, ['Session Log', el('small', { text: 'Session ' + S().n })]), [
-      el('div', { class: 'grid2' }, [field('Session title', inp(S(), 'title', { placeholder: 'e.g. Into the Blood Library' })), field('Date', inp(S(), 'date', { type: 'date' }))]),
-      el('div', { class: 'row', style: 'margin:.6rem 0' }, [el('div', { class: 'grow' }, [noteIn]), btn('Add', function () { if (note.t.trim()) { log('note', note.t.trim()); render(); } }),
-        btn('Export text', function () { download(logText(S().n, S().title, S().date, state.log), 'Crows_Session_' + S().n + '.txt', 'text/plain'); }, 'btn-ghost'),
-        btn('End session & archive', function () {
-          if (!confirm('Archive this session\'s log to the World tab and start session ' + (S().n + 1) + '?')) return;
-          state.history.push({ n: S().n, title: S().title, date: S().date, log: state.log });
-          state.log = []; S().n += 1; S().title = ''; S().date = today(); S().pending = null; ui.lastEnc = null;
-          save(); render(); toast('Session archived.');
-        }, 'btn-ghost')]),
-      state.log.length ? list : el('p', { class: 'hint', text: 'Nothing logged yet this session.' })
+  // ------------------------------------------------------------------ sessions
+  /*
+   * A session runs from Start session to End session. Starting the next one archives the last one's log (World tab, Session
+   * History). session.live: true while one runs, false after End session; a campaign from before these buttons has neither,
+   * and counts as running once anything is logged.
+   */
+  function running() { var s = S(); return s.live === true || (s.live === undefined && state.log.length > 0); }
+  function startSession() {
+    var s = S();
+    if (state.log.length) {   // the last session's log goes to the history, and this is the next one
+      state.history.push({ n: s.n, title: s.title, date: s.date, log: state.log });
+      state.log = []; s.n += 1; s.title = '';
+    }
+    s.date = today(); s.pending = null; s.live = true; delete s.ended; ui.lastEnc = null;
+    log('dt', '**Session ' + s.n + ' begins.**');
+    save(); render(); toast('Session ' + s.n + ' started.' + (state.history.length ? ' The last session\u2019s log is in World, Session History.' : ''));
+  }
+  /* The players' open XP claims as one award (the Experience card, Party tab), with this DT's greed bonus. */
+  function claimsAward() {
+    var claims = allClaims(), treasures = [];
+    claims.forEach(function (x) {   // a treasure several crows claimed counts once
+      var t = treasures.filter(function (y) { return y.desc.toLowerCase() === x.c.desc.toLowerCase() && y.gc === x.c.gc; })[0];
+      if (!t) treasures.push(t = { desc: x.c.desc, gc: x.c.gc, n: x.c.n });
+    });
+    var splits = treasures.map(function (t) { return t.n; }).filter(function (n, i, a) { return n && a.indexOf(n) === i; });
+    return { gc: treasures.reduce(function (t, x) { return t + x.gc; }, 0), greed: greedBonus(), what: treasures.map(function (t) { return t.desc; }).join(', '),
+      players: splits.length === 1 ? splits[0] : activePCs().length || 1, claims: claims.map(function (x) { return { pc: x.p.id, id: x.c.id }; }), n: treasures.length };
+  }
+  function endSession() {
+    var s = S(), aw = claimsAward();
+    if (!confirm('End session ' + s.n + '?' + (aw.n ? ' The XP award for the players\u2019 ' + plural(aw.n, 'claim') + ' is filled in on the Party tab, ready to check and award.' : ''))) return;
+    if (s.running) pauseTimer();
+    s.live = false; s.ended = s.n;
+    if (aw.n) ui.award = { gc: aw.gc, greed: aw.greed, players: aw.players, what: aw.what, claims: aw.claims };
+    log('dt', '**Session ' + s.n + ' ends.**' + (aw.n ? ' XP award ready for ' + plural(aw.n, 'claimed treasure') + ' (' + fmt(aw.gc) + ' gc).' : ''));
+    save(); render();
+  }
+  function goToAward() { setTab('party'); setTimeout(function () { $('sec-xp').scrollIntoView(); }, 0); }
+  function renderSessionCard() {
+    var s = S(), live = running(), next = state.log.length ? s.n + 1 : s.n, claims = allClaims().length;
+    card('sec-sess', el('h2', null, ['Session ' + s.n, el('small', { text: live ? 'in progress' : s.ended === s.n ? 'ended' : 'not started' })]), [
+      el('div', { class: 'grid2' }, [field('Session title', inp(s, 'title', { placeholder: 'e.g. Into the Blood Library' })), field('Date', inp(s, 'date', { type: 'date' }))]),
+      s.ended === s.n && !live ? el('div', { class: 'pending' }, [el('b', { text: 'Session ' + s.n + ' ended.' }),
+        el('ul', null, [
+          el('li', null, [claims ? plural(claims, 'XP claim') + ' from players: the award is filled in on the Party tab. ' : 'XP: award any treasure on the Party tab. ',
+            btn('Go to the XP award', goToAward, 'btn-small')]),
+          el('li', null, ['Did the crows go back to the village? End the village cycle on the Village tab. ',
+            btn('Go to the village', function () { setTab('village'); }, 'btn-small btn-ghost')])])]) : null,
+      el('div', { class: 'row', style: 'margin-top:.6rem' }, [
+        live ? btn('End session ' + s.n, endSession, 'btn-primary', 'Fill in the XP award from the players\u2019 claims (with the greed bonus), and see what\u2019s left to do')
+          : btn('Start session ' + next, function () {
+            if (state.log.length && !confirm('Start session ' + next + '? Session ' + s.n + '\u2019s log moves to World, Session History.')) return;
+            startSession();
+          }, 'btn-primary', state.log.length ? 'Archive this log to World, Session History, and start a new one' : 'Start the session log'),
+        btn('Export log', function () { download(logText(s.n, s.title, s.date, state.log), 'Crows_Session_' + s.n + '.txt', 'text/plain'); }, 'btn-ghost', 'This session\u2019s log as a text file')])
     ]);
   }
   function logText(n, title, date, entries) {
@@ -222,6 +261,7 @@
   }
 
   A.add({ endDT: endDT, setDTLen: setDTLen, startRest: startRest, restEN: restEN, restHalf: restHalf, finishRest: finishRest,
-      miasmaOutcome: miasmaOutcome, clearCruelty: clearCruelty, renderSession: renderSession, renderRest: renderRest, renderLogCard: renderLogCard,
+      miasmaOutcome: miasmaOutcome, clearCruelty: clearCruelty, renderSession: renderSession, renderRest: renderRest, running: running, startSession: startSession, claimsAward: claimsAward,
+      endSession: endSession, goToAward: goToAward, renderSessionCard: renderSessionCard,
       logText: logText });
 })();

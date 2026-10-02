@@ -104,18 +104,23 @@ choice is remembered and shared by the Character Generator, the Ref Screen, and 
 A separate, self-contained app for running sessions and keeping the campaign between them:
 on the accounts site (Ref accounts only), or offline as
 **`dist/Crows_Ref_Screen.html`** (one file, works offline, autosaves in the browser; **Save campaign /
-Load campaign** writes a `.json` file).
+Load campaign** writes a `.json` file). The tabs come in three groups: **Run** (Session, Encounters, Travel),
+**Campaign** (Party, Village, World), and **Reference** (Bestiary, Tables, Rules). The sidebar keeps the timer, the dice,
+and the session log (the last 14 entries, or Show all, with a box for notes).
 
-- **Session**: the shared dungeon-turn timer (60/30/20 minutes or every 1d6 rooms), Encounter Number with
+- **Session**: Start session and End session (ending one fills in the XP award from the players' claims, with the greed
+  bonus, and reminds you of the village cycle; starting the next archives the log), the shared dungeon-turn timer (60/30/20 minutes or every 1d6 rooms), Encounter Number with
   crowded/chaos adjustments, greed bonus, End DT (ends DT conditions, rolls the encounter check and the monster
   table, tracks signalled encounters, and ends the DT on each linked crow's sheet; rests do the same), a combat tracker shared live with the players' Play pages (their attacks land on the targets they pick, automatically or with one click, and can be undone; after a player's miss or doom, buttons for the counter, the stray shot at a random ally, or the backlash roll), creatures that attack a target the Ref picks (or a random one), with each hit dealt to it and undoable (initiative, Stamina/AD/wounds, conditions, one-click
-  monster attacks, X/Rest uses), the rest procedure, and the session log.
+  monster attacks, X/Rest uses), and the rest procedure. While an encounter is running its tracker is on the Encounters
+  tab, and the Session tab shows a summary with a link to it.
 - **Travel**: hexes and EN from pace, speed, roads, water, and weather; travel encounters with every sub-table;
   the secret lost-direction roll; Miasma RRs and effects for each crow; the travel roles.
 - **Village**: Prosperity, sale percentage, cycles and village events, institutions with levels and stewards,
   crypt boons, and the sample village Gadwick.
-- **Party**: the crows (import the character generator's save files), XP awards with the greed bonus,
-  hirelings, and a ledger for loans, credits, and bets.
+- **Party**: Party status (each crow's vitals at a glance; a linked crow's from its sheet), the crows (import the
+  character generator's save files), inviting players, XP awards with the greed bonus, hirelings, and a ledger for
+  loans, credits, and bets.
 - **World**: places (with the Dungeons book's locations), NPCs, campaign notes, and archived session logs.
 - **Bestiary**, **Tables** (every rollable table), and a searchable **Rules** reference.
 
@@ -127,8 +132,9 @@ Source is in `ref/src/`; rebuild with `python ref/build/build.py` (plain Python 
 The apps are also hosted with accounts at **https://joshuaramsey.com/crows/**. Log in to keep your characters
 (and, for Refs, campaigns) on the server with autosave, or continue as a guest. An admin marks accounts as
 players or Refs, and only Refs can open the Ref Screen there. Players can share a character with their Ref by link, or ask to join a campaign from the Ref's invite link. The Ref adds it to a campaign (or accepts the request), works the
-crow's live vitals on the Party tab with the sheet's own buttons (Stamina, damage, wounds, conditions…), opens the
-sheet to change equipment and notes too, and both see each other's changes live. The server code and deploy steps are in
+crow's vitals on the Party tab (Stamina, damage through its armor, wounds, conditions, cruelty: the Ref Screen makes the
+change on the player's sheet with the same rules the sheet uses), opens the sheet to change equipment and notes too,
+and both see each other's changes within a second or two. The server code and deploy steps are in
 [`server/README.md`](server/README.md). The offline files work as before, with no account.
 
 ## Project layout

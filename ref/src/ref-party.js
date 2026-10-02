@@ -11,6 +11,7 @@
       nid = f('nid'), pullVitals = f('pullVitals'), render = f('render'), S = f('S'), save = f('save'), sel = f('sel'), today = f('today');
   var $ = A.$, charBonusCount = A.charBonusCount, clone = A.clone, el = A.el, esBonusCount = A.esBonusCount, fmt = A.fmt, inv = A.inv, live = A.live,
       plural = A.plural, toast = A.toast, ui = A.ui;
+  var Sheet = window.CrowsSheet;   // src/shared/sheet.js
   var state = A.state; A.share('state', function (v) { state = v; });
   var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
@@ -54,20 +55,30 @@
   // ------------------------------------------------------------------ crows linked to a player's account
   /*
    * A player can share a character with a link (from their character list). Added here, the crow stays tied
-   * to the player's sheet: Party status shows its live vitals, "Open sheet" shows the whole thing, where the Ref
+   * to the player's sheet: Party status shows its vitals, "Open sheet" shows the whole thing, where the Ref
    * can change the vitals, equipment, and notes, and the party entry refreshes from the sheet about a second
-   * after the player changes it. Combat, rests, Miasma RRs, and XP awards here reach the sheet too (sheetOp).
+   * after the player changes it. Combat, rests, Miasma RRs, and XP awards here change the sheet too (sheetOp).
    * Needs the Ref to be logged in on the hosted site.
    */
   function cloudOn() { return !!(window.CrowsCloud && window.CrowsCloud.active); }
   function linkToken(text) { var m = /(?:share=|addlink=)?([0-9a-f]{64})/.exec(String(text || '').trim()); return m ? m[1] : null; }
-  /* Add or refresh a linked crow from the server's copy. Ref-side bookkeeping (status, AD, Miasma, Ref notes) is kept. */
+  /*
+   * Add or refresh a linked crow from the server's copy (link.get, or link.save's answer). Ref-side bookkeeping (status, AD,
+   * Miasma, Ref notes) is kept. The party entry shows the sheet with the Ref's unsaved changes (p.owed) on top.
+   */
   function linkPC(item) {
     var pc = pcFromSave(item.data), existing = state.party.filter(function (p) { return p.link === item.id; })[0];
+    if (existing) ['id', 'status', 'ad', 'miasma', 'notes', 'owed'].forEach(function (k) { if (k in existing) pc[k] = existing[k]; });
+    var sh = sheets[item.id] || (sheets[item.id] = { base: null, version: 0, local: null, sending: null, timer: null, retryMs: 0 });
+    // Not while a save is on its way (its answer brings the newer copy), nor from an answer older than the copy here.
+    if (!sh.sending && !(item.version < sh.version)) {
+      sh.base = item.data; sh.version = item.version || 0;
+      sh.local = replay(item.data, pc.owed || []);
+      if (pc.owed && pc.owed.length) queueSave(item.id);
+    }
+    fromSheet(pc, sh.local);
     pc.link = item.id; pc.owner = item.owner || '';
     if (existing) {
-      ['id', 'status', 'ad', 'miasma', 'notes', 'owed'].forEach(function (k) { if (k in existing) pc[k] = existing[k]; });
-      (pc.owed || []).forEach(function (o) { applyOp(pc, o); });
       // A crow already in the combat tracker picks up the sheet's Stamina and wounds.
       if (S() && S().combat) S().combat.list.forEach(function (c) {
         if (c.kind !== 'pc' || c.pcId !== pc.id) return;
@@ -111,17 +122,24 @@
   function unlinkPC(p, quietly) {
     var id = p.link;
     if (window.CrowsCloud) window.CrowsCloud.watch('link-' + id, null);
-    delete p.link; delete p.owner; save(); render();
+    if (sheets[id]) { clearTimeout(sheets[id].timer); delete sheets[id]; }
+    delete p.link; delete p.owner; delete p.owed; save(); render();
     if (cloudOn()) window.CrowsCloud.api('POST', 'link.remove', '', { id: id }).then(function () { if (!quietly) toast('Unlinked. The crow stays in the party as a copy.'); }, function () { /* already gone */ });
   }
   /*
-   * The Ref changing a crow's sheet numbers (XP, Stamina, wounds, cruelty, the end of a DT or a rest; see CrowsPlay.refChange): the party
-   * entry changes at once, and a linked crow's change goes onto the player's sheet through its Party status frame.
-   * If that frame isn't loaded yet, the change waits in p.owed and is delivered as soon as the frame reports in;
-   * until then it's replayed over each refresh from the sheet, so it doesn't flicker away.
+   * The Ref changing a crow's sheet (XP, Stamina, wounds, cruelty, a hit, the end of a DT or a rest): sheetOp(p, op), with the op
+   * as CrowsSheet.applyRefChange (src/shared/sheet.js) takes it.
+   *
+   * A linked crow: this screen keeps the player's whole character as the server last sent it (link.get), makes the change on it
+   * with the same sheet math the player's own page uses (worn armor soaks a hit, wounds fill backpack slots, a rest eats a
+   * ration...), logs it on the sheet, and saves the shared fields with link.save a moment later. Changes are steps (Stamina -1,
+   * XP +130), so they wait in p.owed (kept with the campaign) until saved: if the player saved first (409), or the sheet isn't
+   * loaded yet, they're made again on the newest copy.
+   * A crow added by hand or from a file: just the numbers kept here (applyOp).
    */
+  var sheets = {};   // link id -> { base: the server's copy, version (its), local: base + p.owed, sending: the ops being saved, timer, retryMs }
   function applyOp(p, o) {
-    if (o.rest) {   // the sheet does the whole rest (ration, uses, recharges); this is just the party entry's numbers
+    if (o.rest) {   // a rest's numbers (the sheet does the whole rest: ration, uses, recharges)
       p.st = p.stMax; p.wounds = Math.max(0, (p.wounds || 0) - 1);
       if (o.rest.xp) { p.txp = (p.txp || 0) + (p.pending || 0); p.pending = 0; }
     }
@@ -135,22 +153,72 @@
     if (typeof o.setCruelty === 'number') p.cruelty = o.setCruelty;
     if (o.cond) { p.conds = p.conds || {}; Object.keys(o.cond).forEach(function (k) { if (o.cond[k]) p.conds[k] = true; else delete p.conds[k]; }); }
   }
-  function sheetWin(p) {
-    var f = p.link && statusFrames[p.link];
-    // Only once the player's character is in the frame (before that it holds this browser's own character).
-    try { var w = f && f.frame.contentWindow; return w && w.CrowsPlay && w.CrowsPlay.refChange && w.CrowsRefView && w.CrowsRefView.loaded ? w : null; } catch (e) { return null; }
+  /* A linked crow's character as this screen has it (with the Ref's unsaved changes), or null if it isn't loaded. */
+  function sheetOf(p) { var sh = p && p.link && cloudOn() ? sheets[p.link] : null; return sh ? sh.local : null; }
+  /* A copy of a saved character, ready for the sheet math. */
+  function prepared(data) {
+    var c = clone(data);
+    if (!Array.isArray(c.inv)) c.inv = [];
+    c.txp = c.txp | 0;
+    c.play = Sheet.normalizePlay(c.play);
+    return c;
+  }
+  /* Make change o on character c, and log it there as the Ref's (as the player's page does). */
+  function applyToSheet(c, o) {
+    var msgs = Sheet.applyRefChange(c, o);
+    if (msgs.length) Sheet.addLog(c, 'Ref: ' + msgs.join(' '));
+  }
+  function replay(data, ops) { var c = prepared(data); ops.forEach(function (o) { applyToSheet(c, o); }); return c; }
+  /* The party entry's numbers from its sheet. */
+  function fromSheet(p, c) {
+    var v = Sheet.vitals(c);
+    p.st = v.st; p.stMax = v.stMax; p.wounds = v.wounds; p.cruelty = v.cruelty; p.conds = v.conds;
+    p.txp = c.txp | 0; p.pending = c.play.pendingXP | 0;
+    p.claims = c.play.xpClaims.filter(function (x) { return x && c.play.claimsAnswered.indexOf(x.id) < 0; });
   }
   function sheetOp(p, o) {
-    applyOp(p, o);
-    if (!p.link || !cloudOn()) return;
+    if (!p.link || !cloudOn()) { applyOp(p, o); return; }
     (p.owed = p.owed || []).push(o);
-    flushOps(p);
+    var c = sheetOf(p);
+    if (!c) { applyOp(p, o); return; }   // made on the sheet once it's loaded (linkPC)
+    applyToSheet(c, o);
+    fromSheet(p, c);
+    queueSave(p.link);
   }
-  function flushOps(p) {
-    var w = sheetWin(p);
-    if (!w || !p.owed || !p.owed.length) return;
-    p.owed.forEach(function (o) { w.CrowsPlay.refChange(o); });
-    delete p.owed; save();
+  /* Save a linked crow's waiting changes in a moment (so a burst of them goes together). */
+  function queueSave(id, ms) {
+    var sh = sheets[id];
+    if (!sh || sh.sending) return;
+    clearTimeout(sh.timer);
+    sh.timer = setTimeout(function () { sh.timer = null; sendSheet(id); }, ms == null ? 300 : ms);
+  }
+  function sendSheet(id) {
+    var sh = sheets[id], p = state.party.filter(function (x) { return x.link === id; })[0];
+    if (!sh || sh.sending || !sh.local || !p || !p.owed || !p.owed.length || !cloudOn()) return;
+    var ops = p.owed.slice(), diff = window.CrowsCloud.linkDiff(sh.base, sh.local);
+    function settled(item) {   // these ops are on the sheet (or never will be): take them off the list
+      var q = state.party.filter(function (x) { return x.link === id; })[0];
+      if (q && q.owed) { q.owed = q.owed.filter(function (o) { return ops.indexOf(o) < 0; }); if (!q.owed.length) delete q.owed; }
+      if (item) linkPC(item);
+      save(); render();
+    }
+    if (!diff) { settled(null); return; }   // they changed nothing the Ref may save (Stamina already full, say)
+    sh.sending = ops;
+    window.CrowsCloud.api('POST', 'link.save', '', { id: id, fields: diff.fields, base: diff.base }).then(function (j) {
+      sh.sending = null; sh.retryMs = 0;
+      settled(j.item);
+    }, function (e) {
+      sh.sending = null;
+      if (e.status === 409 && e.body && e.body.item) { linkPC(e.body.item); save(); render(); queueSave(id, 0); return; }   // the player saved first: redo on theirs
+      if (e.status === 404 || e.status === 400 || e.status === 403 || e.status === 413) {
+        toast((p.name || 'A crow') + ': ' + e.message);
+        settled(null);
+        if (e.status !== 404) refreshLinked(p, true);
+        return;
+      }
+      sh.retryMs = Math.min(60000, sh.retryMs ? sh.retryMs * 2 : 4000);   // offline or a server hiccup: try again, slower each time
+      queueSave(id, sh.retryMs);
+    });
   }
   function openSheet(p) { window.open('play?link=' + encodeURIComponent(p.link), '_blank', 'noopener'); }
   /* Play a linked crow yourself, as if its player had handed it to you (they're told, and can take it back). */
@@ -222,13 +290,12 @@
     }
     return el('div', { class: 'invite-list' }, kids);
   }
-  /* A compact block at the foot of the side column, on the Party tab only (the tab's badge and a toast flag new requests). */
+  /* The Party tab's Invite players card (the tab's badge and a toast flag new requests on any tab). Only with an account. */
   function renderInvite() {
-    var box = $('side-invite'), id = window.CrowsCloud && window.CrowsCloud.recordId, on = cloudOn() && tab === 'party';
+    var box = $('sec-invite'), id = window.CrowsCloud && window.CrowsCloud.recordId, on = cloudOn();
     box.hidden = !on; box.innerHTML = '';
     if (!on) return;
-    var head = el('div', { class: 'row center' }, [el('h3', { text: 'Invite players' }), el('span', { class: 'spacer' }),
-      inv.requests.length ? el('span', { class: 'badge', text: String(inv.requests.length), title: plural(inv.requests.length, 'request') + ' waiting' }) : null]);
+    var head = el('h2', null, ['Invite players', inv.requests.length ? el('span', { class: 'badge', text: String(inv.requests.length), title: plural(inv.requests.length, 'request') + ' waiting' }) : null]);
     if (!id) { box.appendChild(head); box.appendChild(el('p', { class: 'fine', text: 'Saving the campaign to your account first…' })); setTimeout(function () { if (tab === 'party') render(); }, 1500); return; }
     if (inv.id !== id || Date.now() - inv.at > 60000) loadInvites();   // also catches requests withdrawn meanwhile
     var linkBox = null;
@@ -264,84 +331,94 @@
 
   // ------------------------------------------------------------------ Party status
   /*
-   * A condensed, live view of every crow in play. A crow linked to a player's sheet shows that sheet's own Vitals
-   * card (the generator at &view=status in a frame), so its buttons work exactly as they do for the player, with
-   * the whole character behind them (armor soaking damage, wounds filling backpack slots, the log), and save to
-   * the player's sheet within a second. Frames are kept, not rebuilt, across renders (reloading one would lose
-   * a second or two and anything half-typed), and they're laid out with CSS order instead of being moved.
-   * Crows added by hand or from a file get simple buttons for the numbers kept here.
+   * A condensed view of every crow in play. A linked crow shows its sheet's vitals as this screen has it (refreshed a second
+   * or two after the player changes something), and its buttons change that sheet (sheetOp): damage goes through worn armor
+   * and parry weapons first, wounds fill backpack slots, and it's all in the sheet's log. Crows added by hand or from a file
+   * get simple buttons for the numbers kept here.
    */
-  var statusFrames = {};   // link id -> { tile, frame, head }
   function statusPCs() { return state.party.filter(function (p) { return p.status === 'active' || p.status === 'away'; }); }
   function statusHead(p) {
     return el('div', { class: 'st-head' }, [el('b', { class: 'grow', text: p.name || 'Unnamed crow' }),
       p.status === 'away' ? el('span', { class: 'chip', text: 'sitting out' }) : null,
       p.owner ? el('span', { class: 'fine', text: p.owner }) : null]);
   }
+  function stamina(st, max, change, full) {
+    return [el('div', { class: 'st-stam' }, [el('span', { class: 'lbl', text: 'Stamina' }), el('b', { text: st + ' / ' + max }),
+        el('div', { class: 'meter' }, [el('span', { style: 'width:' + (max ? Math.round(st / max * 100) : 0) + '%' })])]),
+      el('div', { class: 'row center' }, [btn('\u22125', function () { change(-5); }, 'btn-small'), btn('\u22121', function () { change(-1); }, 'btn-small'),
+        btn('+1', function () { change(1); }, 'btn-small'), btn('+5', function () { change(5); }, 'btn-small'), btn('Full', full, 'btn-small btn-ghost')])];
+  }
+  function pm(what, change) { return [btn('\u2212', function () { change(-1); }, 'btn-small', 'Lower ' + what), btn('+', function () { change(1); }, 'btn-small', 'Raise ' + what)]; }
   function localTile(p) {
     function bump(k, n, lo, hi) { p[k] = Math.max(lo, Math.min(hi, (p[k] || 0) + n)); save(); render(); }
-    function pm(k, lo, hi, what) { return [btn('\u2212', function () { bump(k, -1, lo, hi); }, 'btn-small', 'Lower ' + what), btn('+', function () { bump(k, 1, lo, hi); }, 'btn-small', 'Raise ' + what)]; }
     var max = p.stMax || 0, st = Math.min(p.st || 0, max);
-    return el('div', { class: 'st-tile' }, [statusHead(p),
-      el('div', { class: 'st-stam' }, [el('span', { class: 'lbl', text: 'Stamina' }), el('b', { text: st + ' / ' + max }),
-        el('div', { class: 'meter' }, [el('span', { style: 'width:' + (max ? Math.round(st / max * 100) : 0) + '%' })])]),
-      el('div', { class: 'row center' }, [btn('\u22125', function () { bump('st', -5, 0, max); }, 'btn-small'), btn('\u22121', function () { bump('st', -1, 0, max); }, 'btn-small'),
-        btn('+1', function () { bump('st', 1, 0, max); }, 'btn-small'), btn('+5', function () { bump('st', 5, 0, max); }, 'btn-small'),
-        btn('Full', function () { p.st = max; save(); render(); }, 'btn-small btn-ghost')]),
+    return el('div', { class: 'st-tile local' }, [statusHead(p)].concat(
+      stamina(st, max, function (n) { bump('st', n, 0, max); }, function () { p.st = max; save(); render(); }), [
       el('div', { class: 'st-nums' }, [
-        el('span', { class: p.wounds >= 7 ? 'bad' : null }, ['Wounds ', el('b', { text: (p.wounds || 0) + '/10' })].concat(pm('wounds', 0, 10, 'wounds'))),
-        el('span', null, ['AD ', el('b', { text: String(p.ad || 0) })].concat(pm('ad', 0, 99, 'AD'))),
-        el('span', null, ['Cruelty ', el('b', { text: String(p.cruelty || 0) })].concat(pm('cruelty', 0, 20, 'cruelty')))]),
-      el('div', { class: 'fine', text: 'Kept on this screen only. Link the player\u2019s sheet to see and change everything live.' })]);
+        el('span', { class: p.wounds >= 7 ? 'bad' : null }, ['Wounds ', el('b', { text: (p.wounds || 0) + '/10' })].concat(pm('wounds', function (n) { bump('wounds', n, 0, 10); }))),
+        el('span', null, ['AD ', el('b', { text: String(p.ad || 0) })].concat(pm('AD', function (n) { bump('ad', n, 0, 99); }))),
+        el('span', null, ['Cruelty ', el('b', { text: String(p.cruelty || 0) })].concat(pm('cruelty', function (n) { bump('cruelty', n, 0, 20); })))]),
+      el('div', { class: 'fine', text: p.link ? 'Linked to ' + (p.owner || 'a player') + '\u2019s sheet: log in to see and change it live.' : 'Kept on this screen only. Link the player\u2019s sheet to see and change everything live.' })]));
+  }
+  /* A linked crow's tile, from its sheet (c). */
+  function linkedTile(p, c) {
+    var v = Sheet.vitals(c), who = p.owner ? p.owner + '\u2019s' : 'the player\u2019s';
+    var h = (ui.stHit = ui.stHit || {})[p.link] || (ui.stHit[p.link] = { n: '', pierce: false });
+    function op(o) {
+      sheetOp(p, o);
+      S().combat.list.forEach(function (x) { if (x.kind === 'pc' && x.pcId === p.id) pullVitals(x); });   // the tracker follows the sheet
+      save(); render();
+      return o;
+    }
+    function hit() {
+      var n = parseInt(h.n, 10);
+      if (!(n > 0)) { toast('Enter the damage first.'); return; }
+      var o = op({ hit: n, piercing: !!h.pierce, from: '' });
+      h.n = '';
+      if (o.result) { log('', '**' + (p.name || 'A crow') + '** takes ' + o.result.total + (o.piercing ? ' piercing' : '') + ' damage on their sheet (' + o.result.parts.join(', ') + ').'); save(); render(); }
+    }
+    var amount = el('input', { type: 'number', min: 1, max: 99, class: 'in tiny', value: h.n, placeholder: 'dmg', 'aria-label': 'Damage to ' + (p.name || 'the crow'),
+      oninput: function () { h.n = this.value; }, onkeydown: function (e) { if (e.key === 'Enter') hit(); } });
+    var pierce = el('input', { type: 'checkbox', checked: !!h.pierce, onchange: function () { h.pierce = this.checked; } });
+    var conds = REF.CONDITIONS.filter(function (k) { return Sheet.CONDITIONS.indexOf(k[0]) >= 0; });
+    return el('div', { class: 'st-tile linked' }, [
+      el('div', { class: 'row center' }, [statusHead(p), btn('Open sheet', function () { openSheet(p); }, 'btn-small btn-ghost', 'See the whole sheet'), takeBtn(p)])].concat(
+      stamina(v.st, v.stMax, function (n) { op({ st: n }); }, function () { op({ full: true }); }), [
+      el('div', { class: 'st-nums' }, [
+        el('span', { class: v.wounds >= 7 ? 'bad' : null }, ['Wounds ', el('b', { text: v.wounds + '/10' })].concat(pm('wounds', function (n) { op({ wounds: n }); }))),
+        el('span', { title: 'Worn armor and the parry weapons in hand. Repaired on a rest, or on the sheet.' }, ['AD ', el('b', { text: v.ad + '/' + v.adMax })]),
+        el('span', null, ['Cruelty ', el('b', { text: String(v.cruelty || 0) })].concat(pm('cruelty', function (n) { op({ cruelty: n }); })))]),
+      el('div', { class: 'row center st-dmg' }, [amount, el('label', { class: 'check' }, [pierce, 'Piercing']),
+        btn('Deal damage', hit, 'btn-small btn-primary', 'Through worn armor and parry weapons first, then Stamina, then wounds, as on the sheet')]),
+      el('div', { class: 'conds' }, conds.map(function (k) {
+        var on = !!v.conds[k[0]];
+        return el('button', { type: 'button', class: 'cond' + (on ? ' on' : ''), title: k[1], 'aria-pressed': on ? 'true' : 'false', text: k[0],
+          onclick: function () { var o = { cond: {} }; o.cond[k[0]] = !on; op(o); } });
+      })),
+      el('div', { class: 'fine', text: (p.owed && p.owed.length ? 'Saving to ' : 'Changes save to ') + who + ' sheet.' })]));
   }
   function renderStatus() {
-    var box = $('sec-status'), live = cloudOn();
-    if (!box.firstChild) {
-      box.appendChild(el('h2', null, ['Party status', el('small', { text: 'live from the players\u2019 sheets' })]));
-      box.appendChild(el('p', { class: 'hint', text: 'Each linked crow shows its own sheet\u2019s vitals: the buttons work just as they do for the player and save to their sheet at once, ' +
-        'and their changes show up here within a second. Damage goes through worn armor and parry weapons first, as on the sheet.' }));
-      box.appendChild(el('div', { class: 'row', style: 'margin-bottom:.6rem' }, [btn('Everyone to full Stamina', function () {
+    var box = $('sec-status'), grid = el('div', { class: 'st-grid' }), pcs = statusPCs();
+    pcs.forEach(function (p) {
+      var c = sheetOf(p);
+      if (c) grid.appendChild(linkedTile(p, c));
+      else if (p.link && cloudOn()) grid.appendChild(el('div', { class: 'st-tile linked' }, [statusHead(p), el('p', { class: 'fine', text: 'Loading ' + (p.owner ? p.owner + '\u2019s' : 'the player\u2019s') + ' sheet\u2026' })]));
+      else grid.appendChild(localTile(p));
+    });
+    card('sec-status', el('h2', null, ['Party status', el('small', { text: 'from the players\u2019 sheets' })]), [
+      el('p', { class: 'hint', text: 'A linked crow shows its own sheet: the buttons change that sheet, and the player\u2019s changes show up here within a second or two. ' +
+        'Damage goes through worn armor and parry weapons first, as on the sheet.' }),
+      el('div', { class: 'row', style: 'margin-bottom:.6rem' }, [btn('Everyone to full Stamina', function () {
         activePCs().forEach(function (p) { sheetOp(p, { full: true }); });   // linked crows: on their sheets
         save(); render();
-      }, 'btn-small btn-ghost', 'Every active crow back to full Stamina (linked crows on their own sheets)')]));
-      box.appendChild(el('div', { class: 'st-grid', id: 'st-grid' }));
-      box.appendChild(el('p', { class: 'hint', id: 'st-empty', text: 'No crows in play. Add some below.' }));
-    }
-    var grid = $('st-grid'), pcs = statusPCs(), keep = {};
-    $('st-empty').style.display = pcs.length ? 'none' : '';
-    Array.prototype.forEach.call(grid.querySelectorAll('.st-tile.local'), function (n) { n.remove(); });
-    pcs.forEach(function (p, i) {
-      if (p.link && live) {
-        keep[p.link] = true;
-        var f = statusFrames[p.link];
-        if (!f) {
-          f = statusFrames[p.link] = { head: el('div'), frame: el('iframe', { class: 'st-frame', title: 'Vitals of ' + (p.name || 'a linked crow'),
-            src: 'Crows_Character_Generator.html?link=' + encodeURIComponent(p.link) + '&view=status' }) };
-          f.tile = el('div', { class: 'st-tile linked' }, [f.head, f.frame]);
-          grid.appendChild(f.tile);
-        }
-        f.head.replaceWith(f.head = el('div', { class: 'row center' }, [statusHead(p), btn('Open sheet', function () { openSheet(p); }, 'btn-small btn-ghost', 'See the whole sheet'), takeBtn(p)]));
-        f.tile.style.order = i;
-      } else {
-        var t = localTile(p); t.className += ' local'; t.style.order = i;
-        grid.appendChild(t);
-      }
-    });
-    Object.keys(statusFrames).forEach(function (id) { if (!keep[id]) { statusFrames[id].tile.remove(); delete statusFrames[id]; } });
+      }, 'btn-small btn-ghost', 'Every active crow back to full Stamina (linked crows on their own sheets)')]),
+      pcs.length ? grid : el('p', { class: 'hint', text: 'No crows in play. Add some below.' })]);
+    return box;
   }
-  // A frame reports its height whenever it changes; size it to fit, so there's no inner scrollbar.
-  window.addEventListener('message', function (e) {
-    if (e.origin !== location.origin || !e.data || !e.data.crowsStatus) return;
-    Object.keys(statusFrames).forEach(function (id) {
-      var fr = statusFrames[id].frame;
-      if (fr.contentWindow !== e.source) return;
-      fr.style.height = Math.max(60, Math.min(4000, +e.data.h || 0)) + 'px';
-      if (e.data.loaded) state.party.forEach(function (p) { if (String(p.link) === id && p.owed) flushOps(p); });
-    });
-  });
 
   function renderParty() {
     renderStatus();
+    renderInvite();
     var fileIn = el('input', { type: 'file', accept: '.json,application/json', multiple: true, onchange: function () {
       var files = Array.prototype.slice.call(this.files || []), input = this, done = [];
       if (!files.length) return;
@@ -507,9 +584,9 @@
   }
 
   A.add({ importCharacter: importCharacter, pcFromSave: pcFromSave, cloudOn: cloudOn, linkToken: linkToken, linkPC: linkPC, watchLinked: watchLinked,
-      addFromLink: addFromLink, refreshLinked: refreshLinked, unlinkPC: unlinkPC, applyOp: applyOp, sheetWin: sheetWin, sheetOp: sheetOp,
-      flushOps: flushOps, openSheet: openSheet, takeControl: takeControl, takeBtn: takeBtn, newPC: newPC, loadInvites: loadInvites,
+      addFromLink: addFromLink, refreshLinked: refreshLinked, unlinkPC: unlinkPC, applyOp: applyOp, sheetOf: sheetOf, prepared: prepared,
+      applyToSheet: applyToSheet, replay: replay, fromSheet: fromSheet, sheetOp: sheetOp, queueSave: queueSave, sendSheet: sendSheet, openSheet: openSheet, takeControl: takeControl, takeBtn: takeBtn, newPC: newPC, loadInvites: loadInvites,
       answerRequest: answerRequest, setListing: setListing, listBox: listBox, renderInvite: renderInvite, statusPCs: statusPCs,
-      statusHead: statusHead, localTile: localTile, renderStatus: renderStatus, renderParty: renderParty, allClaims: allClaims, claimOp: claimOp,
-      claimsBox: claimsBox, pcHead: pcHead, pcCard: pcCard, statusFrames: statusFrames, PC_STATUSES: PC_STATUSES });
+      statusHead: statusHead, stamina: stamina, pm: pm, localTile: localTile, linkedTile: linkedTile, renderStatus: renderStatus, renderParty: renderParty, allClaims: allClaims, claimOp: claimOp,
+      claimsBox: claimsBox, pcHead: pcHead, pcCard: pcCard, sheets: sheets, PC_STATUSES: PC_STATUSES });
 })();

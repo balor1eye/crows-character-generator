@@ -351,21 +351,25 @@
     });
   }
 
-  /* The Ref's save: just the shared fields that differ from what the server last had. */
-  function flushLinked(data, json) {
-    var fields = {}, from = {}, n = 0, snap = cfg.refOps ? cfg.refOps.start() : null;
+  /* The shared fields (LINK_FIELDS) that differ between b and data, as link.save takes them: { fields, base }, or null. */
+  function linkDiff(b, data) {
+    var fields = {}, from = {}, n = 0;
     LINK_FIELDS.forEach(function (f) {
-      var lv = getPath(data, f.path), bv = getPath(base, f.path);
+      var lv = getPath(data, f.path), bv = getPath(b, f.path);
       if (!same(lv, bv)) { fields[f.name] = lv === undefined ? null : lv; from[f.name] = bv === undefined ? null : bv; n++; }
     });
-    if (!n) { lastSent = json; status('saved', 'Saved'); return; }   // nothing the Ref may change was changed
+    return n ? { fields: fields, base: from } : null;
+  }
+  /* The Ref's save: just the shared fields that differ from what the server last had. */
+  function flushLinked(data, json) {
+    var diff = linkDiff(base, data);
+    if (!diff) { lastSent = json; status('saved', 'Saved'); return; }   // nothing the Ref may change was changed
     inFlight = true; again = false;
     status('saving', 'Saving…');
-    call('POST', 'link.save', '', { id: linkId, fields: fields, base: from }).then(function (j) {
+    call('POST', 'link.save', '', { id: linkId, fields: diff.fields, base: diff.base }).then(function (j) {
       retryMs = 0;
       var item = j.item;
       rec.version = item.version;
-      if (snap) cfg.refOps.saved(snap);
       // Show the player's latest too, unless the Ref has changed something new meanwhile.
       if (JSON.stringify(cfg.getData()) === json) adoptRemote(item, item.data);
       else base = item.data;
@@ -415,15 +419,6 @@
   function mergeIn(item, thenSave) {
     if (!cfg.valid(item.data)) return;
     var before = cfg.getData();            // for onRemote to say what changed
-    // Unsaved here are only changes sent from the Ref Screen, which are steps (Stamina -1, XP +130): take the
-    // player's version and redo them on top. (A value merge would drop one of two equal hits as "the same".)
-    if (linkId && cfg.refOps && cfg.refOps.canRedo()) {
-      adoptRemote(item, item.data);
-      cfg.refOps.redo();
-      if (cfg.onRemote) cfg.onRemote(before);
-      flush();
-      return;
-    }
     var local = before;
     var m = linkId ? mergeLinked(base, local, item.data) : merge3(base, local, item.data);
     if (m.clashes.length) return clash(item, m.clashes);
@@ -663,6 +658,8 @@
 
     /* Call fn(user) once it's known who is logged in (user is null for a guest, offline, or without the accounts server). */
     afterMe: function (fn) { if (meDone) fn(user); else meWaiting.push(fn); },
+    /* For the Ref Screen: what link.save needs to turn the linked character `b` into `data` ({ fields, base }), or null if nothing it may change differs. */
+    linkDiff: function (b, data) { return linkDiff(b, data); },
     /* For the Ref Screen: calls the API with this page's login. */
     api: function (method, action, query, body) { return call(method, action, query, body); }
   };

@@ -24,7 +24,8 @@ from run_live_combat_test import JS  # noqa: E402
 import test_instance  # noqa: E402
 
 JS = JS + r"""
-function sheet() { var f = q('#st-grid iframe'); return f && f.contentWindow; }
+function sheet() { var p = window.CrowsRef.state.party.filter(function (x) { return x.link; })[0]; return p ? window.CrowsRef.sheet(p.link) : null; }
+function tile() { return q('#sec-status .st-tile.linked'); }
 function rations(st) { return st.inv.filter(function (c) { return c.key === 'Ration' && c.area !== 'none'; }).reduce(function (t, c) { return t + c.qty; }, 0); }
 """
 
@@ -83,8 +84,9 @@ def main():
         r("type(q('input[aria-label=\"Character link\"]'), arguments[0]); button('Add from link').click();", link)
         rwait("return window.CrowsRef.state.party.some(function (x) { return x.link; })", "the crow to join the party")
         acc = r("return window.CrowsRef.state.party[0].link")
-        rwait("var w = sheet(); return !!(w && w.CrowsRefView && w.CrowsRefView.loaded && w.CrowsApp.state.play.stamina === 1)", "the crow's sheet under Party status")
-        ok("Ref adds the crow from the link, and its sheet loads under Party status")
+        rwait("var c = sheet(); return !!(c && c.play.stamina === 1 && /1 \\/ /.test(text(q('.st-stam', tile()))))", "the crow's sheet under Party status")
+        assert r("return !document.querySelector('iframe')")
+        ok("Ref adds the crow from the link, and its sheet shows under Party status (no iframe)")
 
         # The party rests.
         dt = r("return window.CrowsRef.state.session.dt")
@@ -108,7 +110,7 @@ def main():
         p("button('Rest again', q('#play-time')).click();")
         r1 = p("return rations(window.CrowsApp.state)")
         assert r1 == r0 - 2, r1
-        rwait("var w = sheet(), lr = w && w.CrowsApp.state.play.lastRest; return !!(lr && lr.by === 'self')", "the player's own rest on the Ref's copy of the sheet")
+        rwait("var c = sheet(), lr = c && c.play.lastRest; return !!(lr && lr.by === 'self')", "the player's own rest on the Ref's copy of the sheet")
         r("button('Start rest', q('#sec-rest')).click(); button('Finish rest', q('#sec-rest')).click();")
         pwait("return window.CrowsApp.state.play.log.some(function (e) { return /already rested from your sheet/.test(e.m); })", "the skipped rest in the sheet's log")
         assert p("return rations(window.CrowsApp.state)") == r1
@@ -132,6 +134,16 @@ def main():
         ok("the Ref uses the claim for the award: the player gets 400 pending XP and the claim is answered")
         rwait("return !/Jade mask/.test(text(q('#sec-xp .claims')))", "the claim to leave the Ref's list")
         ok("the answered claim leaves the Ref's list")
+
+        # A hit from the Party status tile lands on the player's sheet: the Ref Screen deals it on its copy and saves it.
+        v0 = p("return window.CrowsPlay.vitals()")
+        r("var t = tile(); type(q('input[type=number]', t), '2'); q('label.check input', t).click(); button('Deal damage', t).click();")
+        assert "2 piercing damage on their sheet" in r("return text(q('#side-log'))")
+        pwait("return window.CrowsPlay.vitals().st === " + str(max(0, v0["st"] - 2)), "the Ref's hit on the player's sheet", 15)
+        assert p("return window.CrowsApp.state.play.log.some(function (e) { return /^Ref: Hit for 2 piercing/.test(e.m); })")
+        ok("a hit dealt from the Party status tile (2 piercing) lands on the player's sheet, in its log, without an iframe")
+        rwait("return !(window.CrowsRef.state.party[0].owed || []).length", "the Ref's change to be saved", 10)
+        ok("...and the Ref Screen has nothing left waiting to save")
         good = True
     except Exception as e:
         print("FAILED:", e)

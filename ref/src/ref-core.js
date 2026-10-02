@@ -19,23 +19,27 @@
     set: function (name, v) { A[name] = v; (watch[name] || []).forEach(function (fn) { fn(v); }); return v; }
   }, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var allClaims = f('allClaims'), applyAct = f('applyAct'), byId = f('byId'), cloudOn = f('cloudOn'), counterAct = f('counterAct'),
+  var allClaims = f('allClaims'), applyAct = f('applyAct'), byId = f('byId'), counterAct = f('counterAct'),
       counterDamage = f('counterDamage'), dropFromFallen = f('dropFromFallen'), endDT = f('endDT'), feed = f('feed'), fxItems = f('fxItems'),
-      heal = f('heal'), liveChanged = f('liveChanged'), newRound = f('newRound'), pcOf = f('pcOf'), pendingText = f('pendingText'),
+      heal = f('heal'), liveChanged = f('liveChanged'), newRound = f('newRound'), pendingText = f('pendingText'),
       releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderEncounters = f('renderEncounters'),
-      renderInvite = f('renderInvite'), renderParty = f('renderParty'), renderRules = f('renderRules'), renderSession = f('renderSession'),
-      renderStatus = f('renderStatus'), renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
+      renderParty = f('renderParty'), renderRules = f('renderRules'), renderSession = f('renderSession'),
+      renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
       renderWorld = f('renderWorld'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
   var state = A.state; A.share('state', function (v) { state = v; });
   var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
   var STORAGE_KEY = 'crows-pt2-ref-campaign';
   var TAB_KEY = 'crows-pt2-ref-tab';
-  var TABS = [['session', 'Session'], ['encounters', 'Encounters'], ['travel', 'Travel'], ['village', 'Village'], ['party', 'Party'], ['world', 'World'], ['bestiary', 'Bestiary'], ['tables', 'Tables'], ['rules', 'Rules']];
+  // The tabs in their groups, shown with the group's name in the tab bar: [group, [[tab id, label], ...]].
+  var TAB_GROUPS = [['Run', [['session', 'Session'], ['encounters', 'Encounters'], ['travel', 'Travel']]],
+    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World']]],
+    ['Reference', [['bestiary', 'Bestiary'], ['tables', 'Tables'], ['rules', 'Rules']]]];
+  var TABS = TAB_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
   var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge' };
   var EB_LABELS = [[-2, 'DB'], [-1, 'Bane'], [0, '—'], [1, 'Edge'], [2, 'DE']];
   var uid = 1;   // state (the campaign) and tab (the open tab) are shared: A.set('state', ...)
-  var ui = { dice: null, tables: {}, beastQ: '', beastType: '', rulesQ: '', lastEnc: null, travelEnc: null, alarmFired: false, encSrc: '', encDraft: null, encFilter: 'open', encOpen: {}, encFocus: null, encEnd: null };
+  var ui = { logAll: false, dice: null, tables: {}, beastQ: '', beastType: '', rulesQ: '', lastEnc: null, travelEnc: null, alarmFired: false, encSrc: '', encDraft: null, encFilter: 'open', encOpen: {}, encFocus: null, encEnd: null };
 
   // ------------------------------------------------------------------ helpers
   var Dom = window.CrowsDom, Dice = window.CrowsDice, Rules = window.CrowsRules;   // src/shared/
@@ -271,20 +275,23 @@
   function setTab(t) { A.set('tab', t); document.body.setAttribute('data-tab', t); if (window.CrowsLayout) window.CrowsLayout.apply(); try { localStorage.setItem(TAB_KEY, t); } catch (e) { /* ignore */ } render(); window.scrollTo(0, 0); }
   function renderTabbar() {
     var bar = $('tabbar'); bar.innerHTML = '';
-    TABS.forEach(function (t) {
+    TAB_GROUPS.forEach(function (g) {
+      var group = el('div', { class: 'tab-group', role: 'group', 'aria-label': g[0] }, [el('span', { class: 'tab-group-label', 'aria-hidden': 'true', text: g[0] })]);
+      g[1].forEach(function (t) { group.appendChild(tabButton(t)); });
+      bar.appendChild(group);
+    });
+    $('camp-name').textContent = state.name || state.village.name || '';
+  }
+  function tabButton(t) {
       var badge = null;
       if (t[0] === 'session' && (S().pending || S().combat.list.some(function (c) { return !c.dead && c.kind === 'foe'; }))) badge = el('span', { class: 'badge', text: S().pending ? '!' : '⚔' });
       if (t[0] === 'encounters' && runningEnc()) badge = el('span', { class: 'badge', text: '⚔', title: 'An encounter is running' });
       if (t[0] === 'party' && inv.requests.length && inv.id === (window.CrowsCloud && window.CrowsCloud.recordId)) badge = el('span', { class: 'badge', text: String(inv.requests.length), title: 'Join requests waiting' });
       else if (t[0] === 'party' && allClaims().length) badge = el('span', { class: 'badge', text: 'XP', title: plural(allClaims().length, 'XP claim') + ' from players waiting' });
-      bar.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': tab === t[0] ? 'true' : 'false', onclick: function () { setTab(t[0]); } }, [t[1], badge]));
-    });
-    $('camp-name').textContent = state.name || state.village.name || '';
+      return el('button', { type: 'button', role: 'tab', 'aria-selected': tab === t[0] ? 'true' : 'false', onclick: function () { setTab(t[0]); } }, [t[1], badge]);
   }
   var layoutFitQueued = false;
   function render() {
-    // A fight with linked crows needs their sheets loaded (Party status), whichever tab is open: hits land there.
-    if (tab !== 'party' && cloudOn() && S().combat.list.some(function (x) { var p = pcOf(x); return p && p.link; })) renderStatus();
     renderTabbar();
     renderSide();
     if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
@@ -341,7 +348,6 @@
       res
     ]));
     renderSideLog();
-    renderInvite();
   }
   /* What an action does, in words: "5 damage, prone", "regains 4 Stamina", "grabbed". */
   function fxText(items) {
@@ -376,12 +382,19 @@
     log('', 'Initiative for round ' + c.round + ': 1d10 = ' + r + ' → **' + (first ? 'crows and allies first' : 'enemies first') + '**.');
     save(); render();
   }
+  /* This session's log, newest first: the last 14 entries, or all of them (Show all), and a box to add a note. */
   function renderSideLog() {
     var box = $('side-log'); box.innerHTML = '';
-    var list = el('ol'), recent = state.log.slice(-14).reverse();
-    recent.forEach(function (e) { list.appendChild(logItem(e)); });
-    box.appendChild(el('div', null, [el('div', { class: 'row center' }, [el('h3', { text: 'Log' }), el('span', { class: 'spacer' }), el('a', { href: '#', class: 'fine', onclick: function (e) { e.preventDefault(); setTab('session'); setTimeout(function () { $('sec-log').scrollIntoView(); }, 0); }, text: 'full log' })]),
-      recent.length ? list : el('p', { class: 'fine', text: 'Rolls and events appear here.' })]));
+    var all = ui.logAll, shown = (all ? state.log : state.log.slice(-14)).slice().reverse();
+    var list = el('ol', { class: all ? 'all' : null }, shown.map(logItem));
+    var note = { t: '' };
+    function add() { if (note.t.trim()) { log('note', note.t.trim()); render(); } }
+    var noteIn = inp(note, 't', { placeholder: 'Add a note to the log\u2026', 'aria-label': 'Log note', class: 'in grow' });
+    noteIn.addEventListener('keydown', function (e) { if (e.key === 'Enter') add(); });
+    box.appendChild(el('div', null, [el('div', { class: 'row center' }, [el('h3', { text: 'Log' }), el('span', { class: 'spacer' }),
+        state.log.length > 14 ? btn(all ? 'Show recent' : 'Show all ' + state.log.length, function () { ui.logAll = !all; renderSideLog(); }, 'btn-small btn-ghost', all ? 'Only the last 14 entries' : 'Every entry this session') : null]),
+      el('div', { class: 'row center side-note' }, [noteIn, btn('Add', add, 'btn-small')]),
+      shown.length ? list : el('p', { class: 'fine', text: 'Rolls and events appear here.' })]));
   }
 
   A.add({ clamp: clamp, int: int, nid: nid, lookup: lookup, nowStamp: nowStamp, today: today, beast: beast, rollInText: rollInText, test: test,
@@ -391,7 +404,7 @@
       dungeonEN: dungeonEN, travelCalc: travelCalc, greedBonus: greedBonus, activePCs: activePCs, salePct: salePct, nextES: nextES,
       remainMs: remainMs, clockText: clockText, startTimer: startTimer, pauseTimer: pauseTimer, resetTimer: resetTimer, beep: beep, tick: tick,
       setTab: setTab, renderTabbar: renderTabbar, render: render, renderSide: renderSide, fxText: fxText, hitControls: hitControls, diceBtn: diceBtn,
-      rollInitiative: rollInitiative, renderSideLog: renderSideLog, STORAGE_KEY: STORAGE_KEY, TAB_KEY: TAB_KEY, TABS: TABS, SIZES: SIZES,
+      rollInitiative: rollInitiative, renderSideLog: renderSideLog, STORAGE_KEY: STORAGE_KEY, TAB_KEY: TAB_KEY, TABS: TABS, TAB_GROUPS: TAB_GROUPS, tabButton: tabButton, SIZES: SIZES,
       EB_LABELS: EB_LABELS, ui: ui, Dom: Dom, Dice: Dice, Rules: Rules, $: $, el: el, fmt: fmt, signed: signed, clone: clone, plural: plural,
       toast: toast, d: d, pick: pick, rollDice: rollDice, d100: d100, netEdges: netEdges, ebWord: ebWord, esBonusCount: esBonusCount,
       charBonusCount: charBonusCount, inv: inv, layoutFitQueued: layoutFitQueued });
