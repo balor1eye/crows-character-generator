@@ -10,7 +10,7 @@
       log = f('log'), pauseTimer = f('pauseTimer'), refreshLinked = f('refreshLinked'), render = f('render'), repairObjects = f('repairObjects'),
       rollTravelEncounter = f('rollTravelEncounter'), S = f('S'), save = f('save'), setTab = f('setTab'), startNew = f('startNew'),
       startTimer = f('startTimer'), test = f('test'), tick = f('tick'), withDefaults = f('withDefaults');
-  var $ = A.$, clone = A.clone, el = A.el, TAB_KEY = A.TAB_KEY, TABS = A.TABS, toast = A.toast, ui = A.ui;
+  var $ = A.$, clone = A.clone, el = A.el, TAB_KEY = A.TAB_KEY, TAB_GROUPS = A.TAB_GROUPS, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
   var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
@@ -26,12 +26,12 @@
   function init() {
     A.set('state', load() || freshState());
     try { A.set('tab', localStorage.getItem(TAB_KEY) || 'session'); } catch (e) { A.set('tab', 'session'); }
-    if (!TABS.some(function (t) { return t[0] === tab; })) A.set('tab', 'session');
+    if (!TAB_GROUPS.some(function (t) { return t[0] === tab; })) A.set('tab', 'session');
     document.body.setAttribute('data-tab', tab);
     // Rearrangeable pages (src/layout.js): each tab is a page of its cards plus the sidebar (timer, dice, log).
     if (window.CrowsLayout) {
       var pages = {};
-      TABS.forEach(function (t) {
+      TAB_GROUPS.forEach(function (t) {
         var ids = Array.prototype.map.call(document.querySelectorAll('#page-' + t[0] + ' > section'), function (n) { return n.id; });
         pages['ref-' + t[0]] = { blocks: ids.concat('side'), cols: [ids, ['side']], colClass: 'page' };
       });

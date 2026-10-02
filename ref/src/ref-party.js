@@ -115,25 +115,29 @@
     if (cloudOn()) window.CrowsCloud.api('POST', 'link.remove', '', { id: id }).then(function () { if (!quietly) toast('Unlinked. The crow stays in the party as a copy.'); }, function () { /* already gone */ });
   }
   /*
-   * The Ref changing a crow's sheet numbers (XP, Stamina, wounds, cruelty, the end of a DT or a rest; see CrowsPlay.refChange): the party
-   * entry changes at once, and a linked crow's change goes onto the player's sheet through its Party status frame.
-   * If that frame isn't loaded yet, the change waits in p.owed and is delivered as soon as the frame reports in;
-   * until then it's replayed over each refresh from the sheet, so it doesn't flicker away.
+   * The Ref changing a crow's sheet numbers. Simple ops (full, st, wounds, AD, cruelty, conditions, XP, rest, claims, endDT)
+   * are applied directly to the party entry via CrowsSheetOps.applyRefChange, then also sent through the iframe (CrowsPlay.refChange)
+   * so the player's sheet gets the same changes. Complex ops (hit, restore) go through the iframe only — the party entry doesn't
+   * track them (the sheet handles absorbers and wound allocation).
    */
+  var sheetOps = window.CrowsSheetOps;
   function applyOp(p, o) {
-    if (o.rest) {   // the sheet does the whole rest (ration, uses, recharges); this is just the party entry's numbers
-      p.st = p.stMax; p.wounds = Math.max(0, (p.wounds || 0) - 1);
-      if (o.rest.xp) { p.txp = (p.txp || 0) + (p.pending || 0); p.pending = 0; }
+    if (!o) return;
+    // Simple ops: apply directly to party entry via shared function
+    var simpleKeys = ['full', 'st', 'wounds', 'cruelty', 'setCruelty', 'cond', 'xp', 'apply', 'claims', 'endDT', 'rest', 'ad'];
+    var hasSimple = simpleKeys.some(function (k) { return k in o; });
+    if (hasSimple && sheetOps) {
+      sheetOps.applyRefChange(p, o);
     }
-    if (o.claims && p.claims) p.claims = p.claims.filter(function (c) { return o.claims.indexOf(c.id) < 0; });
-    if (o.xp) p.pending = (p.pending || 0) + o.xp;
-    if (o.apply) { p.txp = (p.txp || 0) + (p.pending || 0); p.pending = 0; }
-    if (o.full) p.st = p.stMax;
-    if (o.st) p.st = clamp((p.st || 0) + o.st, 0, p.stMax);
-    if (o.wounds) p.wounds = clamp((p.wounds || 0) + o.wounds, 0, 10);
-    if (o.cruelty) p.cruelty = Math.max(0, (p.cruelty || 0) + o.cruelty);
-    if (typeof o.setCruelty === 'number') p.cruelty = o.setCruelty;
-    if (o.cond) { p.conds = p.conds || {}; Object.keys(o.cond).forEach(function (k) { if (o.cond[k]) p.conds[k] = true; else delete p.conds[k]; }); }
+    // Always queue for iframe (simple ops need player sheet path, complex ops go iframe-only)
+    if (!p.link || !cloudOn()) return;
+    (p.owed = p.owed || []).push(o);
+  }
+  function flushOps(p) {
+    var w = sheetWin(p);
+    if (!w || !p.owed || !p.owed.length) return;
+    p.owed.forEach(function (o) { w.CrowsPlay.refChange(o); });
+    delete p.owed; save();
   }
   function sheetWin(p) {
     var f = p.link && statusFrames[p.link];
@@ -142,9 +146,7 @@
   }
   function sheetOp(p, o) {
     applyOp(p, o);
-    if (!p.link || !cloudOn()) return;
-    (p.owed = p.owed || []).push(o);
-    flushOps(p);
+    if (p.owed) flushOps(p);
   }
   function flushOps(p) {
     var w = sheetWin(p);
@@ -222,9 +224,9 @@
     }
     return el('div', { class: 'invite-list' }, kids);
   }
-  /* A compact block at the foot of the side column, on the Party tab only (the tab's badge and a toast flag new requests). */
+  /* A compact card at the top of the Party tab for inviting players and managing join requests. */
   function renderInvite() {
-    var box = $('side-invite'), id = window.CrowsCloud && window.CrowsCloud.recordId, on = cloudOn() && tab === 'party';
+    var box = $('sec-invite'), id = window.CrowsCloud && window.CrowsCloud.recordId, on = cloudOn() && tab === 'party';
     box.hidden = !on; box.innerHTML = '';
     if (!on) return;
     var head = el('div', { class: 'row center' }, [el('h3', { text: 'Invite players' }), el('span', { class: 'spacer' }),
@@ -271,7 +273,8 @@
    * a second or two and anything half-typed), and they're laid out with CSS order instead of being moved.
    * Crows added by hand or from a file get simple buttons for the numbers kept here.
    */
-  var statusFrames = {};   // link id -> { tile, frame, head }
+  var statusFrames = {};   // link id -> { tile, frame, head } — only for complex ops (hit/restore/rest)
+  var statusTiles = {};   // link id -> { tile, pcs } — lightweight tiles for vitals
   function statusPCs() { return state.party.filter(function (p) { return p.status === 'active' || p.status === 'away'; }); }
   function statusHead(p) {
     return el('div', { class: 'st-head' }, [el('b', { class: 'grow', text: p.name || 'Unnamed crow' }),
@@ -279,54 +282,79 @@
       p.owner ? el('span', { class: 'fine', text: p.owner }) : null]);
   }
   function localTile(p) {
-    function bump(k, n, lo, hi) { p[k] = Math.max(lo, Math.min(hi, (p[k] || 0) + n)); save(); render(); }
-    function pm(k, lo, hi, what) { return [btn('\u2212', function () { bump(k, -1, lo, hi); }, 'btn-small', 'Lower ' + what), btn('+', function () { bump(k, 1, lo, hi); }, 'btn-small', 'Raise ' + what)]; }
+    function pm(k, lo, hi, what) {
+      return [btn('\u2212', function () { sheetOp(p, { [k]: -1 }); }, 'btn-small', 'Lower ' + what),
+        btn('+', function () { sheetOp(p, { [k]: 1 }); }, 'btn-small', 'Raise ' + what)];
+    }
     var max = p.stMax || 0, st = Math.min(p.st || 0, max);
     return el('div', { class: 'st-tile' }, [statusHead(p),
       el('div', { class: 'st-stam' }, [el('span', { class: 'lbl', text: 'Stamina' }), el('b', { text: st + ' / ' + max }),
         el('div', { class: 'meter' }, [el('span', { style: 'width:' + (max ? Math.round(st / max * 100) : 0) + '%' })])]),
-      el('div', { class: 'row center' }, [btn('\u22125', function () { bump('st', -5, 0, max); }, 'btn-small'), btn('\u22121', function () { bump('st', -1, 0, max); }, 'btn-small'),
-        btn('+1', function () { bump('st', 1, 0, max); }, 'btn-small'), btn('+5', function () { bump('st', 5, 0, max); }, 'btn-small'),
-        btn('Full', function () { p.st = max; save(); render(); }, 'btn-small btn-ghost')]),
+      el('div', { class: 'row center' }, [btn('\u22125', function () { sheetOp(p, { st: -5 }); }, 'btn-small'), btn('\u22121', function () { sheetOp(p, { st: -1 }); }, 'btn-small'),
+        btn('+1', function () { sheetOp(p, { st: 1 }); }, 'btn-small'), btn('+5', function () { sheetOp(p, { st: 5 }); }, 'btn-small'),
+        btn('Full', function () { sheetOp(p, { full: true }); }, 'btn-small btn-ghost')]),
       el('div', { class: 'st-nums' }, [
         el('span', { class: p.wounds >= 7 ? 'bad' : null }, ['Wounds ', el('b', { text: (p.wounds || 0) + '/10' })].concat(pm('wounds', 0, 10, 'wounds'))),
         el('span', null, ['AD ', el('b', { text: String(p.ad || 0) })].concat(pm('ad', 0, 99, 'AD'))),
         el('span', null, ['Cruelty ', el('b', { text: String(p.cruelty || 0) })].concat(pm('cruelty', 0, 20, 'cruelty')))]),
       el('div', { class: 'fine', text: 'Kept on this screen only. Link the player\u2019s sheet to see and change everything live.' })]);
   }
+  function linkedTile(p) {
+    function bump(k, n) { sheetOp(p, { [k]: n }); save(); render(); }
+    function pm(k, lo, hi) { return [btn('\u2212', function () { bump(k, -1); }, 'btn-small'), btn('+', function () { bump(k, 1); }, 'btn-small')]; }
+    var max = p.stMax || 0, st = Math.min(p.st || 0, max);
+    return el('div', { class: 'st-tile linked' }, [statusHead(p),
+      el('div', { class: 'st-stam' }, [el('span', { class: 'lbl', text: 'Stamina' }), el('b', { text: st + ' / ' + max }),
+        el('div', { class: 'meter' }, [el('span', { style: 'width:' + (max ? Math.round(st / max * 100) : 0) + '%' })])]),
+      el('div', { class: 'row center' }, [btn('\u22125', function () { bump('st', -5); }, 'btn-small'), btn('\u22121', function () { bump('st', -1); }, 'btn-small'),
+        btn('+1', function () { bump('st', 1); }, 'btn-small'), btn('+5', function () { bump('st', 5); }, 'btn-small'),
+        btn('Full', function () { sheetOp(p, { full: true }); }, 'btn-small btn-ghost')]),
+      el('div', { class: 'st-nums' }, [
+        el('span', { class: p.wounds >= 7 ? 'bad' : null }, ['Wounds ', el('b', { text: (p.wounds || 0) + '/10' })].concat(pm('wounds', 0, 10))),
+        el('span', null, ['AD ', el('b', { text: String(p.ad || 0) })].concat(pm('ad', 0, 99))),
+        el('span', null, ['Cruelty ', el('b', { text: String(p.cruelty || 0) })].concat(pm('cruelty', 0, 20)))]),
+      el('div', { class: 'fine', text: 'Linked to ' + (p.owner ? p.owner + '\u2019s' : 'the player\u2019s') + ' sheet: changes go live. (Hit/rest need iframe.)' })]);
+  }
   function renderStatus() {
     var box = $('sec-status'), live = cloudOn();
     if (!box.firstChild) {
       box.appendChild(el('h2', null, ['Party status', el('small', { text: 'live from the players\u2019 sheets' })]));
-      box.appendChild(el('p', { class: 'hint', text: 'Each linked crow shows its own sheet\u2019s vitals: the buttons work just as they do for the player and save to their sheet at once, ' +
-        'and their changes show up here within a second. Damage goes through worn armor and parry weapons first, as on the sheet.' }));
+      box.appendChild(el('p', { class: 'hint', text: 'Each linked crow shows its vitals in a lightweight tile: buttons change Stamina, wounds, AD, and cruelty directly. ' +
+        'Changes propagate to the player\u2019s sheet at once. Complex operations (combat hits, rest) use the iframe path.' }));
       box.appendChild(el('div', { class: 'row', style: 'margin-bottom:.6rem' }, [btn('Everyone to full Stamina', function () {
-        activePCs().forEach(function (p) { sheetOp(p, { full: true }); });   // linked crows: on their sheets
+        activePCs().forEach(function (p) { sheetOp(p, { full: true }); });
         save(); render();
-      }, 'btn-small btn-ghost', 'Every active crow back to full Stamina (linked crows on their own sheets)')]));
+      }, 'btn-small btn-ghost', 'Every active crow back to full Stamina')]));
       box.appendChild(el('div', { class: 'st-grid', id: 'st-grid' }));
       box.appendChild(el('p', { class: 'hint', id: 'st-empty', text: 'No crows in play. Add some below.' }));
     }
     var grid = $('st-grid'), pcs = statusPCs(), keep = {};
     $('st-empty').style.display = pcs.length ? 'none' : '';
     Array.prototype.forEach.call(grid.querySelectorAll('.st-tile.local'), function (n) { n.remove(); });
+    Array.prototype.forEach.call(grid.querySelectorAll('.st-tile.linked'), function (n) { n.remove(); });
     pcs.forEach(function (p, i) {
       if (p.link && live) {
         keep[p.link] = true;
+        // Lightweight tile for display
+        var tile = linkedTile(p);
+        tile.style.order = i;
+        grid.appendChild(tile);
+        // Hidden iframe for complex ops (hit, restore, rest) — keeps the player sheet path alive
         var f = statusFrames[p.link];
         if (!f) {
-          f = statusFrames[p.link] = { head: el('div'), frame: el('iframe', { class: 'st-frame', title: 'Vitals of ' + (p.name || 'a linked crow'),
+          f = statusFrames[p.link] = { head: el('div'),
+            frame: el('iframe', { class: 'st-frame st-frame-hidden', title: 'Vitals of ' + (p.name || 'a linked crow'),
             src: 'Crows_Character_Generator.html?link=' + encodeURIComponent(p.link) + '&view=status' }) };
-          f.tile = el('div', { class: 'st-tile linked' }, [f.head, f.frame]);
-          grid.appendChild(f.tile);
+          // Hide the iframe but keep it in the DOM for CrowsPlay.refChange access
+          f.frame.style.display = 'none';
+          box.appendChild(f.frame);
         }
-        f.head.replaceWith(f.head = el('div', { class: 'row center' }, [statusHead(p), btn('Open sheet', function () { openSheet(p); }, 'btn-small btn-ghost', 'See the whole sheet'), takeBtn(p)]));
-        f.tile.style.order = i;
       } else {
         var t = localTile(p); t.className += ' local'; t.style.order = i;
         grid.appendChild(t);
       }
     });
+    // Clean up old frames
     Object.keys(statusFrames).forEach(function (id) { if (!keep[id]) { statusFrames[id].tile.remove(); delete statusFrames[id]; } });
   }
   // A frame reports its height whenever it changes; size it to fit, so there's no inner scrollbar.

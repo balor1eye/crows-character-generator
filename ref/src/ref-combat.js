@@ -763,9 +763,16 @@
 
   function renderCombat() {
     var c = S().combat, living = c.list.filter(function (x) { return !x.dead && x.kind === 'foe'; }), run = runningEnc();
-    card('sec-combat', el('h2', null, ['Combat', el('small', { text: living.length ? plural(living.length, 'foe') + ' standing' : 'tracker' })]), [
-      run ? el('div', { class: 'pending run-note' }, [el('b', { text: 'Running encounter: ' }), encLink(run.id, run.name || 'untitled'), '. End it from the Encounters tab to save the result.']) : null
-    ].concat(combatUI(false)));
+    if (run) {
+      card('sec-combat', el('h2', null, ['Combat', el('small', { text: 'encounter running' })]), [
+        el('div', { class: 'pending run-note' }, [
+          el('b', { text: 'Running encounter: ' }), encLink(run.id, run.name || 'untitled'), '. End it from the Encounters tab to save the result. ',
+          btn('Go to the fight →', function () { setTab('encounters'); }, 'btn-small btn-primary')])
+      ]);
+    } else {
+      card('sec-combat', el('h2', null, ['Combat', el('small', { text: living.length ? plural(living.length, 'foe') + ' standing' : 'tracker' })]),
+        combatUI(false));
+    }
   }
   /* The combat tracker's controls and list, for the Session tab and for a running encounter (inRun). */
   function combatUI(inRun) {
