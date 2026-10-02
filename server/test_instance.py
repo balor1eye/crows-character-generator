@@ -411,6 +411,31 @@ def smoke():
     check("the new account exists", nu is not None)
     if nu: admin.post("admin.deleteUser", {"id": nu["id"]})
 
+    # Ref pictures (maps and creature art kept in the account)
+    import io
+    from PIL import Image
+    jpg = io.BytesIO(); Image.new("RGB", (40, 30), "#39c").save(jpg, "JPEG"); img64 = base64.b64encode(jpg.getvalue()).decode()
+    th = "data:image/jpeg;base64," + img64
+    ref.post("art.delete", {"key": "m:smoketest"})
+    ref.post("art.save", {"key": "m:smoketest", "title": "Smoke map", "thumb": th, "image": img64})
+    ref.post("art.save", {"key": "c:Smoke Wolf", "title": "Smoke Wolf", "thumb": th, "image": img64})
+    lst = ref.get("art.list")["art"]
+    check("a saved map and creature picture are listed", {"m:smoketest", "c:Smoke Wolf"} <= {a["key"] for a in lst})
+    got = ref.http.open(urllib.request.Request(BASE + "api.php?" + urllib.parse.urlencode({"a": "art.file", "key": "m:smoketest"}), headers={"User-Agent": UA}))
+    check("the image comes back as a JPEG", got.headers["Content-Type"] == "image/jpeg" and got.read()[:3] == b"\xff\xd8\xff")
+    ref.post("art.save", {"key": "m:smoketest", "title": "Renamed", "thumb": th})
+    check("a rename keeps the image", next(a for a in ref.get("art.list")["art"] if a["key"] == "m:smoketest")["title"] == "Renamed")
+    fails("a player can't list pictures", 403, lambda: p1.get("art.list"))
+    fails("a non-JPEG is refused", 400, lambda: ref.post("art.save", {"key": "m:smoketest2", "title": "x", "thumb": th, "image": base64.b64encode(b"not an image").decode()}))
+    fails("a bad key is refused", 400, lambda: ref.post("art.save", {"key": "../x", "title": "x", "thumb": th, "image": img64}))
+    try:
+        p1.http.open(urllib.request.Request(BASE + "api.php?a=art.file&key=m:smoketest", headers={"User-Agent": UA})); other = 200
+    except urllib.error.HTTPError as e:
+        other = e.code
+    check("another account can't fetch the image", other == 404)
+    ref.post("art.delete", {"key": "m:smoketest"}); ref.post("art.delete", {"key": "c:Smoke Wolf"})
+    check("deleted pictures are gone", not {"m:smoketest", "c:Smoke Wolf"} & {a["key"] for a in ref.get("art.list")["art"]})
+
     # clean up what this run made
     ref.post("link.remove", {"id": acc["id"]}); ref.post("link.remove", {"id": acc2["id"]})
     ref.post("delete", {"id": camp["id"]}, kind="campaigns")

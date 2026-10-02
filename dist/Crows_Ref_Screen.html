@@ -6178,9 +6178,11 @@ CROWS.NAME_IDEAS = {
   }
 
   // ------------------------------------------------------------------ Image pop-up and Maps tab
-  /* Pictures the Ref adds (maps, and art for any creature) live in this browser's IndexedDB: { key: 'c:<creature>' | 'm:<id>', title, thumb, blob, at }.
-     A creature's own art wins over the built-in picture. */
-  var custom = { creatures: {}, maps: [] }, blobUrls = {};
+  /* Pictures the Ref adds (maps, and art for any creature): { key: 'c:<creature>' | 'm:<id>', title, thumb, at, url | blob }.
+     Logged in, they are kept in the account (api.php art.*; `url` points at the image) so they follow the Ref to every device.
+     Otherwise (the offline file) they live in this browser's IndexedDB (`blob`). A creature's own art wins over the built-in picture. */
+  var custom = { creatures: {}, maps: [] }, blobUrls = {}, remote = false;
+  function cloudApi(method, action, query, body) { return window.CrowsCloud.api(method, action, query, body); }
   function artDb(mode, fn) {
     return new Promise(function (ok, no) {
       if (!window.indexedDB) return no(new Error('This browser can\'t store pictures.'));
@@ -6194,25 +6196,58 @@ CROWS.NAME_IDEAS = {
       };
     });
   }
-  function putArt(rec) { return artDb('readwrite', function (s) { return s.put(rec); }); }
+  function toBase64(blob) {
+    return new Promise(function (ok, no) { var r = new FileReader(); r.onload = function () { ok(String(r.result).split(',')[1]); }; r.onerror = function () { no(r.error); }; r.readAsDataURL(blob); });
+  }
+  function artUrl(rec) { return 'api.php?a=art.file&key=' + encodeURIComponent(rec.key) + '&v=' + rec.at; }
+  /* Save a picture (new, replaced, or just renamed: a record with no blob keeps the image it has). */
+  function putArt(rec) {
+    if (!remote) return artDb('readwrite', function (s) { return s.put(rec); });
+    return (rec.blob ? toBase64(rec.blob) : Promise.resolve(undefined)).then(function (img) {
+      var body = { key: rec.key, title: rec.title, thumb: rec.thumb };
+      if (img !== undefined) body.image = img;
+      return cloudApi('POST', 'art.save', '', body);
+    }).then(function (j) { rec.at = j.at; rec.url = artUrl(rec); delete rec.blob; });
+  }
   function removeArt(key) {
-    artDb('readwrite', function (s) { return s.delete(key); }).then(function () {
+    (remote ? cloudApi('POST', 'art.delete', '', { key: key }) : artDb('readwrite', function (s) { return s.delete(key); })).then(function () {
       if (blobUrls[key]) { URL.revokeObjectURL(blobUrls[key]); delete blobUrls[key]; }
-      delete custom.creatures[key.slice(2)]; custom.maps = custom.maps.filter(function (m) { return m.key !== key; }); render();
+      if (key.indexOf('c:') === 0) delete custom.creatures[key.slice(2)]; else custom.maps = custom.maps.filter(function (m) { return m.key !== key; });
+      render();
     }, function (e) { toast('Couldn\'t remove it: ' + e.message); });
   }
-  function blobUrl(rec) { return blobUrls[rec.key] || (blobUrls[rec.key] = URL.createObjectURL(rec.blob)); }
+  function blobUrl(rec) { return rec.url || blobUrls[rec.key] || (blobUrls[rec.key] = URL.createObjectURL(rec.blob)); }
+  function addLoaded(r) { if (r.key.indexOf('c:') === 0) custom.creatures[r.key.slice(2)] = r; else custom.maps.push(r); }
   function loadCustom() {
-    artDb('readonly', function (s) { return s.getAll(); }).then(function (all) {
-      (all || []).forEach(function (r) { if (r.key.indexOf('c:') === 0) custom.creatures[r.key.slice(2)] = r; else custom.maps.push(r); });
-      if (all && all.length) render();
-    }, function () { /* no storage: the built-in art still works */ });
+    var local = function () {
+      return artDb('readonly', function (s) { return s.getAll(); }).then(function (all) { return all || []; }, function () { return []; });
+    };
+    var cloud = window.CrowsCloud;
+    if (!cloud || !cloud.afterMe) { local().then(function (all) { all.forEach(addLoaded); if (all.length) render(); }); return; }
+    cloud.afterMe(function (user) {
+      if (!user || !user.canRef) { local().then(function (all) { all.forEach(addLoaded); if (all.length) render(); }); return; }
+      cloudApi('GET', 'art.list').then(function (j) {
+        remote = true;
+        (j.art || []).forEach(function (r) { r.url = artUrl(r); addLoaded(r); });
+        render();
+        // Pictures added on this device before they were kept in the account move up once.
+        return local().then(function (all) {
+          return all.reduce(function (p, r) {
+            return p.then(function () {
+              var have = r.key.indexOf('c:') === 0 ? custom.creatures[r.key.slice(2)] : custom.maps.filter(function (m) { return m.key === r.key; })[0];
+              return (have ? Promise.resolve() : putArt(r).then(function () { addLoaded(r); }))
+                .then(function () { return artDb('readwrite', function (s) { return s.delete(r.key); }); });
+            });
+          }, Promise.resolve()).then(function () { if (all.length) render(); });
+        });
+      }).catch(function () { remote = false; local().then(function (all) { all.forEach(addLoaded); if (all.length) render(); }); });
+    });
   }
   function artFor(name) {
     var c = custom.creatures[name];
     return c ? { thumb: c.thumb, file: blobUrl(c), custom: true } : REF.ART.creatures[name] || null;
   }
-  /* Choose a picture, shrink it (long side `max` px, plus a small thumbnail) and hand back { blob, thumb, name }. */
+  /* Choose a picture, shrink it (long side `max` px, under about 1.3 MB, plus a small thumbnail) and hand back { blob, thumb, name }. */
   function pickImage(max, thumbW, done) {
     var inp = el('input', { type: 'file', accept: 'image/*' });
     inp.onchange = function () {
@@ -6221,24 +6256,31 @@ CROWS.NAME_IDEAS = {
       img.onerror = function () { URL.revokeObjectURL(url); toast('That file isn\'t a picture this browser can open.'); };
       img.onload = function () {
         function draw(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h); return c; }
-        var k = Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight)), big = draw(Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k)),
-            tk = Math.min(1, thumbW / img.naturalWidth), th = draw(Math.round(img.naturalWidth * tk), Math.round(img.naturalHeight * tk));
-        URL.revokeObjectURL(url);
-        big.toBlob(function (blob) { done({ blob: blob, thumb: th.toDataURL('image/jpeg', .78), name: file.name.replace(/\.[^.]+$/, '') }); }, 'image/jpeg', .86);
+        function encode(k, q) {
+          return new Promise(function (ok) { draw(Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k)).toBlob(ok, 'image/jpeg', q); }).then(function (blob) {
+            return !blob || (blob.size <= 1300000) || (k < .2) ? blob : encode(q > .55 ? k : k * .8, q > .55 ? q - .12 : q);
+          });
+        }
+        var tk = Math.min(1, thumbW / img.naturalWidth), th = draw(Math.round(img.naturalWidth * tk), Math.round(img.naturalHeight * tk));
+        encode(Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight)), .86).then(function (blob) {
+          URL.revokeObjectURL(url);
+          if (!blob) return toast('That picture could not be shrunk.');
+          done({ blob: blob, thumb: th.toDataURL('image/jpeg', .78), name: file.name.replace(/\.[^.]+$/, '') });
+        });
       };
       img.src = url;
     };
     inp.click();
   }
   function addCreatureArt(name) {
-    pickImage(3000, 240, function (p) {
+    pickImage(2400, 240, function (p) {
       var rec = { key: 'c:' + name, title: name, thumb: p.thumb, blob: p.blob, at: Date.now() };
       putArt(rec).then(function () { if (blobUrls[rec.key]) { URL.revokeObjectURL(blobUrls[rec.key]); delete blobUrls[rec.key]; } custom.creatures[name] = rec; toast('Art saved for ' + name + '.'); render(); },
         function (e) { toast('Couldn\'t save it: ' + e.message); });
     });
   }
   function addMap() {
-    pickImage(5000, 420, function (p) {
+    pickImage(4500, 420, function (p) {
       var title = prompt('Map name', p.name); if (title === null) return;
       var rec = { key: 'm:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: (title.trim() || p.name).slice(0, 60), thumb: p.thumb, blob: p.blob, at: Date.now() };
       putArt(rec).then(function () { custom.maps.push(rec); toast('Map added.'); render(); }, function (e) { toast('Couldn\'t save it: ' + e.message); });
@@ -6275,14 +6317,14 @@ CROWS.NAME_IDEAS = {
     function mine(m) {
       return el('button', { type: 'button', class: 'map-tile', onclick: function () {
         lightbox(m.title, [{ label: '', file: blobUrl(m) }], m.thumb, [
-          { label: 'Rename', fn: function () { var t = prompt('Map name', m.title); if (t && t.trim()) { m.title = t.trim().slice(0, 60); putArt(m).then(render); } } },
+          { label: 'Rename', fn: function () { var t = prompt('Map name', m.title); if (t && t.trim()) { var old = m.title; m.title = t.trim().slice(0, 60); putArt(m).then(render, function (e) { m.title = old; toast('Couldn\'t rename it: ' + e.message); }); } } },
           { label: 'Delete', fn: function () { if (confirm('Delete the map "' + m.title + '" from this device?')) removeArt(m.key); } }]);
       } }, [el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }), el('span', { class: 'b-name', text: m.title }), el('span', { class: 'fine', text: 'Yours' })]);
     }
     var mk = custom.maps.slice().sort(function (a, b) { return a.at - b.at; });
     card('sec-maps', el('h2', null, ['Maps', el('small', { text: 'tap a map to open it full size' })]), [
       el('div', { class: 'row' }, [btn('Add a map…', addMap, 'btn-small btn-primary'),
-        el('span', { class: 'fine', text: 'Pictures you add are kept in this browser only (not in the campaign file or your account).' })]),
+        el('span', { class: 'fine', text: remote ? 'Pictures you add are kept in your account, so they follow you to other devices.' : 'Not logged in: pictures you add are kept in this browser only.' })]),
       el('div', { class: 'map-list' }, mk.map(mine).concat(ART.maps.map(function (m) {
         return el('button', { type: 'button', class: 'map-tile', onclick: function () { lightbox(m.title, m.variants, m.thumb); } }, [
           el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }),

@@ -278,3 +278,17 @@ CREATE TABLE IF NOT EXISTS user_prefs (
   updated_at DATETIME NOT NULL,
   CONSTRAINT fk_userprefs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Pictures a Ref added in the Ref Screen (their own maps, and art for creatures), so they follow the account to every device.
+-- art_key is 'm:<id>' for a map or 'c:<creature name>' for creature art; the image is a JPEG (the app shrinks it first).
+CREATE TABLE IF NOT EXISTS ref_art (
+  user_id INT UNSIGNED NOT NULL,
+  art_key VARCHAR(100) NOT NULL,
+  title VARCHAR(100) NOT NULL,
+  thumb MEDIUMTEXT NOT NULL,
+  image MEDIUMBLOB NOT NULL,
+  bytes INT UNSIGNED NOT NULL,
+  updated_at DATETIME NOT NULL,
+  PRIMARY KEY (user_id, art_key),
+  CONSTRAINT fk_refart_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

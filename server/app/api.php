@@ -1568,6 +1568,76 @@ function a_prefs_save(): array {
     return ['prefs' => json_decode($json)];
 }
 
+// ---------------------------------------------------------------- Ref pictures
+/*
+ * Maps and creature art a Ref adds on the Ref Screen, kept in their account (ref_art). art.list gives each picture's key, title and
+ * small thumbnail; art.file serves one image (a plain JPEG, not JSON); art.save and art.delete change them. The app shrinks images
+ * before sending, so each is capped at ART_MAX_BYTES, and an account at ART_MAX_ITEMS pictures / ART_MAX_TOTAL bytes.
+ */
+const ART_MAX_BYTES = 1400000;
+const ART_MAX_ITEMS = 150;
+const ART_MAX_TOTAL = 150000000;
+function art_key(string $k): string {
+    if (!preg_match('/^(m:[a-z0-9]{1,24}|c:[^\x00-\x1f<>]{1,60})$/u', $k)) fail('That picture has a bad name.');
+    return $k;
+}
+function a_art_list(): array {
+    $s = need_login();
+    if (!can_ref($s)) fail('Only Refs can keep pictures.', 403);
+    $rows = q('SELECT art_key, title, thumb, bytes, updated_at FROM ref_art WHERE user_id = ? ORDER BY updated_at', [$s['id']])->fetchAll();
+    return ['art' => array_map(function ($r) {
+        return ['key' => $r['art_key'], 'title' => $r['title'], 'thumb' => $r['thumb'], 'bytes' => (int)$r['bytes'], 'at' => strtotime($r['updated_at'] . ' UTC')];
+    }, $rows)];
+}
+function a_art_save(): array {
+    $s = need_login();
+    if (!can_ref($s)) fail('Only Refs can keep pictures.', 403);
+    $key = art_key(str('key', 100));
+    $title = trim(str('title', 100));
+    $thumb = str('thumb', 150000);
+    if ($title === '' || !preg_match('#^data:image/jpeg;base64,[A-Za-z0-9+/=]+$#', $thumb)) fail('That picture could not be read.');
+    if (!array_key_exists('image', body())) {   // a rename: keep the image
+        $at = q('SELECT updated_at FROM ref_art WHERE user_id = ? AND art_key = ?', [$s['id'], $key])->fetchColumn();
+        if ($at === false) fail('That picture is gone.', 404);
+        q('UPDATE ref_art SET title = ? WHERE user_id = ? AND art_key = ?', [mb_substr($title, 0, 100), $s['id'], $key]);
+        return ['at' => strtotime($at . ' UTC')];
+    }
+    $img = base64_decode(str('image', 2000000), true);
+    if ($img === false || $img === '' || strlen($img) > ART_MAX_BYTES) fail('That picture is too large (1.4 MB after shrinking).', 413);
+    $info = @getimagesizefromstring($img);
+    if (!$info || $info[2] !== IMAGETYPE_JPEG) fail('Pictures must be JPEG.');
+    $have = q('SELECT COUNT(*) AS n, COALESCE(SUM(bytes), 0) AS b, COALESCE(SUM(CASE WHEN art_key = ? THEN bytes END), 0) AS mine FROM ref_art WHERE user_id = ?', [$key, $s['id']])->fetch();
+    $exists = (int)q('SELECT COUNT(*) FROM ref_art WHERE user_id = ? AND art_key = ?', [$s['id'], $key])->fetchColumn();
+    if (!$exists && (int)$have['n'] >= ART_MAX_ITEMS) fail('You have the most pictures an account can keep. Delete some first.', 413);
+    if ((int)$have['b'] - (int)$have['mine'] + strlen($img) > ART_MAX_TOTAL) fail('Your pictures are using all the space an account gets. Delete some first.', 413);
+    $at = now();
+    q('INSERT INTO ref_art (user_id, art_key, title, thumb, image, bytes, updated_at) VALUES (?,?,?,?,?,?,?)
+       ON DUPLICATE KEY UPDATE title = VALUES(title), thumb = VALUES(thumb), image = VALUES(image), bytes = VALUES(bytes), updated_at = VALUES(updated_at)',
+      [$s['id'], $key, mb_substr($title, 0, 100), $thumb, $img, strlen($img), $at]);
+    return ['at' => strtotime($at . ' UTC')];
+}
+function a_art_delete(): array {
+    $s = need_login();
+    q('DELETE FROM ref_art WHERE user_id = ? AND art_key = ?', [$s['id'], art_key(str('key', 100))]);
+    return [];
+}
+/* art.file?key=...: the image itself. Not JSON, so run_api hands it over before setting JSON headers. */
+function serve_art(): void {
+    $s = current_session();
+    $k = $_GET['key'] ?? '';
+    $img = null;
+    if ($s && can_ref($s) && is_string($k) && preg_match('/^(m:[a-z0-9]{1,24}|c:[^\x00-\x1f<>]{1,60})$/u', $k)) {
+        $img = q('SELECT image FROM ref_art WHERE user_id = ? AND art_key = ?', [$s['id'], $k])->fetchColumn();
+    }
+    if ($img === false || $img === null) { http_response_code(404); header('Content-Type: text/plain'); echo 'Not found'; return; }
+    header('Content-Type: image/jpeg');
+    header('X-Content-Type-Options: nosniff');
+    header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
+    header('Cache-Control: private, max-age=31536000, immutable');   // the URL carries the picture's version (&v=)
+    header('Content-Length: ' . strlen($img));
+    echo $img;
+}
+
 // ---------------------------------------------------------------- admin
 function a_admin_users(): array {
     need_admin();
@@ -1699,6 +1769,9 @@ const ACTIONS = [
     'combat.act' => ['POST', 'a_combat_act', true],
     'prefs.get' => ['GET', 'a_prefs_get', false],
     'prefs.save' => ['POST', 'a_prefs_save', true],
+    'art.list' => ['GET', 'a_art_list', false],
+    'art.save' => ['POST', 'a_art_save', true],
+    'art.delete' => ['POST', 'a_art_delete', true],
     'notes.list' => ['GET', 'a_notes_list', false],
     'notes.dismiss' => ['POST', 'a_notes_dismiss', true],
     'admin.users' => ['GET', 'a_admin_users', false],
@@ -1711,6 +1784,7 @@ const ACTIONS = [
 ];
 
 function run_api(): void {
+    if (($_GET['a'] ?? '') === 'art.file' && $_SERVER['REQUEST_METHOD'] === 'GET') { try { serve_art(); } catch (Throwable $e) { error_log('crows art: ' . $e); http_response_code(500); } return; }
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
