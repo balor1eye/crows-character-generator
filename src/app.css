@@ -433,3 +433,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
 #cbt-act h3 { margin: .7rem 0 .2rem; }
 .char-art { width: 4.5rem; height: 4.5rem; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 .art-field .with-btn { align-items: center; }
+button.cbt-art { padding: 0; background: none; cursor: zoom-in; flex: none; border: 0; }
+.art-pop { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .86); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .5rem; padding: .5rem; cursor: zoom-out; }
+.art-pop img { max-width: 100%; max-height: calc(100% - 2.5rem); object-fit: contain; }
+.art-pop-t { color: #fff; font-weight: 600; }

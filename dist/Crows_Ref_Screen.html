@@ -6309,7 +6309,6 @@ CROWS.NAME_IDEAS = {
     views.forEach(function (v, i) { if (views.length > 1) sw.appendChild(el('button', { type: 'button', text: v.label, onclick: function () { show(i); } })); });
     var box = el('div', { id: 'lightbox', class: 'lightbox', role: 'dialog', 'aria-modal': 'true', 'aria-label': title, onclick: function (e) { if (e.target === box) close(); } }, [
       el('div', { class: 'lb-bar' }, [el('b', { text: title }), views.length > 1 ? sw : null, el('span', { class: 'fine', text: 'Click the picture to zoom' }),
-        el('a', { class: 'btn btn-small', href: views[0].file, target: '_blank', rel: 'noopener', text: 'Open in a tab', onclick: function () { this.href = views[cur].file; } }),
         (actions || []).map(function (a) { return btn(a.label, function () { close(); a.fn(); }, 'btn-small'); }),
         btn('Close', close, 'btn-small')].reduce(function (all, k) { return all.concat(k); }, [])), msg, wrap]);
     document.body.appendChild(box); document.addEventListener('keydown', onKey); show(0);

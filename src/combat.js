@@ -367,6 +367,14 @@
     return act({ type: 'maneuver', name: name, target: t ? t.id : '', targetName: t ? t.name : '', text: text || '' }).then(function (ok) { if (ok) { C.toast(name + ': sent to the Ref.'); update(); } return ok; });
   }
   /* A rolled maneuver, through the dice panel (expertise and conditions as for any test). */
+  /* A foe's art full size in a pop-up over the page (click anywhere or Esc to close). */
+  function artPopup(title, src) {
+    var box = el('div', { class: 'art-pop', role: 'dialog', 'aria-modal': 'true', 'aria-label': title, onclick: close }, [
+      el('img', { src: src, alt: title }), el('div', { class: 'art-pop-t', text: title })]);
+    function close() { box.remove(); document.removeEventListener('keydown', onKey); }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    document.body.appendChild(box); document.addEventListener('keydown', onKey);
+  }
   function rollManeuver(name, charName, extra) {
     var o = { label: name, charName: charName, charVal: chars()[charName], kind: 'maneuver', group: 'General', maneuver: name };
     Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; });
@@ -396,7 +404,7 @@
     var hitsMe = m && (x.tgt === m.id || x.tgt2 === m.id);
     return el('div', { class: 'cbt-row k-' + x.kind + (x.dead ? ' dead' : '') + (on || also ? ' on' : '') + (mine ? ' me' : '') }, [
       x.art && x.kind === 'pc' ? el('span', { class: 'cbt-art' }, [el('img', { src: x.art, alt: x.name })]) :
-        x.art ? el('a', { class: 'cbt-art', href: x.art, target: '_blank', rel: 'noopener', title: 'View ' + x.name + ' full size' }, [el('img', { src: x.art, alt: x.name, loading: 'lazy' })]) : null,
+        x.art ? el('button', { type: 'button', class: 'cbt-art', title: 'View ' + x.name + ' full size', 'aria-label': 'View ' + x.name + ' full size', onclick: function () { artPopup(x.name, x.art); } }, [el('img', { src: x.art, alt: x.name, loading: 'lazy' })]) : null,
       el('div', { class: 'cbt-who' }, [
         el('b', { text: x.name + (mine ? ' (you)' : '') }),
         el('div', { class: 'fine', text: [x.type, x.size, nums].filter(Boolean).join(' · ') })]),

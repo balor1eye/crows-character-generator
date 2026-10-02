@@ -482,6 +482,10 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
 #cbt-act h3 { margin: .7rem 0 .2rem; }
 .char-art { width: 4.5rem; height: 4.5rem; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 .art-field .with-btn { align-items: center; }
+button.cbt-art { padding: 0; background: none; cursor: zoom-in; flex: none; border: 0; }
+.art-pop { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .86); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .5rem; padding: .5rem; cursor: zoom-out; }
+.art-pop img { max-width: 100%; max-height: calc(100% - 2.5rem); object-fit: contain; }
+.art-pop-t { color: #fff; font-weight: 600; }
 
 </style>
 <script>
@@ -11491,6 +11495,14 @@ var CROWS_TRAIT_TREES = [
     return act({ type: 'maneuver', name: name, target: t ? t.id : '', targetName: t ? t.name : '', text: text || '' }).then(function (ok) { if (ok) { C.toast(name + ': sent to the Ref.'); update(); } return ok; });
   }
   /* A rolled maneuver, through the dice panel (expertise and conditions as for any test). */
+  /* A foe's art full size in a pop-up over the page (click anywhere or Esc to close). */
+  function artPopup(title, src) {
+    var box = el('div', { class: 'art-pop', role: 'dialog', 'aria-modal': 'true', 'aria-label': title, onclick: close }, [
+      el('img', { src: src, alt: title }), el('div', { class: 'art-pop-t', text: title })]);
+    function close() { box.remove(); document.removeEventListener('keydown', onKey); }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    document.body.appendChild(box); document.addEventListener('keydown', onKey);
+  }
   function rollManeuver(name, charName, extra) {
     var o = { label: name, charName: charName, charVal: chars()[charName], kind: 'maneuver', group: 'General', maneuver: name };
     Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; });
@@ -11520,7 +11532,7 @@ var CROWS_TRAIT_TREES = [
     var hitsMe = m && (x.tgt === m.id || x.tgt2 === m.id);
     return el('div', { class: 'cbt-row k-' + x.kind + (x.dead ? ' dead' : '') + (on || also ? ' on' : '') + (mine ? ' me' : '') }, [
       x.art && x.kind === 'pc' ? el('span', { class: 'cbt-art' }, [el('img', { src: x.art, alt: x.name })]) :
-        x.art ? el('a', { class: 'cbt-art', href: x.art, target: '_blank', rel: 'noopener', title: 'View ' + x.name + ' full size' }, [el('img', { src: x.art, alt: x.name, loading: 'lazy' })]) : null,
+        x.art ? el('button', { type: 'button', class: 'cbt-art', title: 'View ' + x.name + ' full size', 'aria-label': 'View ' + x.name + ' full size', onclick: function () { artPopup(x.name, x.art); } }, [el('img', { src: x.art, alt: x.name, loading: 'lazy' })]) : null,
       el('div', { class: 'cbt-who' }, [
         el('b', { text: x.name + (mine ? ' (you)' : '') }),
         el('div', { class: 'fine', text: [x.type, x.size, nums].filter(Boolean).join(' · ') })]),
