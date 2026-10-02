@@ -369,6 +369,16 @@
     if (area === 'pack' && spanOf(card, 'pack') > 1) return card.key + ' needs ' + spanOf(card, 'pack') + ' free slots side by side in one backpack row.';
     return 'Not enough free slots there' + (spanOf(card, area) > 1 ? ' (' + card.key + ' takes ' + spanOf(card, area) + ')' : '') + '.';
   }
+  /* Can a hand take one of these now (Pick Up Item needs a free hand; two-handed items need both)? */
+  function handFits(key) { return firstFit({ id: -1, key: key, qty: 1 }, 'hand', occupancy()) >= 0; }
+  /* An item handed over in a fight (picked up): into a free hand, else the backpack or belt, else set aside. Returns the area. */
+  function takeItem(o) {
+    var c = liveProps(o, newCard(o.key, Math.max(1, Math.min(item(o.key).st, o.qty | 0 || 1)))), occ = occupancy();
+    state.inv.push(c);
+    var spot = (c.qty === 1 ? ['hand', 'pack', 'belt'] : ['pack', 'belt']).map(function (a) { return [a, firstFit(c, a, occ)]; }).filter(function (x) { return x[1] >= 0; })[0];
+    if (spot) place(c, spot[0], spot[1]);
+    return c.area;
+  }
   /* Add found or bought items: into the backpack, then the belt; whatever doesn't fit is set aside. True if all of it is carried. */
   function addItem(key, q) {
     var st = item(key).st, all = true;
@@ -398,7 +408,7 @@
   // Live, at-the-table state (Play mode). stamina null = at maximum; wounds maps backpack slot index -> 'w' or 's' (starvation).
   function freshPlay() {
     return { stamina: null, cruelty: 0, conds: {}, spent: {}, temp: {}, wounds: {}, dt: 0, miasma: false,
-      pendingXP: 0, xpLog: [], log: [], magic: {}, magicMulti: {}, petStam: {} };
+      pendingXP: 0, xpLog: [], log: [], magic: {}, magicMulti: {}, petStam: {}, got: [] };
   }
   function normalizePlay(p) {
     var base = freshPlay();
@@ -486,7 +496,7 @@
   function adopt(s) {
     var base = freshState(s.bg);
     Object.keys(base).forEach(function (k) { if (!(k in s)) s[k] = base[k]; });
-    s.inv = s.inv.filter(function (c) { return c && CROWS.ITEMS[c.key]; }).map(function (c) {
+    s.inv = s.inv.filter(function (c) { return c && typeof c.key === 'string' && c.key && c.key.length <= 80; }).map(function (c) {
       return liveProps(c, { id: uid++, key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 });
     });
     s.play = normalizePlay(s.play);
@@ -1125,7 +1135,7 @@
       item: item, bg: bg, characteristics: characteristics, staminaMax: staminaMax, curStamina: curStamina,
       expertiseUses: expertiseUses, maxUses: maxUses, armorInfo: armorInfo, adMax: adMax, adNow: adNow,
       woundCount: woundCount, occupancy: occupancy, cardById: cardById, spanOf: spanOf, traitXP: traitXP,
-      areaSize: areaSize, extraBeltRule: extraBeltRule, moveCard: moveCard, moveToArea: moveToArea, refusal: refusal, addItem: addItem,
+      areaSize: areaSize, handFits: handFits, takeItem: takeItem, extraBeltRule: extraBeltRule, moveCard: moveCard, moveToArea: moveToArea, refusal: refusal, addItem: addItem,
       esBonusCount: esBonusCount, charBonusCount: charBonusCount, usePool: usePool, allocTotal: allocTotal
     }
   };

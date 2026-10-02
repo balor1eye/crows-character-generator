@@ -301,6 +301,8 @@ input.mini { width: 5.5rem; padding: .35rem .45rem; border: 1px solid var(--line
 .item-zones { display: flex; flex-direction: column; gap: .6rem; }
 .item-zone { border: 1px solid var(--line); border-radius: 6px; padding: .35rem .6rem .2rem; background: var(--slot); transition: background .1s; }
 .item-zone.zone-none { border-style: dashed; background: transparent; }
+.item-zone.zone-ground { border-color: #d9a441; border-style: dashed; }
+.item-row.ground .loc { color: #b07f22; }
 .item-zone.drop-ok { background: var(--slot-hover); outline: 2px dashed var(--sel); outline-offset: -2px; }
 .item-zone h3 { margin: 0 0 .1rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
 .item-zone h3 small { text-transform: none; letter-spacing: 0; font-weight: normal; }
@@ -381,6 +383,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
 .cbt-row { display: flex; gap: .6rem; align-items: center; flex-wrap: wrap; border: 1px solid var(--line); border-left: 4px solid var(--line); border-radius: 6px; padding: .4rem .6rem; background: var(--slot); }
 .cbt-row.k-foe { border-left-color: var(--bad); }
 .cbt-row.k-pc { border-left-color: var(--ok); }
+.cbt-row.k-item { border-left-color: #d9a441; }
 .cbt-row.k-ally { border-left-color: var(--sel); }
 .cbt-row.on { box-shadow: inset 0 0 0 2px var(--accent); }
 .cbt-row.me { background: color-mix(in srgb, var(--ok) 10%, var(--slot)); }
@@ -8520,6 +8523,16 @@ var CROWS_TRAIT_TREES = [
     if (area === 'pack' && spanOf(card, 'pack') > 1) return card.key + ' needs ' + spanOf(card, 'pack') + ' free slots side by side in one backpack row.';
     return 'Not enough free slots there' + (spanOf(card, area) > 1 ? ' (' + card.key + ' takes ' + spanOf(card, area) + ')' : '') + '.';
   }
+  /* Can a hand take one of these now (Pick Up Item needs a free hand; two-handed items need both)? */
+  function handFits(key) { return firstFit({ id: -1, key: key, qty: 1 }, 'hand', occupancy()) >= 0; }
+  /* An item handed over in a fight (picked up): into a free hand, else the backpack or belt, else set aside. Returns the area. */
+  function takeItem(o) {
+    var c = liveProps(o, newCard(o.key, Math.max(1, Math.min(item(o.key).st, o.qty | 0 || 1)))), occ = occupancy();
+    state.inv.push(c);
+    var spot = (c.qty === 1 ? ['hand', 'pack', 'belt'] : ['pack', 'belt']).map(function (a) { return [a, firstFit(c, a, occ)]; }).filter(function (x) { return x[1] >= 0; })[0];
+    if (spot) place(c, spot[0], spot[1]);
+    return c.area;
+  }
   /* Add found or bought items: into the backpack, then the belt; whatever doesn't fit is set aside. True if all of it is carried. */
   function addItem(key, q) {
     var st = item(key).st, all = true;
@@ -8549,7 +8562,7 @@ var CROWS_TRAIT_TREES = [
   // Live, at-the-table state (Play mode). stamina null = at maximum; wounds maps backpack slot index -> 'w' or 's' (starvation).
   function freshPlay() {
     return { stamina: null, cruelty: 0, conds: {}, spent: {}, temp: {}, wounds: {}, dt: 0, miasma: false,
-      pendingXP: 0, xpLog: [], log: [], magic: {}, magicMulti: {}, petStam: {} };
+      pendingXP: 0, xpLog: [], log: [], magic: {}, magicMulti: {}, petStam: {}, got: [] };
   }
   function normalizePlay(p) {
     var base = freshPlay();
@@ -8637,7 +8650,7 @@ var CROWS_TRAIT_TREES = [
   function adopt(s) {
     var base = freshState(s.bg);
     Object.keys(base).forEach(function (k) { if (!(k in s)) s[k] = base[k]; });
-    s.inv = s.inv.filter(function (c) { return c && CROWS.ITEMS[c.key]; }).map(function (c) {
+    s.inv = s.inv.filter(function (c) { return c && typeof c.key === 'string' && c.key && c.key.length <= 80; }).map(function (c) {
       return liveProps(c, { id: uid++, key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 });
     });
     s.play = normalizePlay(s.play);
@@ -9276,7 +9289,7 @@ var CROWS_TRAIT_TREES = [
       item: item, bg: bg, characteristics: characteristics, staminaMax: staminaMax, curStamina: curStamina,
       expertiseUses: expertiseUses, maxUses: maxUses, armorInfo: armorInfo, adMax: adMax, adNow: adNow,
       woundCount: woundCount, occupancy: occupancy, cardById: cardById, spanOf: spanOf, traitXP: traitXP,
-      areaSize: areaSize, extraBeltRule: extraBeltRule, moveCard: moveCard, moveToArea: moveToArea, refusal: refusal, addItem: addItem,
+      areaSize: areaSize, handFits: handFits, takeItem: takeItem, extraBeltRule: extraBeltRule, moveCard: moveCard, moveToArea: moveToArea, refusal: refusal, addItem: addItem,
       esBonusCount: esBonusCount, charBonusCount: charBonusCount, usePool: usePool, allocTotal: allocTotal
     }
   };
@@ -10111,14 +10124,17 @@ var CROWS_TRAIT_TREES = [
 
   // Items: Hands, Belt, Backpack, and Not carried, each a drop zone. Rows drag between them (or use their Move menu);
   // what's allowed is app.js's inventory rules (slots, both hands for two-handed, one item per hand, restricted extra belt slot).
+  // In a fight, On the ground too (combat.js): drop what's in your hands there, and drag an item from it into your hands to pick it up.
   var ZONES = [['hand', 'Hands'], ['belt', 'Belt'], ['pack', 'Backpack'], ['none', 'Not carried']];
   var ZONE_TIPS = {
     hand: 'Hands: what you wield or hold. One item per hand (no stacks); two-handed items take both. Getting an item into a hand in a fight: Draw From Belt or Draw From Pack.',
     belt: 'Belt: quick to reach. Draw From Belt takes 1-2 items as a maneuver.',
     pack: 'Backpack: 10 slots in two rows of 5; a multi-slot item stays on one row. Armor is worn from here. Draw From Pack: roll 1d10 and get the item if the roll is at least one of its slot numbers.',
-    none: 'Not carried: items set aside (left at camp, dropped, or stored). They don\u2019t count against your slots.'
+    none: 'Not carried: items set aside (left at camp or stored). They don\u2019t count against your slots.',
+    ground: 'On the ground in this fight: what anyone dropped, or the Ref put there. Drop what\u2019s in your hands here (free). Picking something up is the Pick Up Item maneuver and needs a free hand: drag it into Hands.'
   };
-  var dragCard = null;
+  var dragCard = null, dragGround = null;
+  function fightGround() { return window.CrowsCombat && !window.CrowsRefView ? window.CrowsCombat.ground() : null; }
   function zoneName(area) { return ZONES.filter(function (z) { return z[0] === area; })[0][1].toLowerCase(); }
   function moveItem(c, area, idx) {
     if (area === c.area && idx === undefined) return;
@@ -10127,11 +10143,17 @@ var CROWS_TRAIT_TREES = [
     commit(area === 'none' ? 'Set aside ' + key + '.' : 'Moved ' + key + ' to ' + (area === 'pack' ? 'backpack' : area) + '.');
   }
   function dropZone(node, area, idx) {
-    node.addEventListener('dragover', function (e) { if (dragCard) { e.preventDefault(); e.stopPropagation(); node.classList.add('drop-ok'); } });
+    node.addEventListener('dragover', function (e) { if (dragCard || dragGround) { e.preventDefault(); e.stopPropagation(); node.classList.add('drop-ok'); } });
     node.addEventListener('dragleave', function () { node.classList.remove('drop-ok'); });
     node.addEventListener('drop', function (e) {
       e.preventDefault(); e.stopPropagation(); node.classList.remove('drop-ok');
-      var c = dragCard; dragCard = null;
+      var c = dragCard, g = dragGround; dragCard = null; dragGround = null;
+      if (g) {   // an item from the ground: only into a hand (Pick Up Item)
+        if (area === 'hand') window.CrowsCombat.pickUp(g);
+        else if (area !== 'ground') C.toast('Picking something up puts it in a free hand (Pick Up Item): drag it into Hands.');
+        return;
+      }
+      if (c && area === 'ground') { window.CrowsCombat.drop([c]); return; }
       if (!c || c.area === area && (idx === undefined || c.idx === idx)) return;
       // Onto another item: stack or swap with it if the rules allow, otherwise anywhere free in its area.
       if (idx !== undefined && area !== 'none' && C.moveCard(c, area, idx)) { commit('Moved ' + c.key + ' to ' + (area === 'pack' ? 'backpack' : area) + '.'); return; }
@@ -10151,14 +10173,36 @@ var CROWS_TRAIT_TREES = [
       if (!cards.length && area !== 'none') box.appendChild(el('p', { class: 'fine empty', text: area === 'hand' ? 'Empty-handed.' : 'Nothing here.' }));
       zones.appendChild(box);
     });
+    var ground = fightGround();
+    if (ground) {
+      var gbox = el('div', { class: 'item-zone zone-ground', 'data-area': 'ground' }, [el('h3', { title: ZONE_TIPS.ground }, ['On the ground',
+        el('small', { class: 'muted', text: ground.length ? ' · this fight' : ' · this fight: drag what\u2019s in your hands here to drop it' })])]);
+      dropZone(gbox, 'ground');
+      ground.forEach(function (g) { gbox.appendChild(groundRow(g)); });
+      zones.appendChild(gbox);
+    }
     var pick = el('select', { 'aria-label': 'Item to add', title: 'An item you found or bought' }), qty = el('input', { type: 'number', class: 'mini', min: 1, max: 99, value: 1, 'aria-label': 'How many', title: 'How many' });
     Object.keys(CROWS.ITEMS).sort().forEach(function (k) { pick.appendChild(el('option', { value: k, text: k })); });
     var add = el('div', { class: 'row wrap item-add' }, [el('span', { class: 'fine', text: 'Found something?' }), pick, qty, btn('Add', function () {
       var key = pick.value, all = C.addItem(key, Math.max(1, Math.min(99, parseInt(qty.value, 10) || 1)));
       commit('Picked up ' + key + (all ? '.' : ' (no room for all of it: some is set aside).'));
     }, '', { title: 'Add it to your backpack, then your belt; anything that doesn\u2019t fit goes to Not carried' })]);
-    card('play-items', 'Items', [el('p', { class: 'hint', text: 'Drag items between your hands, belt, and backpack (or use an item\u2019s Move menu). In a fight, getting things out takes a maneuver: Draw From Belt or Draw From Pack. Usage dice: each 1 or 2 rolled removes a die.' }),
+    card('play-items', 'Items', [el('p', { class: 'hint', text: 'Drag items between your hands, belt, and backpack (or use an item\u2019s Move menu). In a fight, getting things out takes a maneuver: Draw From Belt or Draw From Pack' +
+      (ground ? '; drop what\u2019s in your hands On the ground, and drag an item from there into Hands to pick it up (a maneuver)' : '') + '. Usage dice: each 1 or 2 rolled removes a die.' }),
       zones, add]);
+  }
+  /* An item on the ground in a fight: drag it into Hands, or use Pick up. */
+  function groundRow(g) {
+    var it = item(g.key), why = window.CrowsCombat.cantPickUp(g);
+    var row = el('div', { class: 'item-row ground cat-' + it.cat, draggable: 'true',
+      title: g.key + (g.qty > 1 ? ' \u00d7' + g.qty : '') + (it.txt ? '\n' + it.txt : '') + (g.by ? '\nDropped by ' + g.by + '.' : '') + '\n' + (why || 'Drag it into Hands, or use Pick up (the Pick Up Item maneuver).'),
+      ondragstart: function (e) { dragGround = g; row.classList.add('dragging'); try { e.dataTransfer.setData('text/plain', g.key); e.dataTransfer.effectAllowed = 'move'; } catch (x) { /* old browsers */ } },
+      ondragend: function () { dragGround = null; row.classList.remove('dragging'); } }, [
+      el('span', { class: 'loc' }, [el('span', { class: 'grip', 'aria-hidden': 'true', text: '\u2807 ' }), 'Ground']),
+      el('span', { class: 'nm' }, [el('b', { text: g.key }), g.qty > 1 ? ' \u00d7' + g.qty : '', g.by ? el('small', { class: 'muted', text: ' (dropped by ' + g.by + ')' }) : null]),
+      el('span', { class: 'ctl' }, [btn('Pick up', function () { window.CrowsCombat.pickUp(g); }, '', { disabled: why ? true : null, title: why || 'Pick Up Item (a maneuver): into a free hand' })])
+    ]);
+    return row;
   }
   // An item's tooltip: its card text, size, where it is, and how to move it.
   function itemTip(c) {
@@ -10198,8 +10242,10 @@ var CROWS_TRAIT_TREES = [
     }, '', { title: 'Maneuver: regain 1d6 Stamina, or heal 1 wound if your Stamina is already full' }));
     else if (it.st > 1 || it.cat === 'consumable' || it.cat === 'food') ctl.push(btn(it.cat === 'consumable' || it.cat === 'food' ? 'Use 1' : '\u22121', function () { useOne(c); commit('Used 1 ' + c.key + '.'); }, '', { title: (it.cat === 'consumable' || it.cat === 'food' ? 'Use up one ' : 'Remove one ') + c.key + (c.qty > 1 ? ' (' + (c.qty - 1) + ' left after)' : ' (the last one)') }));
     if (carriedNow && it.st > 1 && c.qty < it.st && c.area !== 'hand') ctl.push(btn('+1', function () { c.qty++; delete c.ud; commit(); }, 'btn-ghost', { title: 'Add one to this stack (up to ' + it.st + ')' }));
-    var mv = el('select', { class: 'mini-sel', 'aria-label': 'Move ' + c.key, title: 'Move ' + c.key + ' to another area (it goes in the first free slot that fits)', onchange: function () { moveItem(c, this.value); } },
-      ZONES.map(function (z) { return el('option', { value: z[0], text: z[0] === c.area ? z[1] : '\u2192 ' + z[1] }); }));
+    var inFight = !!fightGround();
+    if (inFight && c.area === 'hand') ctl.push(btn('Drop', function () { window.CrowsCombat.drop([c]); }, 'btn-ghost', { title: 'Drop ' + c.key + ' on the ground in this fight (free). Anyone can pick it up' }));
+    var mv = el('select', { class: 'mini-sel', 'aria-label': 'Move ' + c.key, title: 'Move ' + c.key + ' to another area (it goes in the first free slot that fits)', onchange: function () { if (this.value === 'ground') window.CrowsCombat.drop([c]); else moveItem(c, this.value); this.value = c.area; } },
+      ZONES.concat(inFight && c.area === 'hand' ? [['ground', 'On the ground']] : []).map(function (z) { return el('option', { value: z[0], text: z[0] === c.area ? z[1] : '\u2192 ' + z[1] }); }));
     mv.value = c.area;
     ctl.push(mv);
     var row = el('div', { class: 'item-row cat-' + it.cat, draggable: 'true', title: itemTip(c),
@@ -10464,7 +10510,11 @@ var CROWS_TRAIT_TREES = [
     disengage: function () { return inHands().filter(function (c) { return !c.thrown && /Disengage/.test(item(c.key).txt); }).length; },
     /* Set or clear a condition on the sheet (Stand Up clears prone). */
     setCond: function (k, on) { var p = P(); if (!!p.conds[k] === !!on) return; if (on) p.conds[k] = true; else delete p.conds[k]; commit((on ? 'Now ' : 'No longer ') + k.toLowerCase() + '.'); },
-    conds: function () { return P().conds; } };
+    conds: function () { return P().conds; },
+    /* Log a change combat.js made to the sheet (an item dropped or picked up) and save it. */
+    note: function (msg) { commit(msg); },
+    /* Redraw the Items card (the fight's ground changed). */
+    items: function () { if ($('play') && mode() === 'play') renderItems(); } };
 
   /*
    * A hit from the Ref Screen's combat tracker, dealt the way Take damage does it: vulnerable, then worn armor and parry
@@ -10550,6 +10600,8 @@ var CROWS_TRAIT_TREES = [
  *    rolled ones: Grab, Knockback, Escape Grab, Jump), and the actions Taunt, Ready, Assist, or anything in words;
  *  - reactions: a counter when a creature misses this crow in melee or fails to grab or knock it back (the Ref
  *    Screen asks), and opportunity attacks or readied actions;
+ *  - the encounter's unattended items: drop what's in your hands (or Dump Backpack), and pick up what's on the
+ *    ground (Pick Up Item: a maneuver that needs a free hand; the Ref Screen hands it over in the fight it publishes);
  *  - the modifiers the rules apply: the target's surprise, prone, grabbed, squeezing, or unconscious state, and the
  *    battlefield (flanking, high ground, hidden, cover, dim light, darkness, ranged against an adjacent creature,
  *    beyond range), and an ally's assist on the next test.
@@ -10572,6 +10624,7 @@ var CROWS_TRAIT_TREES = [
   var usedAssists = {}, pendingAssist = null;
   var assistTo = '', assistChar = '';
   var loading = false, off = false;
+  var reaching = {};      // item id -> when this crow asked to pick it up (until the Ref Screen answers)
 
   /*
    * Spells with effects on creatures in a fight (beyond damage, which the sheet works out). By tier 1/2/3: Stamina
@@ -10632,7 +10685,9 @@ var CROWS_TRAIT_TREES = [
       var fresh = now ? myPrompts().filter(function (p) { return prompts.indexOf(p.id) < 0; }) : [];
       if (fresh.length) C.toast(fresh[0].fromName + ' missed you: you may counter (a reaction). See the Combat card.', 6000);
       fixTargets();
+      takeGiven();
       update();
+      Play.items();
     }, function (e) {
       if (e.status === 404 && /Unknown action/.test(e.message)) off = true;   // a server without live combat
     }).then(function () {
@@ -10646,6 +10701,70 @@ var CROWS_TRAIT_TREES = [
     a.round = c.round;
     return Cloud.api('POST', 'combat.act', '', { id: fight.charId, campaign: fight.campaign.id, action: a }).then(function () { return true; },
       function (e) { C.toast('Not sent to the Ref: ' + e.message, 5000); if (e.status === 409) load(); return false; });
+  }
+
+  // ------------------------------------------------------------------ unattended items
+  function sheet() { return window.CrowsApp.state; }
+  /* What's on the ground, as the players see it (the Ref's hidden items aren't sent), or null outside a fight. */
+  function ground() { var c = cur(); return c ? (c.items || []) : null; }
+  /* Items the Ref Screen handed this crow (pickups it won): onto the sheet, each once. */
+  function takeGiven() {
+    var c = cur();
+    if (!c || !fight.you) return;
+    var p = sheet().play, got = Array.isArray(p.got) ? p.got : (p.got = []), msgs = [];
+    (c.given || []).forEach(function (g) {
+      if (g.to !== fight.you || got.indexOf(g.id) >= 0) return;
+      got.push(g.id); delete reaching[g.item];
+      var area = C.takeItem(g);
+      msgs.push('Picked up ' + g.key + (area === 'hand' ? '.' : area === 'none' ? ': no room for it, so it’s set aside.' : ': no free hand, so it went in your ' + (area === 'pack' ? 'backpack' : 'belt') + '.'));
+    });
+    if (got.length > 200) got.splice(0, got.length - 200);
+    if (msgs.length) { Play.note(msgs.join(' ')); C.toast(msgs.join(' '), 4000); }
+  }
+  function isReaching(id) { return reaching[id] && Date.now() - reaching[id] < 10000; }
+  /* Why this crow can't pick the item up now ('' if it can): the Pick Up Item maneuver needs a free hand. */
+  function cantPickUp(it) {
+    var mine = me();
+    if (!mine) return 'Your crow isn’t in this fight.';
+    if (mine.dead || mine.conds.indexOf('Unconscious') >= 0) return 'Not while unconscious.';
+    if (isReaching(it.id)) return 'Already reaching for it: waiting for the Ref.';
+    if (!C.handFits(it.key)) return C.spanOf({ key: it.key }, 'hand') > 1 ? it.key + ' needs both hands free.' : 'You need a free hand to pick it up.';
+    return '';
+  }
+  function pickUp(it) {
+    var why = cantPickUp(it);
+    if (why) { C.toast(why); return; }
+    reaching[it.id] = Date.now();
+    spend('mnv');
+    act({ type: 'pickup', item: it.id, itemName: it.key }).then(function (ok) {
+      if (ok) C.toast('Pick Up Item: ' + it.key + ' (a maneuver). The Ref hands it over.'); else delete reaching[it.id];
+      update(); C.render();
+    });
+  }
+  function dropSpec(c) { var o = { key: c.key, qty: c.qty }; ['ud', 'dmg', 'ammo'].forEach(function (k) { if (typeof c[k] === 'number') o[k] = c[k]; }); return o; }
+  /*
+   * Put items down in the fight: what's in this crow's hands (dropping is free), or with dump, the backpack's contents
+   * (the Dump Backpack maneuver). They leave the sheet once the Ref Screen has the action. False if not allowed.
+   */
+  function drop(cards, dump) {
+    if (!cur() || !cards.length) return false;
+    if (!dump && cards.some(function (c) { return c.area !== 'hand'; })) {
+      C.toast('In a fight you can only drop what’s in your hands. Draw it first (Draw From Belt or Draw From Pack), or Dump Backpack.', 5000);
+      return false;
+    }
+    if (dump) spend('mnv');
+    act({ type: 'drop', dump: !!dump, items: cards.map(dropSpec) }).then(function (ok) {
+      if (!ok) return;
+      sheet().inv = sheet().inv.filter(function (c) { return cards.indexOf(c) < 0; });
+      Play.note((dump ? 'Dumped my backpack: ' : 'Dropped ') + cards.map(function (c) { return c.key + (c.qty > 1 ? ' ×' + c.qty : ''); }).join(', ') + '.');
+    });
+    return true;
+  }
+  function dumpBackpack() {
+    var pack = sheet().inv.filter(function (c) { return c.area === 'pack'; });
+    if (!pack.length) { maneuver('Dump Backpack', null, 'their backpack is empty'); return; }
+    if (!confirm('Dump your backpack? Everything in it (' + pack.map(function (c) { return c.key; }).join(', ') + ') lands on the ground, where anyone can pick it up.')) return;
+    drop(pack, true);
   }
 
   // ------------------------------------------------------------------ this crow's turn
@@ -10820,7 +10939,8 @@ var CROWS_TRAIT_TREES = [
         x.surprised ? [el('span', { class: 'chip warn', text: 'surprised', title: 'No turn in round 1; attacks against them get +1' })] : [],
         x.grabbedByName ? [el('span', { class: 'chip warn', text: 'grabbed by ' + x.grabbedByName })] : [],
         x.tauntName ? [el('span', { class: 'chip', text: 'taunted by ' + x.tauntName, title: 'Its attacks that don’t include ' + x.tauntName + ' take a bane' })] : [],
-        x.hidden ? [el('span', { class: 'chip', text: 'hidden' })] : [], x.squeeze ? [el('span', { class: 'chip', text: 'squeezing', title: 'Attacks against it get +1' })] : [],
+        x.hidden ? [el('span', { class: 'chip', text: 'hidden' })] : [],
+        (x.holds || []).map(function (h) { return el('span', { class: 'chip', text: 'holds ' + h }); }), x.squeeze ? [el('span', { class: 'chip', text: 'squeezing', title: 'Attacks against it get +1' })] : [],
         x.kind === 'pc' && x.done ? [el('span', { class: 'chip ok', text: 'done', title: 'Done for this round' })] : [],
         x.kind !== 'pc' && x.acted ? [el('span', { class: 'chip', text: 'acted' })] : [],
         x.tgtName ? [el('span', { class: 'chip' + (hitsMe ? ' warn' : ''), text: hitsMe ? 'attacking you' : '→ ' + x.tgtName + (x.tgt2Name ? ', ' + x.tgt2Name : ''), title: 'Who it’s attacking' })] : [])),
@@ -10867,6 +10987,17 @@ var CROWS_TRAIT_TREES = [
     if (friends.length) {
       box.appendChild(el('h3', { text: 'Crows and allies' }));
       box.appendChild(el('div', { class: 'cbt-list' }, friends.map(row)));
+    }
+    var items = c.items || [];
+    if (items.length) {
+      box.appendChild(el('h3', { text: 'On the ground' }));
+      box.appendChild(el('div', { class: 'cbt-list cbt-ground' }, items.map(function (it) {
+        var why = cantPickUp(it);
+        return el('div', { class: 'cbt-row k-item', title: (C.item(it.key).txt || it.key) }, [
+          el('div', { class: 'cbt-who' }, [el('b', { text: it.key + (it.qty > 1 ? ' ×' + it.qty : '') }), it.by ? el('div', { class: 'fine', text: 'Dropped by ' + it.by }) : null]),
+          el('span', { class: 'cbt-pick' }, [btn(isReaching(it.id) ? 'Reaching…' : 'Pick up', function () { pickUp(it); }, 'btn-small', { disabled: why ? true : null,
+            title: why || 'Pick Up Item (a maneuver): into a free hand' })])]);
+      })));
     }
     var feed = (c.feed || []).slice(-12).reverse();
     if (feed.length) box.appendChild(el('details', { class: 'cbt-feed', open: true }, [el('summary', { text: 'What’s happening' }),
@@ -10919,8 +11050,8 @@ var CROWS_TRAIT_TREES = [
       prone ? btn('Stand Up', function () { Play.setCond('Prone', false); maneuver('Stand Up', null, ''); }, 'btn-small btn-primary', { title: 'Stand up (speed 1+)' }) : null,
       btn('Draw From Belt', function () { maneuver('Draw From Belt', null, 'takes 1-2 items from their belt'); }, 'btn-small'),
       btn('Draw From Pack', function () { var r = C.d(10); maneuver('Draw From Pack', null, 'd10 = ' + r + ': gets an item from backpack slots 1-' + r + ' (or only rearranges the pack)'); }, 'btn-small', { title: 'Name an item, roll 1d10: you take it if the roll is at least one of its slot numbers' }),
-      btn('Pick Up Item', function () { maneuver('Pick Up Item', null, ''); }, 'btn-small', { title: 'Needs a free hand' }),
-      btn('Dump Backpack', function () { maneuver('Dump Backpack', null, 'drops items from their backpack'); }, 'btn-small btn-ghost'),
+      btn('Pick Up Item', function () { maneuver('Pick Up Item', null, ''); }, 'btn-small', { title: 'Needs a free hand. For something on the Ref’s list, use its Pick up button under On the ground instead' }),
+      btn('Dump Backpack', dumpBackpack, 'btn-small btn-ghost', { title: 'Maneuver: everything in your backpack lands on the ground' }),
       Play.unloaded().length ? btn('Reload', function () { Play.reload(Play.unloaded()[0]); }, 'btn-small btn-primary', { title: 'Load 1 ammo before each attack' }) : null,
       pets ? btn('Command Pet', function () { maneuver('Command Pet', tAt && tAt.id, 'their pet uses its action or a maneuver' + (tAt ? ' against ' + tAt.name : '')); }, 'btn-small', { title: 'Your pet uses its action or maneuver (a complex or dangerous command: 2d10 + M)' }) : null,
       fits ? btn('Grab ' + tAt.name, function () { rollManeuver('Grab', 'Strength'); }, 'btn-small', { title: '2d10 + S against a target your size or smaller in reach: T1 they may counter; T2 grabbed (push 1 or you shift); T3 grabbed' }) : null,
@@ -10996,6 +11127,7 @@ var CROWS_TRAIT_TREES = [
   }
 
   window.CrowsCombat = { load: load, render: update, rolled: rolled, updated: updated, superseded: superseded, rollNote: rollNote,
+    ground: ground, pickUp: pickUp, cantPickUp: cantPickUp, drop: drop,
     rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') load(); });
   // A crow that gets its record id later (a new one saved with Save character) starts being watched then.

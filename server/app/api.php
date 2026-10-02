@@ -1302,11 +1302,12 @@ function a_notes_dismiss(): array {
  *
  * A member's Play page watches the change signal ('combatc', character id), fetches the fight with combat.mine
  * when it changes, and sends what the crow does with combat.act: an attack or spell on a target with its roll
- * and damage, an action described in words, or "done for this round". The Ref Screen watches ('cacts', campaign
+ * and damage, an action described in words, "done for this round", or an item dropped or picked up (the Ref Screen
+ * keeps the fight's unattended items and hands a picked-up one to the crow in the fight it publishes). The Ref Screen watches ('cacts', campaign
  * id), whose version is the newest action's id, reads new ones with combat.actions, and applies them.
  */
 const COMBAT_MAX_BYTES = 200000;
-const ACTION_TYPES = ['attack', 'maneuver', 'taunt', 'ready', 'assist', 'assistUsed', 'declare', 'done', 'undone'];
+const ACTION_TYPES = ['attack', 'maneuver', 'taunt', 'ready', 'assist', 'assistUsed', 'declare', 'done', 'undone', 'drop', 'pickup'];
 const MANEUVERS = ['Move', 'Shift', 'Stand Up', 'Draw From Pack', 'Draw From Belt', 'Pick Up Item', 'Dump Backpack', 'Reload', 'Command Pet',
     'Grab', 'Escape Grab', 'Knockback', 'Jump'];
 const COMBAT_CONDS = ['Blessed', 'Grabbed', 'Prone', 'Vulnerable', 'Weakened', 'Unconscious'];
@@ -1429,6 +1430,19 @@ function clean_action($a): array {
         $out += ['name' => $name, 'jump' => $num('jump', 0, 20)];
     }
     if ($type === 'assist') $out += ['assistTo' => $txt('assistTo', 40), 'bonus' => $num('bonus', -1, 2)];
+    if ($type === 'pickup') $out += ['item' => $txt('item', 40), 'itemName' => $txt('itemName', 80)];
+    if ($type === 'drop') {
+        // Items the crow put down: what's in its hands, or its backpack's contents (dump: the Dump Backpack maneuver).
+        $items = is_array($a['items'] ?? null) ? array_slice($a['items'], 0, 12) : [];
+        $out['dump'] = $flag('dump');
+        $out['items'] = array_values(array_filter(array_map(function ($c) {
+            if (!is_array($c) || !is_string($c['key'] ?? null) || $c['key'] === '' || strlen($c['key']) > 80) return null;
+            $card = ['key' => $c['key'], 'qty' => max(1, min(999, (int)($c['qty'] ?? 1)))];
+            foreach (['ud', 'dmg', 'ammo'] as $k) if (isset($c[$k]) && is_numeric($c[$k])) $card[$k] = max(0, min(999, (int)$c[$k]));
+            return $card;
+        }, $items)));
+        if (!$out['items']) fail('Nothing to drop.');
+    }
     return $out;
 }
 

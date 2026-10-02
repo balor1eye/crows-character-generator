@@ -15,6 +15,8 @@
  *    rolled ones: Grab, Knockback, Escape Grab, Jump), and the actions Taunt, Ready, Assist, or anything in words;
  *  - reactions: a counter when a creature misses this crow in melee or fails to grab or knock it back (the Ref
  *    Screen asks), and opportunity attacks or readied actions;
+ *  - the encounter's unattended items: drop what's in your hands (or Dump Backpack), and pick up what's on the
+ *    ground (Pick Up Item: a maneuver that needs a free hand; the Ref Screen hands it over in the fight it publishes);
  *  - the modifiers the rules apply: the target's surprise, prone, grabbed, squeezing, or unconscious state, and the
  *    battlefield (flanking, high ground, hidden, cover, dim light, darkness, ranged against an adjacent creature,
  *    beyond range), and an ally's assist on the next test.
@@ -37,6 +39,7 @@
   var usedAssists = {}, pendingAssist = null;
   var assistTo = '', assistChar = '';
   var loading = false, off = false;
+  var reaching = {};      // item id -> when this crow asked to pick it up (until the Ref Screen answers)
 
   /*
    * Spells with effects on creatures in a fight (beyond damage, which the sheet works out). By tier 1/2/3: Stamina
@@ -97,7 +100,9 @@
       var fresh = now ? myPrompts().filter(function (p) { return prompts.indexOf(p.id) < 0; }) : [];
       if (fresh.length) C.toast(fresh[0].fromName + ' missed you: you may counter (a reaction). See the Combat card.', 6000);
       fixTargets();
+      takeGiven();
       update();
+      Play.items();
     }, function (e) {
       if (e.status === 404 && /Unknown action/.test(e.message)) off = true;   // a server without live combat
     }).then(function () {
@@ -111,6 +116,70 @@
     a.round = c.round;
     return Cloud.api('POST', 'combat.act', '', { id: fight.charId, campaign: fight.campaign.id, action: a }).then(function () { return true; },
       function (e) { C.toast('Not sent to the Ref: ' + e.message, 5000); if (e.status === 409) load(); return false; });
+  }
+
+  // ------------------------------------------------------------------ unattended items
+  function sheet() { return window.CrowsApp.state; }
+  /* What's on the ground, as the players see it (the Ref's hidden items aren't sent), or null outside a fight. */
+  function ground() { var c = cur(); return c ? (c.items || []) : null; }
+  /* Items the Ref Screen handed this crow (pickups it won): onto the sheet, each once. */
+  function takeGiven() {
+    var c = cur();
+    if (!c || !fight.you) return;
+    var p = sheet().play, got = Array.isArray(p.got) ? p.got : (p.got = []), msgs = [];
+    (c.given || []).forEach(function (g) {
+      if (g.to !== fight.you || got.indexOf(g.id) >= 0) return;
+      got.push(g.id); delete reaching[g.item];
+      var area = C.takeItem(g);
+      msgs.push('Picked up ' + g.key + (area === 'hand' ? '.' : area === 'none' ? ': no room for it, so it’s set aside.' : ': no free hand, so it went in your ' + (area === 'pack' ? 'backpack' : 'belt') + '.'));
+    });
+    if (got.length > 200) got.splice(0, got.length - 200);
+    if (msgs.length) { Play.note(msgs.join(' ')); C.toast(msgs.join(' '), 4000); }
+  }
+  function isReaching(id) { return reaching[id] && Date.now() - reaching[id] < 10000; }
+  /* Why this crow can't pick the item up now ('' if it can): the Pick Up Item maneuver needs a free hand. */
+  function cantPickUp(it) {
+    var mine = me();
+    if (!mine) return 'Your crow isn’t in this fight.';
+    if (mine.dead || mine.conds.indexOf('Unconscious') >= 0) return 'Not while unconscious.';
+    if (isReaching(it.id)) return 'Already reaching for it: waiting for the Ref.';
+    if (!C.handFits(it.key)) return C.spanOf({ key: it.key }, 'hand') > 1 ? it.key + ' needs both hands free.' : 'You need a free hand to pick it up.';
+    return '';
+  }
+  function pickUp(it) {
+    var why = cantPickUp(it);
+    if (why) { C.toast(why); return; }
+    reaching[it.id] = Date.now();
+    spend('mnv');
+    act({ type: 'pickup', item: it.id, itemName: it.key }).then(function (ok) {
+      if (ok) C.toast('Pick Up Item: ' + it.key + ' (a maneuver). The Ref hands it over.'); else delete reaching[it.id];
+      update(); C.render();
+    });
+  }
+  function dropSpec(c) { var o = { key: c.key, qty: c.qty }; ['ud', 'dmg', 'ammo'].forEach(function (k) { if (typeof c[k] === 'number') o[k] = c[k]; }); return o; }
+  /*
+   * Put items down in the fight: what's in this crow's hands (dropping is free), or with dump, the backpack's contents
+   * (the Dump Backpack maneuver). They leave the sheet once the Ref Screen has the action. False if not allowed.
+   */
+  function drop(cards, dump) {
+    if (!cur() || !cards.length) return false;
+    if (!dump && cards.some(function (c) { return c.area !== 'hand'; })) {
+      C.toast('In a fight you can only drop what’s in your hands. Draw it first (Draw From Belt or Draw From Pack), or Dump Backpack.', 5000);
+      return false;
+    }
+    if (dump) spend('mnv');
+    act({ type: 'drop', dump: !!dump, items: cards.map(dropSpec) }).then(function (ok) {
+      if (!ok) return;
+      sheet().inv = sheet().inv.filter(function (c) { return cards.indexOf(c) < 0; });
+      Play.note((dump ? 'Dumped my backpack: ' : 'Dropped ') + cards.map(function (c) { return c.key + (c.qty > 1 ? ' ×' + c.qty : ''); }).join(', ') + '.');
+    });
+    return true;
+  }
+  function dumpBackpack() {
+    var pack = sheet().inv.filter(function (c) { return c.area === 'pack'; });
+    if (!pack.length) { maneuver('Dump Backpack', null, 'their backpack is empty'); return; }
+    if (!confirm('Dump your backpack? Everything in it (' + pack.map(function (c) { return c.key; }).join(', ') + ') lands on the ground, where anyone can pick it up.')) return;
+    drop(pack, true);
   }
 
   // ------------------------------------------------------------------ this crow's turn
@@ -285,7 +354,8 @@
         x.surprised ? [el('span', { class: 'chip warn', text: 'surprised', title: 'No turn in round 1; attacks against them get +1' })] : [],
         x.grabbedByName ? [el('span', { class: 'chip warn', text: 'grabbed by ' + x.grabbedByName })] : [],
         x.tauntName ? [el('span', { class: 'chip', text: 'taunted by ' + x.tauntName, title: 'Its attacks that don’t include ' + x.tauntName + ' take a bane' })] : [],
-        x.hidden ? [el('span', { class: 'chip', text: 'hidden' })] : [], x.squeeze ? [el('span', { class: 'chip', text: 'squeezing', title: 'Attacks against it get +1' })] : [],
+        x.hidden ? [el('span', { class: 'chip', text: 'hidden' })] : [],
+        (x.holds || []).map(function (h) { return el('span', { class: 'chip', text: 'holds ' + h }); }), x.squeeze ? [el('span', { class: 'chip', text: 'squeezing', title: 'Attacks against it get +1' })] : [],
         x.kind === 'pc' && x.done ? [el('span', { class: 'chip ok', text: 'done', title: 'Done for this round' })] : [],
         x.kind !== 'pc' && x.acted ? [el('span', { class: 'chip', text: 'acted' })] : [],
         x.tgtName ? [el('span', { class: 'chip' + (hitsMe ? ' warn' : ''), text: hitsMe ? 'attacking you' : '→ ' + x.tgtName + (x.tgt2Name ? ', ' + x.tgt2Name : ''), title: 'Who it’s attacking' })] : [])),
@@ -332,6 +402,17 @@
     if (friends.length) {
       box.appendChild(el('h3', { text: 'Crows and allies' }));
       box.appendChild(el('div', { class: 'cbt-list' }, friends.map(row)));
+    }
+    var items = c.items || [];
+    if (items.length) {
+      box.appendChild(el('h3', { text: 'On the ground' }));
+      box.appendChild(el('div', { class: 'cbt-list cbt-ground' }, items.map(function (it) {
+        var why = cantPickUp(it);
+        return el('div', { class: 'cbt-row k-item', title: (C.item(it.key).txt || it.key) }, [
+          el('div', { class: 'cbt-who' }, [el('b', { text: it.key + (it.qty > 1 ? ' ×' + it.qty : '') }), it.by ? el('div', { class: 'fine', text: 'Dropped by ' + it.by }) : null]),
+          el('span', { class: 'cbt-pick' }, [btn(isReaching(it.id) ? 'Reaching…' : 'Pick up', function () { pickUp(it); }, 'btn-small', { disabled: why ? true : null,
+            title: why || 'Pick Up Item (a maneuver): into a free hand' })])]);
+      })));
     }
     var feed = (c.feed || []).slice(-12).reverse();
     if (feed.length) box.appendChild(el('details', { class: 'cbt-feed', open: true }, [el('summary', { text: 'What’s happening' }),
@@ -384,8 +465,8 @@
       prone ? btn('Stand Up', function () { Play.setCond('Prone', false); maneuver('Stand Up', null, ''); }, 'btn-small btn-primary', { title: 'Stand up (speed 1+)' }) : null,
       btn('Draw From Belt', function () { maneuver('Draw From Belt', null, 'takes 1-2 items from their belt'); }, 'btn-small'),
       btn('Draw From Pack', function () { var r = C.d(10); maneuver('Draw From Pack', null, 'd10 = ' + r + ': gets an item from backpack slots 1-' + r + ' (or only rearranges the pack)'); }, 'btn-small', { title: 'Name an item, roll 1d10: you take it if the roll is at least one of its slot numbers' }),
-      btn('Pick Up Item', function () { maneuver('Pick Up Item', null, ''); }, 'btn-small', { title: 'Needs a free hand' }),
-      btn('Dump Backpack', function () { maneuver('Dump Backpack', null, 'drops items from their backpack'); }, 'btn-small btn-ghost'),
+      btn('Pick Up Item', function () { maneuver('Pick Up Item', null, ''); }, 'btn-small', { title: 'Needs a free hand. For something on the Ref’s list, use its Pick up button under On the ground instead' }),
+      btn('Dump Backpack', dumpBackpack, 'btn-small btn-ghost', { title: 'Maneuver: everything in your backpack lands on the ground' }),
       Play.unloaded().length ? btn('Reload', function () { Play.reload(Play.unloaded()[0]); }, 'btn-small btn-primary', { title: 'Load 1 ammo before each attack' }) : null,
       pets ? btn('Command Pet', function () { maneuver('Command Pet', tAt && tAt.id, 'their pet uses its action or a maneuver' + (tAt ? ' against ' + tAt.name : '')); }, 'btn-small', { title: 'Your pet uses its action or maneuver (a complex or dangerous command: 2d10 + M)' }) : null,
       fits ? btn('Grab ' + tAt.name, function () { rollManeuver('Grab', 'Strength'); }, 'btn-small', { title: '2d10 + S against a target your size or smaller in reach: T1 they may counter; T2 grabbed (push 1 or you shift); T3 grabbed' }) : null,
@@ -461,6 +542,7 @@
   }
 
   window.CrowsCombat = { load: load, render: update, rolled: rolled, updated: updated, superseded: superseded, rollNote: rollNote,
+    ground: ground, pickUp: pickUp, cantPickUp: cantPickUp, drop: drop,
     rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') load(); });
   // A crow that gets its record id later (a new one saved with Save character) starts being watched then.

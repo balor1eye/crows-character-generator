@@ -100,7 +100,7 @@
       session: { n: 1, title: '', date: today(), dt: 1, dtLen: 30, mode: 'timer', rooms: 0, roomsDone: 0, running: false, endAt: 0, remain: 30 * 60000,
         sound: true, autoNext: true, place: '', table: 'Blood Creatures', crowded: false, chaos: false, enAdj: 0, firstVisit: true, pending: null,
         rest: { active: false, where: 'dungeon', seclude: false, half: false, applyXP: true },
-        combat: { round: 0, list: [], encId: null, surprise: 'none', first: null, feed: [], acts: [], prompts: [], assists: [], auto: true, autoMon: true, showSt: false } },
+        combat: { round: 0, list: [], encId: null, surprise: 'none', first: null, feed: [], acts: [], prompts: [], assists: [], auto: true, autoMon: true, showSt: false, items: [], given: [] } },
       log: [],
       travel: { day: 1, pace: 'Normal', speed: 5, road: false, water: 'none', weather: '', beacon: false, strong: false, hexAdj: 0, enAdj: 0, restEnAdj: 0,
         climate: 'Fall & Spring', habitat: 'Forest', nearby: 'Undead', lost: false, miasmaMod: 0, inMiasma: true },
@@ -120,7 +120,7 @@
   }
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
-    if (state.session && state.session.combat) releaseGrabs();
+    if (state.session && state.session.combat) { releaseGrabs(); dropFromFallen(); }
     if (window.CrowsCloud) { window.CrowsCloud.changed(); liveChanged(); }
   }
   function startNew() { if (window.CrowsCloud) window.CrowsCloud.startNew(); }
@@ -463,6 +463,7 @@
     if (allies.length) lines.push('Allies: ' + tally(allies) + '.');
     if (crows.length) lines.push('Crows: ' + crows.join('; ') + '.');
     if (harvest.length) lines.push('Corpses to harvest: ' + harvest.join(', ') + '.');
+    if (groundText()) lines.push(groundText());
     e.notes = (e.notes ? e.notes.replace(/\s+$/, '') + '\n\n' : '') + lines.join('\n');
     e.outcome = label;
     if (resolve) { e.done = true; if (s.pending && s.pending.encId === e.id) s.pending = null; }
@@ -986,7 +987,113 @@
     (c.feed = c.feed || []).push({ t: Date.now(), s: text });
     if (c.feed.length > 40) c.feed.splice(0, c.feed.length - 40);
   }
-  function clearCombat(c) { c.list = []; c.round = 0; c.encId = null; c.surprise = 'none'; c.first = null; c.feed = []; c.acts = []; c.prompts = []; c.assists = []; }
+  function clearCombat(c) { c.list = []; c.round = 0; c.encId = null; c.surprise = 'none'; c.first = null; c.feed = []; c.acts = []; c.prompts = []; c.assists = []; c.items = []; c.given = []; }
+
+  // ------------------------------------------------------------------ unattended items
+  /*
+   * The items in an encounter that no one holds (c.items), and those foes and allies hold (x.items). Crows drop what's
+   * in their hands, or dump their backpack, and pick items up (Pick Up Item: a maneuver that needs a free hand) from
+   * their Play page; those arrive as actions (takeAction). A pickup goes to the first crow to ask while the item is
+   * still there: one of it leaves the ground and is handed over in c.given, which that crow's page adds to its sheet,
+   * once. The Ref makes creatures pick items up and drop them (a creature that dies drops what it held), hides items
+   * from the players (they don't see or reach them), and creates new ones. Each change goes in the log and, unless
+   * the item is hidden, the players' feed.
+   */
+  function itemName(it) { return it.key + (it.qty > 1 ? ' ×' + it.qty : ''); }
+  function itemsText(list) { return list.map(itemName).join(', '); }
+  function newItem(key, qty, hidden, src) {
+    var it = { id: nid(), key: String(key).trim().slice(0, 80), qty: clamp(int(qty, 1), 1, 999), hidden: !!hidden };
+    ['ud', 'dmg', 'ammo'].forEach(function (k) { if (src && typeof src[k] === 'number') it[k] = src[k]; });
+    return it;
+  }
+  function onGround() { var c = S().combat; return c.items || (c.items = []); }
+  /* A line for the log, and for the players' feed when they can see it (a hidden item stays out of it). */
+  function itemNews(text, open) { log('', text); if (open) feed(text); }
+  function putDown(list, by) {
+    list.forEach(function (it) { if (by) it.by = by; onGround().push(it); });
+    if (onGround().length > 100) onGround().splice(0, onGround().length - 100);
+  }
+  function creaturePickUp(x, it) {
+    var g = onGround(), i = g.indexOf(it);
+    if (i < 0) return;
+    g.splice(i, 1); delete it.by;
+    (x.items = x.items || []).push(it);
+    itemNews('**' + x.name + '** picks up ' + (it.hidden ? itemName(it) + ' (hidden).' : '**' + itemName(it) + '**.'), !it.hidden);
+  }
+  function creatureDrop(x, list, why) {
+    if (!list.length) return;
+    x.items = (x.items || []).filter(function (it) { return list.indexOf(it) < 0; });
+    putDown(list, x.name);
+    var open = list.filter(function (it) { return !it.hidden; });
+    log('', '**' + x.name + '** ' + (why || 'drops') + ' ' + itemsText(list) + '.');
+    if (open.length) feed('**' + x.name + '** ' + (why || 'drops') + ' **' + itemsText(open) + '**.');
+  }
+  /*
+   * A creature that died leaves what it held on the ground. Checked from save(), like releaseGrabs, but done once the
+   * change being saved is finished, so the feed tells of the death before the drop.
+   */
+  var dropQueued = false;
+  function dropFromFallen() {
+    if (dropQueued || !S().combat.list.some(function (x) { return x.dead && x.kind !== 'pc' && x.items && x.items.length; })) return;
+    dropQueued = true;
+    Promise.resolve().then(function () {
+      dropQueued = false;
+      S().combat.list.forEach(function (x) { if (x.dead && x.kind !== 'pc' && x.items && x.items.length) creatureDrop(x, x.items.slice(), 'falls and drops'); });
+      save();
+      if (!(window.CrowsCloud && window.CrowsCloud.typing)) render();
+    });
+  }
+  function groundText() {
+    var g = onGround();
+    return g.length ? 'Left on the ground: ' + g.map(function (it) { return itemName(it) + (it.hidden ? ' (hidden)' : ''); }).join(', ') + '.' : '';
+  }
+  /* The Combat card's list of unattended items, with what the Ref can do to them. */
+  function itemsPanel() {
+    var c = S().combat, g = onGround(), ni = ui.newItem || (ui.newItem = { key: '', qty: 1, hidden: false, to: '' });
+    var hands = c.list.filter(function (x) { return x.kind !== 'pc' && !x.dead; });
+    if (!hands.some(function (x) { return x.id === ni.to; })) ni.to = '';
+    function add() {
+      var key = ni.key.trim();
+      if (!key) { name.focus(); return; }
+      var it = newItem(key, ni.qty, ni.hidden), x = ni.to ? byId(ni.to) : null;
+      if (x) { (x.items = x.items || []).push(it); itemNews('**' + x.name + '** has ' + (it.hidden ? itemName(it) + ' (hidden).' : '**' + itemName(it) + '**.'), !it.hidden); }
+      else { putDown([it]); itemNews((it.hidden ? 'Hidden on the ground: ' + itemName(it) : 'On the ground: **' + itemName(it) + '**') + '.', !it.hidden); }
+      ni.key = ''; ni.qty = 1; ni.hidden = false;   // the next one starts visible
+      save(); render();
+      var again = $('ref-item-name'); if (again) again.focus();
+    }
+    var name = el('input', { id: 'ref-item-name', class: 'in', list: 'ref-item-list', value: ni.key, placeholder: 'Any item: pick one or type a name', 'aria-label': 'New item',
+      oninput: function () { ni.key = this.value; }, onkeydown: function (e) { if (e.key === 'Enter') { e.preventDefault(); add(); } } });
+    var qty = el('input', { type: 'number', class: 'tiny', min: 1, max: 999, value: ni.qty, 'aria-label': 'How many', oninput: function () { ni.qty = clamp(int(this.value, 1), 1, 999); } });
+    var to = el('select', { class: 'in mini', 'aria-label': 'Where it goes', title: 'On the ground, or held by a creature', onchange: function () { ni.to = this.value; } },
+      [el('option', { value: '', text: 'On the ground' })].concat(hands.map(function (x) { return el('option', { value: x.id, text: 'Held by ' + x.name }); })));
+    to.value = ni.to;
+    var hid = el('label', { class: 'check', title: 'Players don’t see it, or reach it, until you show it' }, [
+      el('input', { type: 'checkbox', checked: !!ni.hidden, onchange: function () { ni.hidden = this.checked; } }), 'Hidden']);
+    var rows = g.map(function (it) {
+      var who = el('select', { class: 'in mini', 'aria-label': 'Who picks up ' + it.key }, hands.map(function (x) { return el('option', { value: x.id, text: x.name }); }));
+      return el('li', { class: 'item-li' + (it.hidden ? ' hid' : '') }, [
+        el('span', { class: 'grow' }, [el('b', { text: itemName(it) }), it.by ? el('span', { class: 'fine', text: ' · dropped by ' + it.by }) : null,
+          typeof it.ammo === 'number' ? el('span', { class: 'fine', text: ' · ' + it.ammo + ' shots' }) : null]),
+        el('button', { type: 'button', class: 'cond' + (it.hidden ? ' on' : ''), 'aria-pressed': it.hidden ? 'true' : 'false', text: it.hidden ? 'Hidden' : 'Visible',
+          title: it.hidden ? 'Players can’t see it. Click to show it to them' : 'Players see it and can pick it up. Click to hide it from them',
+          onclick: function () { it.hidden = !it.hidden; log('', itemName(it) + (it.hidden ? ' is hidden from the players.' : ' is shown to the players.')); save(); render(); } }),
+        el('button', { type: 'button', class: 'pm', text: '−', 'aria-label': 'One fewer ' + it.key, title: 'One fewer', onclick: function () { if (it.qty > 1) it.qty--; else g.splice(g.indexOf(it), 1); save(); render(); } }),
+        el('button', { type: 'button', class: 'pm', text: '+', 'aria-label': 'One more ' + it.key, title: 'One more', onclick: function () { it.qty = Math.min(999, it.qty + 1); save(); render(); } }),
+        hands.length ? el('span', { class: 'tgt-pick' }, [who, btn('Picks up', function () { var x = byId(who.value); if (x) { creaturePickUp(x, it); save(); render(); } }, 'btn-small btn-ghost', 'That creature picks it up')]) : null,
+        el('button', { type: 'button', class: 'x', text: '×', title: 'Remove it from the encounter (destroyed, or carried off)', 'aria-label': 'Remove ' + it.key,
+          onclick: function () { g.splice(g.indexOf(it), 1); log('', itemName(it) + ' is gone from the encounter.'); save(); render(); } })
+      ]);
+    });
+    return el('div', { class: 'items-box' }, [
+      el('div', { class: 'row center' }, [el('b', { text: 'Unattended items' }),
+        el('span', { class: 'fine grow', text: g.length ? plural(g.length, 'item') + ' on the ground' + (g.some(function (it) { return it.hidden; }) ? ' (' + g.filter(function (it) { return it.hidden; }).length + ' hidden from the players)' : '') + '.' :
+          'Nothing on the ground. What crows drop lands here, and they can pick up what’s visible (a maneuver, with a free hand).' })]),
+      el('datalist', { id: 'ref-item-list' }, Object.keys(CROWS.ITEMS).sort().map(function (k) { return el('option', { value: k }); })),
+      el('div', { class: 'row center items-add' }, [field('New item', name, 'grow'), field('How many', qty), field('Where', to), hid, btn('Add item', add, 'btn-small')]),
+      rows.length ? el('ul', { class: 'items-list' }, rows) : null
+    ]);
+  }
   function pcOf(x) { return x && x.kind === 'pc' ? state.party.filter(function (p) { return p.id === x.pcId; })[0] || null : null; }
   function healthWord(x) {
     if (x.dead) return 'dead';
@@ -1015,8 +1122,16 @@
         if (pc || x.kind === 'ally' || c.showSt) { o.st = x.st; o.stMax = x.stMax; o.ad = x.ad; o.adMax = x.adMax; }
         if (pc) { var p = pcOf(x); o.wounds = x.wounds; o.link = p && p.link || null; o.done = !!c.round && x.done === c.round; o.rxLeft = rxLeft(x); }
         else o.acted = !!c.round && x.acted === c.round;
+        var holds = (x.items || []).filter(function (it) { return !it.hidden; });
+        if (!pc && holds.length) o.holds = holds.map(itemName);
         return o;
       }),
+      items: onGround().filter(function (it) { return !it.hidden; }).map(function (it) {
+        var o = { id: it.id, key: it.key, qty: it.qty };
+        if (it.by) o.by = it.by;
+        return o;
+      }),
+      given: (c.given || []).slice(-30),
       prompts: (c.prompts || []).filter(function (p) { return !p.done && p.round === c.round; }),
       assists: c.assists || [],
       feed: (c.feed || []).slice(-25) };
@@ -1077,6 +1192,23 @@
       return;
     }
     if (a.type === 'assistUsed') { c.assists = (c.assists || []).filter(function (x) { return x.id !== a.text; }); return; }
+    if (a.type === 'drop') {
+      var put = (a.items || []).map(function (x) { return newItem(x.key, x.qty, false, x); });
+      putDown(put, who);
+      itemNews('**' + who + '** ' + (a.dump ? 'dumps their backpack: ' : 'drops ') + '**' + itemsText(put) + '**.', true);
+      return;
+    }
+    if (a.type === 'pickup') {
+      var gi = onGround().filter(function (x) { return x.id === a.item && !x.hidden; })[0];
+      if (!gi) { itemNews('**' + who + '** reaches for ' + (a.itemName || 'an item') + ', but it’s not there any more.', true); return; }
+      var one = { id: 'g' + it.id, to: p.link, item: gi.id, key: gi.key, qty: 1 };   // it.id: this action's id, unique on the server
+      ['ud', 'dmg', 'ammo'].forEach(function (k) { if (typeof gi[k] === 'number') one[k] = gi[k]; });
+      if (gi.qty > 1) gi.qty--; else onGround().splice(onGround().indexOf(gi), 1);
+      (c.given = c.given || []).push(one);
+      if (c.given.length > 30) c.given.splice(0, c.given.length - 30);
+      itemNews('**' + who + '** picks up **' + gi.key + '**' + (onGround().indexOf(gi) >= 0 ? ' (' + gi.qty + ' left on the ground)' : '') + '.', true);
+      return;
+    }
     var tlist = (a.targets && a.targets.length ? a.targets : a.target ? [{ id: a.target, name: a.targetName }] : [])
       .map(function (t) { var x = byId(t.id); return x ? { x: x, name: x.name } : { x: null, name: t.name || '' }; });
     var tgt = tlist[0] && tlist[0].x, tname = tlist.map(function (t) { return t.name; }).filter(Boolean).join(', ');
@@ -1646,7 +1778,7 @@
         inRun ? null : btn('End combat', function () {
           var dead = c.list.filter(function (x) { return x.dead; }).map(function (x) { return x.name; });
           if (runningEnc() && !confirm('End the fight without saving a result to ' + (runningEnc().name || 'the running encounter') + '? (It stays open.)')) return;
-          log('', '**Combat ends** after ' + plural(c.round || 0, 'round') + '.' + (dead.length ? ' Fallen: ' + dead.join(', ') + '.' : ''));
+          log('', '**Combat ends** after ' + plural(c.round || 0, 'round') + '.' + (dead.length ? ' Fallen: ' + dead.join(', ') + '.' : '') + (groundText() ? ' ' + groundText() : ''));
           c.list.forEach(function (x) { if (x.kind === 'pc') syncPC(x); });
           clearCombat(c); save(); render();
         }, 'btn-ghost btn-danger')
@@ -1667,6 +1799,7 @@
       el('p', { class: 'fine', text: 'Pick each creature’s target (⚄ picks one at random) and its attacks and maneuvers go at it. Its own conditions (weakened, blessed, prone, hidden, taunted) and the target’s (surprised, prone, grabbed, squeezing, unconscious) apply automatically, with the edge/bane set in the Dice panel and the battlefield buttons above (they reset after each roll). ' +
         'A hit deals its damage and tier effects (weakened, prone, grabbed...) through AD, Stamina, and wounds, onto a crow’s own sheet (its worn armor and parry weapons absorb first), and can be undone from the Dice panel. A melee miss lets the target counter: a crow’s player is asked on their Play page.' }),
       el('div', { class: 'combat-list' }, c.list.length ? c.list.map(combatRow) : [el('p', { class: 'hint', text: 'No one in combat. Add creatures here, from the Bestiary, or from an encounter roll.' })]),
+      itemsPanel(),
       livePanel()
     ];
   }
@@ -1690,7 +1823,12 @@
     var tags = [g ? el('span', { class: 'chip warn', text: 'grabbed by ' + g.name }) : null,
       holds.length ? el('span', { class: 'chip', text: 'grabbing ' + holds.map(function (x) { return x.name; }).join(', ') }) : null,
       holds.length ? btn('Let go', function () { holds.forEach(function (x) { setCond(x, 'Grabbed', false); }); log('', c.name + ' lets go.'); feed('**' + c.name + '** lets go.'); save(); render(); }, 'btn-small btn-ghost') : null,
-      tauntOn(c) ? el('span', { class: 'chip warn', title: 'Its attacks that don’t include ' + c.taunt.name + ' take a bane, until ' + c.taunt.name + '’s next turn', text: 'taunted by ' + c.taunt.name }) : null].filter(Boolean);
+      tauntOn(c) ? el('span', { class: 'chip warn', title: 'Its attacks that don’t include ' + c.taunt.name + ' take a bane, until ' + c.taunt.name + '’s next turn', text: 'taunted by ' + c.taunt.name }) : null]
+      .concat(c.kind === 'pc' ? [] : (c.items || []).map(function (it) {
+        return el('span', { class: 'chip held' + (it.hidden ? ' hid' : ''), title: it.hidden ? 'Hidden from the players' : 'Players see it holding this' }, ['holds ' + itemName(it) + ' ',
+          el('button', { type: 'button', class: 'chip-x', text: 'drop', title: c.name + ' drops it on the ground', 'aria-label': c.name + ' drops ' + it.key,
+            onclick: function () { creatureDrop(c, [it]); save(); render(); } })]);
+      })).filter(Boolean);
     var mid = el('div', { class: 'cbt-mid' }, [amt,
       btn('Damage', function () { if (amount()) damage(c, amount(), false); }, 'btn-small'),
       btn('Piercing', function () { if (amount()) damage(c, amount(), true); }, 'btn-small'),

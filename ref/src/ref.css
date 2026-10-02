@@ -373,6 +373,15 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 }
 
 /* Live combat: what the players see and send (under the combat tracker) */
+.items-box { margin-top: .7rem; border: 1px solid var(--line); border-left: 4px solid #d9a441; border-radius: 6px; padding: .5rem .7rem; background: var(--slot); }
+.items-box .row { gap: .4rem .8rem; }
+.items-add { margin-top: .3rem; align-items: flex-end; }
+.items-add .field.grow { min-width: 12rem; }
+.items-list { list-style: none; margin: .4rem 0 0; padding: 0; display: flex; flex-direction: column; }
+.item-li { display: flex; flex-wrap: wrap; align-items: center; gap: .35rem; padding: .3rem 0; border-top: 1px solid var(--line); }
+.item-li.hid b, .chip.hid { opacity: .6; font-style: italic; }
+.chip.held { display: inline-flex; align-items: center; gap: .3rem; }
+.chip-x { border: 0; background: transparent; color: var(--accent); font: inherit; font-size: .72rem; text-decoration: underline; cursor: pointer; padding: 0; }
 .live-box { margin-top: .7rem; border: 1px solid var(--line); border-left: 4px solid var(--sel); border-radius: 6px; padding: .5rem .7rem; background: var(--slot); }
 .live-box .row { gap: .4rem .8rem; }
 .live-acts { list-style: none; margin: .5rem 0 0; padding: 0; display: grid; gap: .3rem; font-size: .9rem; }

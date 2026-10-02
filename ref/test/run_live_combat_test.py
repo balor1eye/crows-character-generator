@@ -309,8 +309,54 @@ def main():
         pwait("return /Reaction: used/.test(text(q('#play-combat .cbt-turn')))", "the reaction to show as used")
         ok("the player's attack marked as a reaction goes to the Ref as one, and uses the crow's reaction for round 2")
 
+        # Unattended items: drops, pickups (first come, needing a free hand), creatures, hidden items, a dump, a death.
+        p("button('Drop', qa('#play-items .zone-hand .item-row').filter(function (x) { return /Sword/.test(text(x)); })[0]).click();")
+        rwait("return (combat().items || []).some(function (it) { return it.key === 'Sword' && it.by === arguments[0]; })".replace("arguments[0]", repr(crow)), "the dropped sword on the Ref's ground")
+        pwait("return !window.CrowsApp.state.inv.some(function (c) { return c.key === 'Sword'; }) && /Sword/.test(text(q('#play-combat .cbt-ground')))", "the sword to leave the sheet and show on the ground")
+        assert "drops" in p("return text(q('#play-combat .cbt-feed'))"), "no drop in the player's feed"
+        ok("the player drops the sword from their hand: it leaves the sheet, lands on the Ref's ground list, and the feed says so")
+        assert p("return !!q('#play-items .zone-ground') && /Sword/.test(text(q('#play-items .zone-ground')))"), "no sword in the Items card's ground zone"
+        ok("the Items card shows an On the ground zone with the sword")
+        r("""var box = q('#sec-combat .items-box'); type(q('input[aria-label=\"New item\"]', box), 'Silver key');
+             q('label.check input', box).click(); button('Add item', box).click();""")
+        r("""var box = q('#sec-combat .items-box'); type(q('input[aria-label=\"New item\"]', box), 'Torch'); button('Add item', box).click();""")
+        listed = r("return combat().items.map(function (it) { return it.key + (it.hidden ? '*' : ''); }).join(',')")
+        assert listed == "Sword,Silver key*,Torch", listed
+        pwait("return /Torch/.test(text(q('#play-combat .cbt-ground')))", "the Ref's torch on the player's page")
+        assert "Silver key" not in p("return text(q('#play-combat')) + text(q('#play-items'))"), 'the hidden key leaked to the player'
+        ok("the Ref quickly creates a hidden Silver key and a visible Torch: the player sees only the torch")
+        foe = r("return combat().list.filter(function (x) { return x.kind === 'foe' && !x.dead; })[0].name")
+        r("""var nm = arguments[0], li = qa('#sec-combat .item-li').filter(function (x) { return /Torch/.test(text(x)); })[0], s = q('select', li);
+             s.value = combat().list.filter(function (x) { return x.name === nm; })[0].id; button('Picks up', li).click();""", foe)
+        assert r("var nm = arguments[0]; return combat().list.filter(function (x) { return x.name === nm; })[0].items[0].key", foe) == "Torch"
+        pwait("return /holds Torch/.test(text(row(arguments[0]))) && !/Torch/.test(text(q('#play-combat .cbt-ground')))".replace("arguments[0]", repr(foe)), "the creature holding the torch")
+        ok(f"the Ref has {foe} pick up the torch: the player sees it holding it, and it's off the ground")
+        p("button('Pick up', qa('#play-combat .cbt-ground .cbt-row').filter(function (x) { return /Sword/.test(text(x)); })[0]).click();")
+        pwait("return window.CrowsApp.state.inv.some(function (c) { return c.key === 'Sword' && c.area === 'hand'; })", "the sword back in hand")
+        assert not r("return combat().items.some(function (it) { return it.key === 'Sword'; })"), "the sword is still on the Ref's ground"
+        assert "picks up **Sword**" in r("return JSON.stringify(combat().feed)"), 'no pickup line in the feed'
+        ok("the player picks the sword up (Pick Up Item): the Ref hands it over and it's back in their hand")
+        r("""var box = q('#sec-combat .items-box'); type(q('input[aria-label=\"New item\"]', box), 'Greatsword'); button('Add item', box).click();""")
+        pwait("return /Greatsword/.test(text(q('#play-combat .cbt-ground')))", "the greatsword on the player's page")
+        gs = p("var b = button('Pick up', qa('#play-combat .cbt-ground .cbt-row').filter(function (x) { return /Greatsword/.test(text(x)); })[0]); return [b.disabled, b.title];")
+        assert gs[0] and "both hands" in gs[1], gs
+        ok("with a sword in one hand, picking up the two-handed greatsword isn't allowed (" + gs[1] + ")")
+        r("button('Hidden', q('#sec-combat .items-box')).click();")
+        pwait("return /Silver key/.test(text(q('#play-combat .cbt-ground')))", "the key to show once the Ref unhides it")
+        ok("the Ref shows the hidden key, and it appears for the player")
+        p("window.confirm = function () { return true; }; button('Dump Backpack', q('#cbt-act')).click();")
+        rwait("return combat().items.some(function (it) { return it.key === 'Light Armor' && it.by === arguments[0]; })".replace("arguments[0]", repr(crow)), "the dumped armor")
+        assert not p("return window.CrowsApp.state.inv.some(function (c) { return c.area === 'pack'; })"), "the backpack wasn't emptied"
+        ok("Dump Backpack puts the backpack's contents (light armor) on the ground and empties it on the sheet")
+        r("button('Mark dead', cbt(arguments[0])).click();", foe)
+        rwait("return combat().items.some(function (it) { return it.key === 'Torch' && it.by === arguments[0]; })".replace("arguments[0]", repr(foe)), "the torch dropped by the dead creature")
+        pwait("return /falls and drops/.test(text(q('#play-combat .cbt-feed')))", "the drop in the player's feed")
+        ok(f"{foe} dies and drops the torch, and the player's feed says so")
+
         # The end.
         r("button('End combat', q('#sec-combat')).click();")
+        assert "Left on the ground" in r("return JSON.stringify(window.CrowsRef.state.log.slice(-3))"), 'nothing about what was left on the ground'
+        ok("ending the fight logs what was left on the ground")
         pwait("return q('#play-combat').hidden", "the Combat card to go away")
         ok("ending the fight takes the Combat card off the player's page")
         good = True
