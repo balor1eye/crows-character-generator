@@ -369,7 +369,15 @@ CROWS.STARTING_INSTITUTIONS = ['Alchemist', 'Auction House', 'Barracks', 'Beacon
 CROWS.EXTRA_BELT_TRAITS = {
   'Alchemy Belt': 'alchemy items only', 'Bashing Holster': 'bashing weapons only',
   'Chopping Holster': 'chopping weapons only', 'Stabbing Holster': 'stabbing weapons only',
-  'Portal Pocket': 'extradimensional; only you can access'
+  'Scabbard': 'slashing weapons only', 'Portal Pocket': 'extradimensional; only you can access'
+};
+/* What each of those extra belt slots may hold (any item when not listed). */
+CROWS.EXTRA_BELT_ALLOWS = {
+  'Alchemy Belt': function (key, it) { return it.cat === 'consumable' && key !== 'Oil Flask'; },   // the Alchemy items
+  'Bashing Holster': function (key, it) { return it.wt === 'Bashing'; },
+  'Chopping Holster': function (key, it) { return it.wt === 'Chopping'; },
+  'Stabbing Holster': function (key, it) { return it.wt === 'Stabbing'; },
+  'Scabbard': function (key, it) { return it.wt === 'Slashing'; }
 };
 
 CROWS.NAME_IDEAS = {

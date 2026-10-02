@@ -191,9 +191,12 @@
     if (area === 'hand' && it.hands === 2) return 2;
     return it.sl;
   }
-  function beltSize() {
-    var extra = ownedTraitIds().filter(function (id) { return CROWS.EXTRA_BELT_TRAITS[id.split('|')[1]]; }).length;
-    return AREAS.belt + Math.min(extra, 1);
+  function extraBeltTraits() { return ownedTraitIds().map(function (id) { return id.split('|')[1]; }).filter(function (n) { return CROWS.EXTRA_BELT_TRAITS[n]; }); }
+  function extraBeltRule() { return extraBeltTraits().map(function (n) { return CROWS.EXTRA_BELT_TRAITS[n]; }).join(' or '); }
+  function beltSize() { return AREAS.belt + Math.min(extraBeltTraits().length, 1); }
+  /* May this item go in the extra belt slot? Only what one of the crow's extra-slot traits allows. */
+  function extraBeltOk(card) {
+    return extraBeltTraits().some(function (n) { var ok = CROWS.EXTRA_BELT_ALLOWS[n]; return !ok || ok(card.key, item(card.key)); });
   }
   function areaSize(area) { return area === 'belt' ? beltSize() : AREAS[area]; }
   function occupancy() {
@@ -212,6 +215,7 @@
     var s = spanOf(card, area), size = areaSize(area);
     if (idx < 0 || idx + s > size) return false;
     if (area === 'pack' && s > 1 && Math.floor(idx / 5) !== Math.floor((idx + s - 1) / 5)) return false; // keep on one sheet row
+    if (area === 'belt' && idx + s > AREAS.belt && !extraBeltOk(card)) return false; // the trait's extra slot is restricted
     for (var k = 0; k < s; k++) { var o = occ[area][idx + k]; if (o !== null && o !== card.id) return false; }
     return true;
   }
@@ -332,7 +336,8 @@
       }
       // Swap two single-slot cards
       if (tgt && spanOf(tgt, area) === 1 && spanOf(card, area) === 1 && card.area !== 'none' &&
-          spanOf(tgt, card.area) === 1 && !(card.area === 'hand' && tgt.qty > 1)) {
+          spanOf(tgt, card.area) === 1 && !(card.area === 'hand' && tgt.qty > 1) &&
+          !(area === 'belt' && idx >= AREAS.belt && !extraBeltOk(card)) && !(card.area === 'belt' && card.idx >= AREAS.belt && !extraBeltOk(tgt))) {
         var a = card.area, i = card.idx;
         place(card, area, idx); place(tgt, a, i); return true;
       }
@@ -341,6 +346,40 @@
     if (!fits(card, area, idx, occ)) return false;
     place(card, area, idx);
     return true;
+  }
+  /* Move a card anywhere in an area: onto a matching stack with room, then the first free spot. Play's drag and drop. */
+  function moveToArea(card, area) {
+    if (area === card.area) return true;
+    if (area === 'none') return moveCard(card, 'none', 0);
+    if (area !== 'hand') {
+      var stacks = state.inv.filter(function (c) { return c !== card && c.area === area && c.key === card.key && c.qty < item(c.key).st; });
+      for (var i = 0; i < stacks.length && state.inv.indexOf(card) >= 0; i++) moveCard(card, area, stacks[i].idx);
+      if (state.inv.indexOf(card) < 0) return true;   // all of it stacked
+    }
+    var probe = area === 'hand' && card.qty > 1 ? { id: -1, key: card.key, qty: 1 } : card;
+    var spot = firstFit(probe, area, occupancy());
+    return spot >= 0 && moveCard(card, area, spot);
+  }
+  /* Why a card can't go there, for the message. */
+  function refusal(card, area, idx) {
+    var it = item(card.key);
+    if (area === 'hand') return it.hands === 2 || spanOf(card, 'hand') > 1 ? card.key + ' needs both hands free.' : 'Your hands are full.';
+    if (area === 'belt' && beltSize() > AREAS.belt && (idx === undefined ? occupancy().belt[AREAS.belt] === null : idx + spanOf(card, 'belt') > AREAS.belt) && !extraBeltOk(card))
+      return 'The extra belt slot holds ' + extraBeltRule() + '.';
+    if (area === 'pack' && spanOf(card, 'pack') > 1) return card.key + ' needs ' + spanOf(card, 'pack') + ' free slots side by side in one backpack row.';
+    return 'Not enough free slots there' + (spanOf(card, area) > 1 ? ' (' + card.key + ' takes ' + spanOf(card, area) + ')' : '') + '.';
+  }
+  /* Add found or bought items: into the backpack, then the belt; whatever doesn't fit is set aside. True if all of it is carried. */
+  function addItem(key, q) {
+    var st = item(key).st, all = true;
+    while (q > 0) {
+      var n = Math.min(q, st), c = newCard(key, n);
+      state.inv.push(c); q -= n;
+      var occ = occupancy();
+      var spot = ['pack', 'belt'].map(function (a) { return [a, firstFit(c, a, occ)]; }).filter(function (x) { return x[1] >= 0; })[0];
+      if (spot) place(c, spot[0], spot[1]); else all = false;
+    }
+    return all;
   }
 
   // ------------------------------------------------------------------ state lifecycle
@@ -649,7 +688,7 @@
   }
   function attemptMove(c, area, idx) {
     if (moveCard(c, area, idx)) { selectedId = null; render(); }
-    else toast(area === 'hand' ? 'That won\'t fit in your hands.' : 'Not enough adjacent free slots there.');
+    else toast(refusal(c, area, idx));
   }
 
   function slotLabel(word, num) {
@@ -1027,17 +1066,9 @@
       ai.appendChild(og);
     });
     $('btn-add-item').addEventListener('click', function () {
-      var key = ai.value, q = Math.max(1, Math.min(99, parseInt($('add-item-qty').value, 10) || 1));
-      var st = item(key).st, placed = 0, added = 0;
-      while (q > 0) {
-        var n = Math.min(q, st), c = newCard(key, n);
-        state.inv.push(c); q -= n; added++;
-        var occ = occupancy();
-        var spot = ['pack', 'belt'].map(function (a) { return [a, firstFit(c, a, occ)]; }).filter(function (x) { return x[1] >= 0; })[0];
-        if (spot) { place(c, spot[0], spot[1]); placed++; }
-      }
+      var key = ai.value, all = addItem(key, Math.max(1, Math.min(99, parseInt($('add-item-qty').value, 10) || 1)));
       render();
-      toast(placed === added ? 'Added ' + key + '.' : 'Added ' + key + ' (no room for all of it; see "Not carried").');
+      toast(all ? 'Added ' + key + '.' : 'Added ' + key + ' (no room for all of it; see "Not carried").');
     });
 
     var inst = $('in-institution');
@@ -1094,6 +1125,7 @@
       item: item, bg: bg, characteristics: characteristics, staminaMax: staminaMax, curStamina: curStamina,
       expertiseUses: expertiseUses, maxUses: maxUses, armorInfo: armorInfo, adMax: adMax, adNow: adNow,
       woundCount: woundCount, occupancy: occupancy, cardById: cardById, spanOf: spanOf, traitXP: traitXP,
+      areaSize: areaSize, extraBeltRule: extraBeltRule, moveCard: moveCard, moveToArea: moveToArea, refusal: refusal, addItem: addItem,
       esBonusCount: esBonusCount, charBonusCount: charBonusCount, usePool: usePool, allocTotal: allocTotal
     }
   };

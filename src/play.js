@@ -114,7 +114,9 @@
   function carried() { return S().inv.filter(function (c) { return c.area !== 'none'; }); }
   function inHands() { return S().inv.filter(function (c) { return c.area === 'hand'; }).sort(function (a, b) { return a.idx - b.idx; }); }
   function where(c) {
-    return c.area === 'hand' ? 'Hand ' + (c.idx + 1) : c.area === 'belt' ? 'Belt ' + (c.idx + 1) : c.area === 'pack' ? 'Backpack ' + (c.idx + 1) : 'Not carried';
+    if (c.area === 'none') return 'Not carried';
+    var sp = C.spanOf(c, c.area);
+    return (c.area === 'hand' ? (sp > 1 ? 'Hands ' : 'Hand ') : c.area === 'belt' ? 'Belt ' : 'Backpack ') + (c.idx + 1) + (sp > 1 ? '\u2013' + (c.idx + sp) : '');
   }
   function udInfo(key) {
     var m = /UD:?\s*(\d+)\s*\(([^)]*)\)/.exec(item(key).txt);
@@ -735,49 +737,98 @@
       window.CrowsCombat ? window.CrowsCombat.targetBar() : null,
       el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee). A ranged attack against a creature adjacent to you takes a bane: set it before rolling. Light weapon and parry damage adjustments are included. A thrown weapon is out of your hand (no attacks, parry, or light-weapon bonus) until you recover it.' }),
       rows,
-      stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Move items between slots in Build > Equipment.' }) : null
+      stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Drag one into your hands under Items.' }) : null
     ]);
   }
 
-  function renderItems() {
-    var tbl = el('div', { class: 'item-list' });
-    var cards = carried().slice().sort(function (a, b) { var o = { hand: 0, belt: 1, pack: 2 }; return o[a.area] - o[b.area] || a.idx - b.idx; });
-    cards.forEach(function (c) {
-      var it = item(c.key), u = udInfo(c.key), ctl = [];
-      if (u) {
-        var n = udNow(c);
-        ctl.push(el('span', { class: 'ud', title: item(c.key).txt.split('.')[0], text: 'UD ' + n + '/' + u.max }));
-        if (n > 0 && (u.activate || u.dt)) ctl.push(btn('Roll UD', function () { commit(rollUD(c)); }));
-        if (u.refuel && n < u.max) {
-          var fuel = findCarried(u.fuel || 'Oil Flask');
-          ctl.push(btn('Refuel', function () { useOne(fuel); c.ud = u.max; commit('Refuelled ' + c.key + ' with ' + (u.fuel || 'fuel').toLowerCase() + '.'); }, '', { disabled: !fuel || null, title: fuel ? '' : 'No ' + (u.fuel || 'fuel') + ' carried' }));
-        }
-        if (n < u.max) ctl.push(btn('Reset UD', function () { c.ud = u.max; commit(); }, 'btn-ghost'));
-      }
-      if (AMMO_CASES[c.key]) {
-        var am = typeof c.ammo === 'number' ? c.ammo : 20;
-        ctl.push(el('span', { class: 'ud', text: am + ' shots' }));
-        ctl.push(btn('−', function () { c.ammo = Math.max(0, am - 1); commit(); }, '', { 'aria-label': 'One fewer' }));
-        ctl.push(btn('+', function () { c.ammo = Math.min(20, am + 1); commit(); }, '', { 'aria-label': 'One more' }));
-      }
-      if (c.key === 'Healing Potion') ctl.push(btn('Drink', function () {
-        var m = C.staminaMax(), cur = C.curStamina(), msg;
-        if (cur >= m && C.woundCount()) { healWounds(1); msg = 'Drank a healing potion: healed 1 wound.'; }
-        else { var r = d(6); setStamina(cur + r); msg = 'Drank a healing potion: rolled ' + r + ', regained ' + (Math.min(m, cur + r) - cur) + ' Stamina.'; }
-        useOne(c); commit(msg);
-      }));
-      else if (it.st > 1 || it.cat === 'consumable' || it.cat === 'food') ctl.push(btn(it.cat === 'consumable' || it.cat === 'food' ? 'Use 1' : '−1', function () { useOne(c); commit('Used 1 ' + c.key + '.'); }));
-      if (it.st > 1 && c.qty < it.st && c.area !== 'hand') ctl.push(btn('+1', function () { c.qty++; delete c.ud; commit(); }, 'btn-ghost'));
-      tbl.appendChild(el('div', { class: 'item-row cat-' + it.cat }, [
-        el('span', { class: 'loc', text: where(c) }),
-        el('span', { class: 'nm', title: it.txt }, [el('b', { text: c.key }), c.qty > 1 ? ' ×' + c.qty : '', C.adMax(c) && c.dmg ? el('small', { class: 'muted', text: ' AD ' + C.adNow(c) + '/' + C.adMax(c) }) : null]),
-        el('span', { class: 'ctl' }, ctl)
-      ]));
-    });
-    if (!cards.length) tbl.appendChild(el('p', { class: 'fine', text: 'You carry nothing.' }));
-    card('play-items', 'Carried items', [el('p', { class: 'hint' }, ['Usage dice: each 1 or 2 rolled removes a die. To add found items or move things between hand, belt, and backpack, use ',
-      el('a', { href: '#sec-equipment', text: 'Build > Equipment', onclick: function (e) { e.preventDefault(); gotoBuild('sec-equipment'); } }), '.']), tbl]);
+  // Items: Hands, Belt, Backpack, and Not carried, each a drop zone. Rows drag between them (or use their Move menu);
+  // what's allowed is app.js's inventory rules (slots, both hands for two-handed, one item per hand, restricted extra belt slot).
+  var ZONES = [['hand', 'Hands'], ['belt', 'Belt'], ['pack', 'Backpack'], ['none', 'Not carried']];
+  var dragCard = null;
+  function zoneName(area) { return ZONES.filter(function (z) { return z[0] === area; })[0][1].toLowerCase(); }
+  function moveItem(c, area, idx) {
+    if (area === c.area && idx === undefined) return;
+    var key = c.key, ok = idx === undefined ? C.moveToArea(c, area) : C.moveCard(c, area, idx);
+    if (!ok) { C.toast(C.refusal(c, area, idx)); return; }
+    commit(area === 'none' ? 'Set aside ' + key + '.' : 'Moved ' + key + ' to ' + (area === 'pack' ? 'backpack' : area) + '.');
   }
+  function dropZone(node, area, idx) {
+    node.addEventListener('dragover', function (e) { if (dragCard) { e.preventDefault(); e.stopPropagation(); node.classList.add('drop-ok'); } });
+    node.addEventListener('dragleave', function () { node.classList.remove('drop-ok'); });
+    node.addEventListener('drop', function (e) {
+      e.preventDefault(); e.stopPropagation(); node.classList.remove('drop-ok');
+      var c = dragCard; dragCard = null;
+      if (!c || c.area === area && (idx === undefined || c.idx === idx)) return;
+      // Onto another item: stack or swap with it if the rules allow, otherwise anywhere free in its area.
+      if (idx !== undefined && area !== 'none' && C.moveCard(c, area, idx)) { commit('Moved ' + c.key + ' to ' + (area === 'pack' ? 'backpack' : area) + '.'); return; }
+      moveItem(c, area);
+    });
+  }
+  function renderItems() {
+    var occ = C.occupancy(), zones = el('div', { class: 'item-zones' });
+    ZONES.forEach(function (z) {
+      var area = z[0], cards = S().inv.filter(function (c) { return c.area === area; }).sort(function (a, b) { return a.idx - b.idx; });
+      var free = area === 'none' ? 0 : occ[area].filter(function (x) { return x === null; }).length;
+      var note = area === 'belt' && C.areaSize('belt') > 4 ? ' · slot 5: ' + C.extraBeltRule() : '';
+      var box = el('div', { class: 'item-zone zone-' + area, 'data-area': area }, [
+        el('h3', {}, [z[1], el('small', { class: 'muted', text: area === 'none' ? (cards.length ? '' : ' · drag here to set an item aside') : ' · ' + free + ' of ' + C.areaSize(area) + ' free' + note })])]);
+      dropZone(box, area);
+      cards.forEach(function (c) { box.appendChild(itemRow(c)); });
+      if (!cards.length && area !== 'none') box.appendChild(el('p', { class: 'fine empty', text: area === 'hand' ? 'Empty-handed.' : 'Nothing here.' }));
+      zones.appendChild(box);
+    });
+    var pick = el('select', { 'aria-label': 'Item to add' }), qty = el('input', { type: 'number', class: 'mini', min: 1, max: 99, value: 1, 'aria-label': 'How many' });
+    Object.keys(CROWS.ITEMS).sort().forEach(function (k) { pick.appendChild(el('option', { value: k, text: k })); });
+    var add = el('div', { class: 'row wrap item-add' }, [el('span', { class: 'fine', text: 'Found something?' }), pick, qty, btn('Add', function () {
+      var key = pick.value, all = C.addItem(key, Math.max(1, Math.min(99, parseInt(qty.value, 10) || 1)));
+      commit('Picked up ' + key + (all ? '.' : ' (no room for all of it: some is set aside).'));
+    })]);
+    card('play-items', 'Items', [el('p', { class: 'hint', text: 'Drag items between your hands, belt, and backpack (or use an item\u2019s Move menu). In a fight, getting things out takes a maneuver: Draw From Belt or Draw From Pack. Usage dice: each 1 or 2 rolled removes a die.' }),
+      zones, add]);
+  }
+  function itemRow(c) {
+    var it = item(c.key), u = udInfo(c.key), ctl = [], carriedNow = c.area !== 'none';
+    if (carriedNow && u) {
+      var n = udNow(c);
+      ctl.push(el('span', { class: 'ud', title: item(c.key).txt.split('.')[0], text: 'UD ' + n + '/' + u.max }));
+      if (n > 0 && (u.activate || u.dt)) ctl.push(btn('Roll UD', function () { commit(rollUD(c)); }));
+      if (u.refuel && n < u.max) {
+        var fuel = findCarried(u.fuel || 'Oil Flask');
+        ctl.push(btn('Refuel', function () { useOne(fuel); c.ud = u.max; commit('Refuelled ' + c.key + ' with ' + (u.fuel || 'fuel').toLowerCase() + '.'); }, '', { disabled: !fuel || null, title: fuel ? '' : 'No ' + (u.fuel || 'fuel') + ' carried' }));
+      }
+      if (n < u.max) ctl.push(btn('Reset UD', function () { c.ud = u.max; commit(); }, 'btn-ghost'));
+    }
+    if (carriedNow && AMMO_CASES[c.key]) {
+      var am = typeof c.ammo === 'number' ? c.ammo : 20;
+      ctl.push(el('span', { class: 'ud', text: am + ' shots' }));
+      ctl.push(btn('\u2212', function () { c.ammo = Math.max(0, am - 1); commit(); }, '', { 'aria-label': 'One fewer' }));
+      ctl.push(btn('+', function () { c.ammo = Math.min(20, am + 1); commit(); }, '', { 'aria-label': 'One more' }));
+    }
+    if (!carriedNow) ctl.push(btn('Discard', function () { removeCard(c); commit('Discarded ' + c.key + (c.qty > 1 ? ' \u00d7' + c.qty : '') + '.'); }, 'btn-ghost'));
+    else if (c.key === 'Healing Potion') ctl.push(btn('Drink', function () {
+      var m = C.staminaMax(), cur = C.curStamina(), msg;
+      if (cur >= m && C.woundCount()) { healWounds(1); msg = 'Drank a healing potion: healed 1 wound.'; }
+      else { var r = d(6); setStamina(cur + r); msg = 'Drank a healing potion: rolled ' + r + ', regained ' + (Math.min(m, cur + r) - cur) + ' Stamina.'; }
+      useOne(c); commit(msg);
+    }));
+    else if (it.st > 1 || it.cat === 'consumable' || it.cat === 'food') ctl.push(btn(it.cat === 'consumable' || it.cat === 'food' ? 'Use 1' : '\u22121', function () { useOne(c); commit('Used 1 ' + c.key + '.'); }));
+    if (carriedNow && it.st > 1 && c.qty < it.st && c.area !== 'hand') ctl.push(btn('+1', function () { c.qty++; delete c.ud; commit(); }, 'btn-ghost'));
+    var mv = el('select', { class: 'mini-sel', 'aria-label': 'Move ' + c.key, title: 'Move to', onchange: function () { moveItem(c, this.value); } },
+      ZONES.map(function (z) { return el('option', { value: z[0], text: z[0] === c.area ? z[1] : '\u2192 ' + z[1] }); }));
+    mv.value = c.area;
+    ctl.push(mv);
+    var row = el('div', { class: 'item-row cat-' + it.cat, draggable: 'true', title: 'Drag to another place',
+      ondragstart: function (e) { dragCard = c; row.classList.add('dragging'); try { e.dataTransfer.setData('text/plain', c.key); e.dataTransfer.effectAllowed = 'move'; } catch (x) { /* old browsers */ } },
+      ondragend: function () { dragCard = null; row.classList.remove('dragging'); } }, [
+      el('span', { class: 'loc' }, [el('span', { class: 'grip', 'aria-hidden': 'true', text: '\u2807 ' }), carriedNow ? where(c) : '']),
+      el('span', { class: 'nm', title: it.txt }, [el('b', { text: c.key }), c.qty > 1 ? ' \u00d7' + c.qty : '', C.adMax(c) && c.dmg ? el('small', { class: 'muted', text: ' AD ' + C.adNow(c) + '/' + C.adMax(c) }) : null,
+        it.hands === 2 ? el('small', { class: 'muted', text: ' (2 hands)' }) : null, C.spanOf(c, c.area === 'none' ? 'pack' : c.area) > 1 && c.area !== 'hand' ? el('small', { class: 'muted', text: ' (' + C.spanOf(c, c.area === 'none' ? 'pack' : c.area) + ' slots)' }) : null]),
+      el('span', { class: 'ctl' }, ctl)
+    ]);
+    if (c.area !== 'none') dropZone(row, c.area, c.idx);
+    return row;
+  }
+
   var AMMO_CASES = { 'Quiver of 20 Arrows': 1, 'Case of 20 Crossbow Bolts': 1 };
 
   function renderAdvance() {
