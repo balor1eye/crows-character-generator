@@ -1348,7 +1348,7 @@ function a_notes_dismiss(): array {
  * id), whose version is the newest action's id, reads new ones with combat.actions, and applies them.
  */
 const COMBAT_MAX_BYTES = 200000;
-const ACTION_TYPES = ['attack', 'maneuver', 'taunt', 'ready', 'assist', 'assistUsed', 'declare', 'done', 'undone', 'drop', 'pickup', 'rest'];
+const ACTION_TYPES = ['attack', 'maneuver', 'taunt', 'ready', 'assist', 'assistUsed', 'declare', 'done', 'undone', 'drop', 'pickup', 'rest', 'defend'];
 const REST_FOODS = ['', 'Ration', 'Hearty Ration', 'none'];
 const MANEUVERS = ['Move', 'Shift', 'Stand Up', 'Draw From Pack', 'Draw From Belt', 'Pick Up Item', 'Dump Backpack', 'Reload', 'Command Pet',
     'Grab', 'Escape Grab', 'Knockback', 'Jump'];
@@ -1483,6 +1483,7 @@ function clean_action($a): array {
         $out += ['food' => in_array($food, REST_FOODS, true) ? $food : '', 'activity' => $txt('activity', 40), 'repair' => $txt('repair', 80), 'study' => $txt('study', 60),
                  'useKit' => $flag('useKit'), 'tended' => $flag('tended'), 'tendedKit' => $flag('tendedKit'), 'caretaker' => $flag('caretaker')];
     }
+    if ($type === 'defend') $out += ['hit' => $txt('hit', 40)];
     if ($type === 'pickup') $out += ['item' => $txt('item', 40), 'itemName' => $txt('itemName', 80)];
     if ($type === 'drop') {
         // Items the crow put down: what's in its hands, or its backpack's contents (dump: the Dump Backpack maneuver).

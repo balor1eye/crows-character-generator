@@ -31,7 +31,7 @@
       expertiseUses: expertiseUses, maxUses: maxUses, armorInfo: armorInfo, adMax: adMax, adNow: adNow,
       woundCount: woundCount, occupancy: occupancy, cardById: cardById, spanOf: spanOf, traitXP: traitXP,
       areaSize: areaSize, handFits: handFits, takeItem: takeItem, extraBeltRule: extraBeltRule, moveCard: moveCard, moveToArea: moveToArea, refusal: refusal, addItem: addItem,
-      esBonusCount: esBonusCount, charBonusCount: charBonusCount, usePool: usePool, allocTotal: allocTotal
+      esBonusCount: esBonusCount, charBonusCount: charBonusCount, usePool: usePool, allocTotal: allocTotal, ownedTraitIds: f('ownedTraitIds')
     }
   };
 

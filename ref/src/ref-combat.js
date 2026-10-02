@@ -286,7 +286,7 @@
       note: [a[5] || ''].concat(lines.length > 1 || lines[0].text.indexOf('[') >= 0 ? lines.map(function (l) { return l.text.replace(/\*\*/g, ''); }) : []).filter(Boolean).join('; ') };
     log('', '**' + c.name + '** ' + a[0] + ' (' + a[2] + ')' + (opts.rxn ? ', opportunity attack' : '') + (tgts.length ? ' ' : ': ') + lines.map(function (l) { return l.text; }).join('; ') + (r0.crit ? '. Crit: extra action.' : ''));
     feed('**' + c.name + '** ' + a[0] + (opts.rxn ? ' (opportunity attack)' : '') + ': ' + lines.map(function (l) { return (l.t ? '→ **' + l.t.name + '** ' : '') + 'tier ' + l.r.tier + (l.r.crit ? ' (crit)' : '') + (l.r.tier === 1 ? ', a miss' : ', ' + l.dm.n + ' damage'); }).join('; ') + '.');
-    if (act.items.length && cb.autoMon !== false) applyAct(act);
+    pend(act, c);
     save(); render();
   }
   /* A crow may counter (its player is asked on their Play page, until the end of the round). */
@@ -325,13 +325,54 @@
     ui.sit = {};
     ui.dice = { label: c.name + ': ' + name + ' (' + (kind === 'escape' ? 'from ' : '→ ') + t.name + ')', r: r, dmg: res, hit: act.items.length ? act : null, counters: counters, note: m.why.length ? 'auto: ' + m.why.join(', ') : '' };
     log('', line); feed(line);
-    if (act.items.length && cb.autoMon !== false) applyAct(act);
+    pend(act, c);
     save(); render();
   }
 
   // ---- applying and undoing effects
   /* What an action does to whom: [{ id, damage, piercing, heal, ad, wounds (healed), conds: { name: on }, grab: grabber id }]. */
   function fxItems(act) { return act.items || (act.target && act.damage ? [{ id: act.target, damage: act.damage, piercing: act.piercing }] : []); }
+  /*
+   * Nothing deals damage by itself: a hit waits as a pending hit until the Ref applies it, so the target can try to reduce or avoid it
+   * first (a crow's player from their Play page, the Ref for enemies and allies). Effects with no damage (a freed grab, standing up) just happen.
+   * An action by a creature is also kept in the list of actions (by.id) so the players can see the hit coming.
+   */
+  function pend(act, by) {
+    if (!act.items || !act.items.length) return;
+    if (!act.id) { act.id = 'h' + nid(); act.round = S().combat.round; if (by) act.from = by.id; (S().combat.acts = S().combat.acts || []).push(act); S().combat.acts = S().combat.acts.slice(-30); }
+    if (!act.items.some(function (f) { return f.damage > 0; })) applyAct(act);
+  }
+  /* A hit that is still waiting, for each crow it is aimed at: [{ id, who, label, items: [{ to, damage, piercing, conds, grab }], defended }]. */
+  function pendingHits() {
+    var c = S().combat;
+    return (c.acts || []).filter(function (a) { return !a.applied && a.round === c.round && a.from && fxItems(a).some(function (f) { var x = byId(f.id); return f.damage > 0 && x && x.kind === 'pc'; }); }).map(function (a) {
+      return { id: a.id, who: a.who, label: a.label || '', defended: (a.defenses || []).map(function (x) { return x.by; }),
+        items: fxItems(a).filter(function (f) { var x = byId(f.id); return f.damage > 0 && x && x.kind === 'pc'; }).map(function (f) {
+          return { to: f.id, damage: f.damage, piercing: !!f.piercing, conds: Object.keys(f.conds || {}).filter(function (k) { return f.conds[k]; }), grab: !!f.grab }; }) };
+    });
+  }
+  /* What the target(s) of a waiting hit can do about it: the defenses crows' players sent, and the Ref's own tools (lower the damage,
+     negate it, an enemy's reaction). */
+  function defendRow(h) {
+    var items = fxItems(h).filter(function (f) { return f.damage > 0 && byId(f.id); });
+    if (!items.length) return null;
+    var out = [];
+    (h.defenses || []).forEach(function (x) { out.push(el('span', { class: 'chip', title: 'Sent by the player', text: x.name + ': ' + x.text })); });
+    items.forEach(function (f) {
+      var x = byId(f.id), n = el('input', { type: 'number', class: 'tiny', min: 0, max: 999, value: f.damage, 'aria-label': 'Damage to ' + x.name, title: 'Change the damage ' + x.name + ' takes (it was ' + (f.damage0 === undefined ? f.damage : f.damage0) + ')',
+        onchange: function () { var v = clamp(int(this.value, f.damage), 0, 999); if (f.damage0 === undefined) f.damage0 = f.damage; log('', x.name + '’s damage from ' + h.who + (h.label ? ' (' + h.label + ')' : '') + ' is now ' + v + ' (was ' + f.damage + ').'); f.damage = v; save(); render(); } });
+      out.push(el('span', { class: 'row center' }, [el('span', { class: 'fine', text: x.name + ' takes' }), n,
+        btn('Negate', function () { f.damage0 = f.damage0 === undefined ? f.damage : f.damage0; f.damage = 0; f.conds = {}; f.grab = null; log('', x.name + ' avoids ' + h.who + '’s ' + (h.label || 'hit') + '.'); feed('**' + x.name + '** avoids **' + h.who + '**’s ' + (h.label || 'attack') + '.'); save(); render(); }, 'btn-small btn-ghost', 'It misses or is avoided: no damage and none of its effects'),
+        x.kind !== 'pc' && !x.dead ? btn('Use reaction', function () {
+          if (rxLeft(x) <= 0) { toast(x.name + ' has no reaction left this round.'); return; }
+          var what = prompt('What does ' + x.name + ' do with its reaction? (then lower or negate the damage above)', '');
+          if (what === null) return;
+          useRx(x); (h.defenses = h.defenses || []).push({ by: x.id, name: x.name, text: what.trim() || 'reaction' });
+          log('', '**' + x.name + '** uses a reaction against ' + h.who + '’s ' + (h.label || 'hit') + (what.trim() ? ': ' + what.trim() : '') + '.'); feed('**' + x.name + '** uses its reaction: ' + (what.trim() || 'defends') + '.'); save(); render();
+        }, 'btn-small btn-ghost', 'Spend a reaction (' + rxLeft(x) + ' left) on something that reduces or avoids this: a parry, a dodge, a readied action. Then lower or negate the damage') : null]));
+    });
+    return el('span', { class: 'row center def-row' }, out);
+  }
   /* Deal an action's effects (remembering everyone as they were, for Undo). */
   function applyAct(act) {
     if (act.applied) return;
@@ -565,6 +606,7 @@
         if (it.by) o.by = it.by;
         return o;
       }),
+      hits: pendingHits(),
       given: (c.given || []).slice(-30),
       prompts: (c.prompts || []).filter(function (p) { return !p.done && p.round === c.round; }),
       assists: c.assists || [],
@@ -643,6 +685,15 @@
       feed('**' + who + '** ' + (a.type === 'done' ? 'is done for round ' + c.round + '.' : 'isn’t done yet.'));
       return;
     }
+    if (a.type === 'defend') {
+      var hit = (c.acts || []).filter(function (x) { return x.id === a.hit && !x.applied; })[0];
+      if (!hit) { feed('**' + who + '** tried to defend, but that hit has already been dealt.'); return; }
+      if (a.rxn) useRx(me);
+      (hit.defenses = hit.defenses || []).push({ by: me.id, name: who, text: a.text || 'defends' });
+      log('', '**' + who + '** defends against ' + hit.who + '’s ' + (hit.label || 'hit') + (a.rxn ? ' (reaction)' : '') + ': ' + (a.text || 'no details') + '. Adjust the damage, then apply it.');
+      feed('**' + who + '** defends against **' + hit.who + '**’s ' + (hit.label || 'attack') + (a.text ? ': ' + a.text : '') + '.');
+      return;
+    }
     if (a.type === 'assistUsed') { c.assists = (c.assists || []).filter(function (x) { return x.id !== a.text; }); return; }
     if (a.type === 'drop') {
       var put = (a.items || []).map(function (x) { return newItem(x.key, x.qty, false, x); });
@@ -712,7 +763,7 @@
     else line = '**' + who + '**' + (tname ? ' → **' + tname + '**' : '') + ': ' + (a.text || 'acts.');
     c.acts = (c.acts || []).concat([act]).slice(-30);
     log('', line); feed(line);
-    if (act.items && act.items.length && c.auto !== false) applyAct(act);
+    pend(act);
   }
   /*
    * What the rules let happen after a player's action, as buttons on it: the target counters a melee miss or a failed
@@ -775,7 +826,6 @@
         el('b', { text: 'Players' }),
         el('span', { class: 'fine grow', text: !c.list.length ? 'Players see the fight on their Play page once their linked crows are in the tracker.' :
           crows ? plural(crows, 'linked crow') + ' in this fight: their players see it live and act from their Play page.' : 'No linked crows in this fight, so no player sees it. Link crows in the Party tab.' }),
-        chk(c, 'auto', 'Apply their actions automatically', { title: 'Off: each hit, heal, grab, or condition waits here until you apply it' }),
         chk(c, 'showSt', 'Show foes’ Stamina and AD', { title: 'Off: players only see how hurt each foe looks' })]),
       open.length ? el('div', { class: 'fine' }, ['Waiting on reactions: ' + open.map(function (p) { var to = byId(p.to); return (to ? to.name : 'a crow') + ' may counter ' + p.fromName; }).join('; ') + ' (until the end of the round).']) : null,
       (c.assists || []).length ? el('div', { class: 'fine' }, ['Assists: ' + c.assists.map(function (x) { return x.fromName + ' → ' + x.toName + ' ' + signed(x.bonus); }).join('; ') + '.']) : null,
@@ -833,7 +883,6 @@
       ]),
       el('div', { class: 'row', style: 'margin-top:.6rem' }, [field('Add creature', select, 'grow'), field('How many', count), field('Side', side),
         btn('Add', function () { addCombatant(select.value, int(count.value, 1), side.value); log('', 'Added ' + int(count.value, 1) + ' × ' + select.value + ' to combat.'); render(); })]),
-      el('div', { class: 'row center' }, [chk(c, 'autoMon', 'Deal creatures’ hits to their target automatically', { title: 'Off: a hit on a target waits in the Dice panel until you apply it' })]),
       el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next creature roll:' }),
         sitBtn('flank', 'Flanking', 'An ally of the attacker is on the opposite side of the target: edge on melee attacks'),
         sitBtn('high', 'High ground', '1+ square above the target: edge on attacks'),
@@ -931,7 +980,7 @@
       targetsFor: targetsFor, targetOf: targetOf, twoTargets: twoTargets, rxMax: rxMax, rxLeft: rxLeft, useRx: useRx, releaseGrabs: releaseGrabs,
       grabbing: grabbing, tauntOn: tauntOn, newRound: newRound, rollMods: rollMods, tierFx: tierFx, hitDamage: hitDamage, testWith: testWith,
       meleeAtk: meleeAtk, monsterAttack: monsterAttack, prompt: prompt, monsterManeuver: monsterManeuver, fxItems: fxItems, applyAct: applyAct,
-      undoAct: undoAct, counterDamage: counterDamage, counterAct: counterAct, feed: feed, clearCombat: clearCombat, itemName: itemName,
+      undoAct: undoAct, defendRow: defendRow, counterDamage: counterDamage, counterAct: counterAct, feed: feed, clearCombat: clearCombat, itemName: itemName,
       itemsText: itemsText, newItem: newItem, onGround: onGround, itemNews: itemNews, putDown: putDown, creaturePickUp: creaturePickUp,
       creatureDrop: creatureDrop, dropFromFallen: dropFromFallen, groundText: groundText, itemsPanel: itemsPanel, pcOf: pcOf, healthWord: healthWord,
       publicSession: publicSession, publicCombat: publicCombat, restChoice: restChoice, restChoiceText: restChoiceText, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,

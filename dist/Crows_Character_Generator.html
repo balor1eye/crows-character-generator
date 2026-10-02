@@ -10044,7 +10044,7 @@ var CROWS_TRAIT_TREES = [
       expertiseUses: expertiseUses, maxUses: maxUses, armorInfo: armorInfo, adMax: adMax, adNow: adNow,
       woundCount: woundCount, occupancy: occupancy, cardById: cardById, spanOf: spanOf, traitXP: traitXP,
       areaSize: areaSize, handFits: handFits, takeItem: takeItem, extraBeltRule: extraBeltRule, moveCard: moveCard, moveToArea: moveToArea, refusal: refusal, addItem: addItem,
-      esBonusCount: esBonusCount, charBonusCount: charBonusCount, usePool: usePool, allocTotal: allocTotal
+      esBonusCount: esBonusCount, charBonusCount: charBonusCount, usePool: usePool, allocTotal: allocTotal, ownedTraitIds: f('ownedTraitIds')
     }
   };
 
@@ -11375,6 +11375,33 @@ var CROWS_TRAIT_TREES = [
   }
   function rxLeft() { var m = me(); return m && typeof m.rxLeft === 'number' ? m.rxLeft : 1; }
   function myPrompts() { var c = cur(), m = me(); return c && m ? (c.prompts || []).filter(function (p) { return p.to === m.id && !p.done; }) : []; }
+  /* Hits the Ref has rolled against this crow that are still waiting: nothing is dealt until the Ref applies it. */
+  function myHits() {
+    var c = cur(), m = me();
+    return c && m ? (c.hits || []).map(function (h) { return { h: h, items: h.items.filter(function (i) { return i.to === m.id; }) }; }).filter(function (x) { return x.items.length; }) : [];
+  }
+  /* The ways this crow can cut a hit down or avoid it, from its traits (the Ref decides what they do), and anything else in words. */
+  function defenses() {
+    var own = C.ownedTraitIds ? C.ownedTraitIds().map(function (id) { return id.split('|')[1]; }) : [], out = [];
+    if (own.indexOf('Sacrifice Armor') >= 0) out.push(['Sacrifice Armor', 'Sacrifice Armor: when this hit reduces your armor or shield to 0 AD with damage left over, the armor is destroyed and the rest of the damage is 0']);
+    if (own.indexOf('Break the Blade') >= 0) out.push(['Break the Blade', 'Break the Blade: when this hit reduces your slashing weapon to 0 AD with damage left over, the weapon is destroyed and the rest of the damage is 0']);
+    return out.concat([['Readied action', 'Something you readied for this (spend your reaction)'], ['Other', 'Anything else you can do to avoid or reduce it: say what']]);
+  }
+  function hitBanner(x) {
+    var h = x.h, i = x.items[0], m = me(), mineDef = (h.defended || []).indexOf(m && m.id) >= 0, opts = defenses();
+    var sel = el('select', { class: 'in mini', 'aria-label': 'How you defend' }, opts.map(function (o) { return el('option', { value: o[0], title: o[1], text: o[0] }); }));
+    var say = el('input', { type: 'text', class: 'in', maxlength: 160, placeholder: 'What you do (optional)', 'aria-label': 'What you do' });
+    var rx = el('label', { class: 'check', title: 'Most ways to avoid a hit cost your reaction (one a round)' }, [el('input', { type: 'checkbox', checked: rxLeft() > 0 }), ' Uses my reaction']);
+    return el('div', { class: 'banner warn cbt-hit' }, [
+      el('b', { text: 'Incoming: ' }), h.who + (h.label ? '’s ' + h.label : '') + ' hits you for ' + i.damage + (i.piercing ? ' piercing' : '') + ' damage' + (i.conds.length ? ', ' + i.conds.join(' and ').toLowerCase() : '') + (i.grab ? ', grabbed' : '') +
+      '. It isn’t dealt until the Ref applies it, so you can try to reduce or avoid it first. ',
+      mineDef ? el('span', { class: 'fine', text: 'You told the Ref how you defend; waiting for them to apply it.' }) : el('span', { class: 'row center' }, [sel, say, rx,
+        btn('Defend', function () {
+          if (rx.querySelector('input').checked && rxLeft() <= 0) { C.toast('You’ve used your reaction this round.'); return; }
+          var what = [sel.value === 'Other' ? '' : sel.value, say.value.trim()].filter(Boolean).join(': ');
+          act({ type: 'defend', hit: h.id, text: what, rxn: rx.querySelector('input').checked }).then(function (ok) { if (ok) C.toast('Sent to the Ref. They’ll adjust the damage.'); });
+        }, 'btn-small btn-primary', 'Tell the Ref how you try to reduce or avoid this hit; they rule on it')])]);
+  }
   function myAssist() { var c = cur(), m = me(); return c && m ? (c.assists || []).filter(function (a) { return a.to === m.id && !usedAssists[a.id]; })[0] || null : null; }
 
   /*
@@ -11583,6 +11610,7 @@ var CROWS_TRAIT_TREES = [
         can ? btn('Counter ' + p.fromName + ' (' + (p.doom ? w.t3 : w.t2) + ' with ' + w.key + ')', function () { counter(p); }, 'btn-small btn-primary') :
           el('span', { class: 'fine', text: !w ? 'You have no melee weapon in hand to counter with.' : rxLeft() <= 0 ? 'You’ve used your reaction this round.' : '' })]));
     });
+    myHits().forEach(function (h) { box.appendChild(hitBanner(h)); });
     if (mine && c.round) box.appendChild(turnBox(c, mine));
     box.appendChild(el('h3', { text: 'Enemies' }));
     box.appendChild(el('div', { class: 'cbt-list' }, foes.length ? foes.map(row) : [el('p', { class: 'fine', text: 'No enemies in the fight yet.' })]));

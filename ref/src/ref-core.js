@@ -20,7 +20,7 @@
   }, f = A.fwd;
   // From the other files (each call goes to the function there).
   var allClaims = f('allClaims'), applyAct = f('applyAct'), byId = f('byId'), counterAct = f('counterAct'),
-      counterDamage = f('counterDamage'), dropFromFallen = f('dropFromFallen'), endDT = f('endDT'), feed = f('feed'), fxItems = f('fxItems'),
+      counterDamage = f('counterDamage'), dropFromFallen = f('dropFromFallen'), defendRow = f('defendRow'), endDT = f('endDT'), feed = f('feed'), fxItems = f('fxItems'),
       heal = f('heal'), liveChanged = f('liveChanged'), newRound = f('newRound'), pendingText = f('pendingText'),
       releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderMaps = f('renderMaps'), renderEncounters = f('renderEncounters'),
       renderParty = f('renderParty'), renderRules = f('renderRules'), renderSession = f('renderSession'),
@@ -365,8 +365,9 @@
     var items = h ? fxItems(h).filter(function (f) { return byId(f.id); }) : [];
     if (!items.length) return null;
     var names = items.map(function (f) { return byId(f.id).name; }).join(', '), what = fxText(items);
-    return el('span', { class: 'row center hit-ctl' }, h.applied ? [el('span', { class: 'chip ok', text: what + ' \u2192 ' + names }), btn('Undo', function () { undoAct(h); }, 'btn-small btn-ghost', 'Put ' + names + ' back as they were (Stamina, AD, wounds, conditions)')]
-      : [btn('Apply ' + what + ' \u2192 ' + names, function () { applyAct(h); }, 'btn-small btn-primary', 'Deal it (damage goes through AD first, then Stamina, then wounds)')]);
+    var def = h.applied ? null : defendRow(h);
+    return el('span', { class: 'row center hit-ctl' }, (h.applied ? [el('span', { class: 'chip ok', text: what + ' \u2192 ' + names }), btn('Undo', function () { undoAct(h); }, 'btn-small btn-ghost', 'Put ' + names + ' back as they were (Stamina, AD, wounds, conditions)')]
+      : [btn('Apply ' + what + ' \u2192 ' + names, function () { applyAct(h); }, 'btn-small btn-primary', 'Deal it (damage goes through AD first, then Stamina, then wounds)')]).concat(def ? [def] : []));
   }
   function diceBtn(label, expr) {
     return btn(label, function () {

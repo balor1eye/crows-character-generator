@@ -7,8 +7,8 @@ test_player opens a new crow on the Play page and shares it; test_ref adds it to
 puts two Blood Creature A and the party in the combat tracker, and starts the fight. Then the player's page must
 show the fight; the player targets the second creature and attacks (dice forced to a crit), the hit must land on
 that creature in the Ref Screen and come back to the player as its feed and health. A described action and "done
-for this round" must reach the Ref; with automatic hits off, a hit must wait for Apply, and Undo must put the
-creature back. Ending the fight must take the Combat card off the player's page. Everything it made is deleted.
+for this round" must reach the Ref; a hit must wait for Apply (and Undo put the creature back);
+a creature's hit on the crow waits too, the player can defend, and the Ref lowers it. Ending the fight must take the Combat card off the player's page. Everything it made is deleted.
 
 Logs in through server/test_instance.py (never typing a password into a browser). Needs Firefox and geckodriver,
 like run_combat_test.py.
@@ -133,7 +133,11 @@ def main():
         sent = p("return text(q('.roll-result'))")
         assert "Sent to the Ref (target: Blood Creature A 2)" in sent, sent
         ok("the crit is sent to the Ref with its target")
-        rwait("var a = combat().acts; return a.length === 1 && a[0].applied", "the hit to land in the Ref Screen")
+        rwait("var a = combat().acts; return a.length === 1", "the hit to reach the Ref Screen")
+        assert r("return combat().acts[0].applied") is False
+        ok("the hit waits: nothing is dealt automatically")
+        r("button('Apply', q('#sec-combat .live-acts')).click();")
+        assert r("return combat().acts[0].applied") is True
         act = r("return combat().acts[0]")
         bc2 = r("return combat().list.filter(function (x) { return x.name === 'Blood Creature A 2'; })[0]")
         bc1 = r("return combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0]")
@@ -157,15 +161,13 @@ def main():
         pwait("return /done/.test(text(row(arguments[0])))".replace("arguments[0]", repr(crow)), "the done mark on the player's page")
         ok("...and back on the player's page")
 
-        # Automatic hits off: the next hit waits for Apply; Undo puts the creature back.
-        r("var l = qa('#sec-combat label.check').filter(function (x) { return /Apply their actions automatically/.test(text(x)); })[0]; q('input', l).click();")
-        assert r("return combat().auto") is False
+        # The next hit waits for Apply too; Undo puts the creature back.
         before = r("return combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0]")
         p("button('Target', row('Blood Creature A 1')).click();")
         attack()
         rwait("return combat().acts.filter(function (a) { return a.type === 'attack'; }).length === 2", "the second hit")
         assert r("return combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0].st") == before["st"]
-        ok("with automatic hits off, the hit waits")
+        ok("the hit waits")
         r("button('Apply', q('#sec-combat .live-acts')).click();")
         after = r("return combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0]")
         assert after["st"] < before["st"], after
@@ -174,8 +176,6 @@ def main():
         undone = r("return combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0]")
         assert undone["st"] == before["st"] and undone["dead"] == before["dead"], undone
         ok("Undo puts the creature back")
-        r("var l = qa('#sec-combat label.check').filter(function (x) { return /Apply their actions automatically/.test(text(x)); })[0]; q('input', l).click();")
-        assert r("return combat().auto") is True
 
         # A creature attacks the crow it targets: the hit lands on the crow, the player sees it coming, Undo takes it back.
         crow_id = r("return combat().list.filter(function (x) { return x.kind === 'pc'; })[0].id")
@@ -189,11 +189,21 @@ def main():
         r("""var M = window.Math, rnd = M.random; M.random = function () { return 0.999; };
              try { button('Claws', cbt('Blood Creature A 1')).click(); } finally { M.random = rnd; }""")
         assert "→ " + crow in r("return text(q('#side-dice .result'))")
-        assert r(hp) == hp0 - 3, (hp0, r(hp))
-        ok("its crit (Claws, 3 damage) lands on the crow automatically")
-        pwait("return window.CrowsPlay.vitals().ad === 6", "the hit on the player's own sheet", 10)
+        assert r(hp) == hp0, (hp0, r(hp))
+        ok("its crit (Claws, 3 damage) is not dealt automatically")
+        pwait("return /Incoming/.test(text(q('#play-combat')))", "the player to see the incoming hit", 10)
+        ok("the player sees the incoming hit on their Play page")
+        p("q('#play-combat .cbt-hit input[type=checkbox]').click(); type(q('#play-combat .cbt-hit input[type=text]'), 'I twist aside'); button('Defend', q('#play-combat .cbt-hit')).click();")
+        rwait("return combat().acts.some(function (a) { return (a.defenses || []).length; })", "the defense to reach the Ref")
+        assert "twist aside" in r("return text(q('#sec-combat .live-acts'))")
+        ok("the player's defense reaches the Ref, who sees it with the hit")
+        r("var i = q('#sec-combat .live-acts .def-row input[type=number]'); i.value = '1'; i.dispatchEvent(new Event('change'));")
+        r("button('Apply', q('#sec-combat .live-acts')).click();")
+        assert r(hp) == hp0 - 1, (hp0, r(hp))
+        ok("the Ref lowers the damage to 1 and applies it")
+        pwait("return window.CrowsPlay.vitals().ad === 8", "the reduced hit on the player's sheet", 10)
         assert r("return !document.querySelector('iframe')")
-        ok("...through the crow's own armor on the player's sheet (AD 9 -> 6), dealt by the Ref Screen itself (no iframe)")
+        ok("...through the crow's own armor on the player's sheet (AD 9 -> 8), dealt by the Ref Screen itself (no iframe)")
         assert crow in p("return text(q('#play-combat .cbt-feed'))")
         r("button('Undo', q('#side-dice .result')).click();")
         assert r(hp) == hp0
@@ -247,6 +257,7 @@ def main():
         b0 = r("var x = combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0]; return x.st + x.ad;")
         p("button('Counter Blood Creature A 1', q('#play-combat .cbt-prompt')).click();")
         rwait("return combat().acts.some(function (a) { return a.rxn && /Counter with Sword/.test(a.label); })", "the counter in the Ref Screen")
+        r("button('Apply', q('#sec-combat .live-acts li')).click();")
         b1 = r("var x = combat().list.filter(function (x) { return x.name === 'Blood Creature A 1'; })[0]; return x.st + x.ad;")
         assert b1 < b0, (b0, b1)
         pwait("return !q('#play-combat .cbt-prompt')", "the offer to go away")
@@ -293,7 +304,9 @@ def main():
         foes = r("return combat().list.filter(function (x) { return x.kind === 'foe' && !x.dead; }).map(function (x) { return [x.id, x.name, x.st + x.ad]; })")
         pl.post("combat.act", {"id": char, "campaign": camp_id, "action": {"type": "attack", "label": "Cast Spark", "tier": 2, "cast": True, "damage": 1,
                                                                           "targets": [{"id": f[0], "name": f[1]} for f in foes[:2]]}})
-        rwait("return combat().acts.some(function (a) { return a.label === 'Cast Spark' && a.applied; })", "the spark")
+        rwait("return combat().acts.some(function (a) { return a.label === 'Cast Spark'; })", "the spark")
+        r("button('Apply', qa('#sec-combat .live-acts li').filter(function (x) { return /Cast Spark/.test(text(x)); })[0]).click();")
+        rwait("return combat().acts.some(function (a) { return a.label === 'Cast Spark' && a.applied; })", "the spark to be dealt")
         after = r("return combat().list.filter(function (x) { return x.kind === 'foe'; }).map(function (x) { return [x.id, x.st + x.ad]; })")
         hit = [f for f in foes[:2] if dict(after)[f[0]] == f[2] - 1]
         assert len(hit) == len(foes[:2]), (foes, after)
