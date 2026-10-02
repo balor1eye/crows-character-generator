@@ -99,6 +99,15 @@ presets, Reset, Build/Play and each Ref Screen tab keeping their own arrangement
 python3 ref/test/run_layout_test.py [--test-instance]
 ```
 
+## Portal (`run_portal_test.py`)
+
+Test instance only. As test_player it makes a draft and a finished crow through the API, then checks the Crows list (status
+chips, main button, More menu, `#play` as an alias) and Home's Your crows in headless Firefox, and deletes them.
+
+```bash
+python3 -u ref/test/run_portal_test.py
+```
+
 ## Live combat with a player (`run_live_combat_test.py`)
 
 Runs on the test instance only, in two headless Firefoxes: test_ref in the Ref Screen and test_player on the Play

@@ -139,7 +139,7 @@ Source is in `ref/src/`; rebuild with `python ref/build/build.py` (plain Python 
 
 The apps are also hosted with accounts at **https://joshuaramsey.com/crows/**. Log in to keep your characters
 (and, for Refs, campaigns) on the server with autosave, or continue as a guest. A new crow is saved to your account at once as a
-*draft*; press **Finish crow** when it's ready to play. There, Start over, Save file, and Load file sit in a **⋯ More** menu. An admin marks accounts as
+*draft*; press **Finish crow** when it's ready to play. There, Start over, Save file, and Load file sit in a **⋯ More** menu. The portal's **Crows** page lists your crows with a status (Draft, Ready, in a campaign) and one main button for each (Continue building, or Play); Share, Copy, Download, and the rest are under **More**. Home shows your top crows and, for Refs, your campaigns. An admin marks accounts as
 players or Refs, and only Refs can open the Ref Screen there. Players can share a character with their Ref by link, or ask to join a campaign from the Ref's invite link. The Ref adds it to a campaign (or accepts the request), works the
 crow's vitals on the Party tab (Stamina, damage through its armor, wounds, conditions, cruelty: the Ref Screen makes the
 change on the player's sheet with the same rules the sheet uses), opens the sheet to change equipment and notes too,

@@ -77,7 +77,7 @@
     if (page === 'admin' && !me.isAdmin) page = 'home';
     nav();
     var views = { login: viewLogin, register: viewRegister, forgot: viewForgot, home: viewHome, characters: viewCharacters,
-      play: viewPlay, find: viewFind, campaigns: viewCampaigns, account: viewAccount, admin: viewAdmin };
+      play: viewCharacters, find: viewFind, campaigns: viewCampaigns, account: viewAccount, admin: viewAdmin };
     (views[page] || viewHome)();
     window.scrollTo(0, 0);
   }
@@ -387,20 +387,23 @@
     return el('a', { class: 'tile ' + (cls || ''), href: href }, [el('span', { class: 't', text: title }), el('span', { class: 'd', text: desc })]);
   }
   function viewHome() {
-    var tiles = [
-      tile('My characters', 'Create a new crow, or open, edit, copy, download, upload, or delete your saved ones.', '#characters'),
-      tile('Play', 'Take one of your crows to the table: vitals, dice, rests, and XP.', '#play'),
-      tile('Find a campaign', 'Search the campaigns Refs have opened to new players, and ask to join with one of your crows.', '#find')
-    ];
-    if (me.canRef) tiles.push(tile('Ref Screen', 'Run sessions and keep your campaigns: open one or start a new one.', '#campaigns', 'ref'));
+    var tiles = [tile('Find a campaign', 'Search the campaigns Refs have opened to new players, and ask to join with one of your crows.', '#find')];
     if (me.isAdmin) tiles.push(tile('Manage accounts', 'Mark accounts as players or Refs, send reset links, and more.', '#admin', 'admin'));
     var news = el('div');
+    var crows = el('div'), camps = me.canRef ? el('div') : null;
     show([
       el('h1', { text: 'Welcome, ' + me.username }),
       news,
-      el('p', { class: 'muted', text: 'What would you like to do?' }),
+      el('div', { class: 'list-head' }, [el('h2', { class: 'section-head', text: 'Your crows' }), el('div', { class: 'btns' }, [
+        a('Create a character', GEN + '?new=1&mode=build', 'btn btn-primary btn-small'), a('All crows', '#characters', 'btn btn-small')])]),
+      crows,
+      camps ? el('div', { class: 'list-head' }, [el('h2', { class: 'section-head', text: 'Your campaigns' }), el('div', { class: 'btns' }, [
+        a('New campaign', REF + '?new=1', 'btn btn-primary btn-small'), a('All campaigns', '#campaigns', 'btn btn-small')])]) : null,
+      camps,
       el('div', { class: 'tiles' }, tiles)
     ]);
+    crows.appendChild(listPage('characters', CROWS_OPTS({ embed: true, limit: 4 })));
+    if (camps) camps.appendChild(listPage('campaigns', CAMPAIGN_OPTS({ embed: true, limit: 3 })));
     loadNews(news);
   }
 
@@ -409,10 +412,10 @@
     var d = n.detail || {}, crow = d.character || 'your crow', camp = d.campaign || 'their campaign';
     if (n.kind === 'join_accepted') return d.ref + ' accepted ' + crow + ' into ' + camp + '. You\u2019ll see each other\u2019s changes live.';
     if (n.kind === 'join_declined') return d.ref + ' declined ' + crow + '\u2019s request to join ' + camp + '. You can ask again from their invite link, or from Find a campaign if it\u2019s listed.';
-    if (n.kind === 'control_given') return d.owner + ' handed you ' + crow + ' to play. It\u2019s under Handed to you in My characters until they take it back.';
+    if (n.kind === 'control_given') return d.owner + ' handed you ' + crow + ' to play. It\u2019s under Handed to you in Crows until they take it back.';
     if (n.kind === 'control_taken') return d.owner + ' took back control of ' + crow + '.';
     if (n.kind === 'control_returned') return d.by + ' handed ' + crow + ' back to you.';
-    if (n.kind === 'control_claimed') return d.by + ' (Ref of ' + (d.campaign || 'your campaign') + ') took control of ' + crow + ' to play it. If it\u2019s yours, Take back control under Delegate Control in My characters.';
+    if (n.kind === 'control_claimed') return d.by + ' (Ref of ' + (d.campaign || 'your campaign') + ') took control of ' + crow + ' to play it. If it\u2019s yours, Take back control under Delegate Control in Crows.';
     return null;
   }
   function loadNews(box) {
@@ -457,12 +460,16 @@
         var j = res[0], camps = res[1] ? res[1].campaigns : null;
         list.innerHTML = '';
         if (!j.items.length) list.appendChild(el('li', { class: 'empty', text: opts.empty }));
-        j.items.forEach(function (it) { list.appendChild(row(it, camps && camps[it.id])); });
+        j.items.slice(0, opts.limit || j.items.length).forEach(function (it) { list.appendChild(row(it, camps && camps[it.id])); });
+        if (opts.limit && j.items.length > opts.limit) list.appendChild(el('li', { class: 'empty', text: 'and ' + (j.items.length - opts.limit) + ' more' }));
       }, function (e) { list.innerHTML = ''; list.appendChild(el('li', { class: 'empty', text: e.message })); });
     }
     function row(it, camps) {
       var panel = el('div', { class: 'share-panel', hidden: true });
-      var btns = opts.buttons(it).concat(opts.manage && kind === 'characters' ? [
+      var main = opts.main(it, camps);
+      var more = (opts.manage && kind === 'characters' ? [
+        it.draft ? null : a('Edit', GEN + '?id=' + it.id + '&mode=build', 'btn btn-small btn-ghost'),
+        it.draft ? null : a('Play', PLAY + '?id=' + it.id, 'btn btn-small btn-ghost'),
         btn('Share', function () { if (panel.hidden) sharePanel(it, panel); else panel.hidden = true; }, 'btn-small btn-ghost', 'Send your Ref a link to this character'),
         btn('Delegate Control', function () { if (panel.hidden) controlPanel(it, panel, load); else panel.hidden = true; }, 'btn-small btn-ghost',
           'Let another player or your Ref play this crow, and take it back when you like')
@@ -481,11 +488,13 @@
           if (!confirm('Delete "' + it.name + '" from your account? This can\'t be undone. Download it first if you want a copy.')) return;
           api('POST', 'delete', { id: it.id }, 'kind=' + kind).then(function () { toast('Deleted.'); load(); }, function (e) { toast(e.message); });
         }, 'btn-small btn-danger')
-      ] : []);
+      ] : []).filter(Boolean);
+      var btns = [main, more.length ? el('details', { class: 'more' }, [el('summary', { class: 'btn btn-small btn-ghost', text: 'More' }),
+        el('div', { class: 'more-menu' }, more)]) : null].filter(Boolean);
       return el('li', null, [
         el('div', null, [el('div', { class: 'name', text: it.name || 'Untitled' }),
           el('div', { class: 'meta', text: [it.summary, 'saved ' + when(it.updatedAt)].filter(Boolean).join(' · ') }),
-          opts.campaigns ? campaignChips(camps) : null,
+          opts.campaigns ? crowChips(it, camps) : null,
           it.controller ? el('div', { class: 'camps' }, [el('span', { class: 'camp-chip warn', title: it.controller + ' can open and play this crow until you take it back' }, [
             el('b', { text: 'Handed to ' + it.controller })])]) : null]),
         el('div', { class: 'btns' }, btns),
@@ -515,13 +524,14 @@
           el('input', { type: 'file', accept: '.json,application/json', multiple: true, onchange: function () { upload(this); } })])
       ] : [])
     ]);
+    if (opts.embed) { load(); return el('div', { class: 'card' }, [list]); }
     var handed = kind === 'characters' ? el('div') : null;
     show([head, opts.intro ? el('p', { class: 'muted', text: opts.intro }) : null, el('div', { class: 'card' }, [list]), handed]);
     load();
     if (handed) handedToMe(handed, opts);
   }
 
-  /* Crows other players handed to this user to play (shown under their own on My characters and Play). */
+  /* Crows other players handed to this user to play (shown under their own on the Crows page). */
   function handedToMe(box, opts) {
     api('GET', 'control.list').then(function (j) {
       box.innerHTML = '';
@@ -589,16 +599,22 @@
     api('GET', 'control.get', undefined, 'id=' + it.id).then(draw, function (e) { panel.innerHTML = ''; panel.appendChild(el('p', { class: 'muted', text: e.message })); });
   }
 
-  /* Where a crow stands in campaigns (My characters): one chip per campaign, Ref, or join request. */
+  /* Where a crow stands in campaigns (Crows): one chip per campaign, Ref, or join request. */
   var CAMP_STATES = { active: ['In play', 'ok'], away: ['Sitting out', ''], dead: ['Dead', 'bad'], retired: ['Retired', ''], lost: ['Lost to the Miasma', 'bad'],
     pending: ['Asked to join', 'warn'], declined: ['Request declined', ''], access: ['Ref has access, not in a party', ''] };
+  /* A crow's status: draft or ready, then each campaign it is in. */
+  function crowChips(it, camps) {
+    var chips = [it.draft ? el('span', { class: 'camp-chip warn', title: 'Still being built: continue building, then Finish crow' }, [el('b', { text: 'Draft' })])
+      : el('span', { class: 'camp-chip ok', title: 'Ready to play' }, [el('b', { text: 'Ready' })])];
+    return el('div', { class: 'camps' }, chips.concat(campaignChips(camps)));
+  }
   function campaignChips(camps) {
-    if (!camps || !camps.length) return el('div', { class: 'camps' }, [el('span', { class: 'camp-chip none', text: 'Not in a campaign' })]);
-    return el('div', { class: 'camps' }, camps.map(function (c) {
+    if (!camps || !camps.length) return [];
+    return camps.map(function (c) {
       var st = CAMP_STATES[c.state] || [c.state, ''];
       return el('span', { class: 'camp-chip ' + st[1], title: (c.campaign ? c.campaign + ', run by ' : 'Ref: ') + c.ref }, [
         el('b', { text: st[0] }), ' \u00b7 ' + (c.campaign ? c.campaign + ' (' + c.ref + ')' : c.ref)]);
-    }));
+    });
   }
 
   /*
@@ -770,8 +786,8 @@
         'the crow joins the party: they can see its sheet and change its vitals (Stamina, wounds, conditions…), equipment, and notes, ' +
         'and you both see each other\u2019s changes live. You can take that access away later from the crow\u2019s Share button.' }));
       if (!j.characters.length) {
-        box.appendChild(el('p', { class: 'muted', text: 'You have no characters yet. Create one in My characters, then ' + again + '.' }));
-        box.appendChild(a('Go to My characters', '#characters', 'btn btn-primary'));
+        box.appendChild(el('p', { class: 'muted', text: 'You have no characters yet. Create one in Crows, then ' + again + '.' }));
+        box.appendChild(a('Go to Crows', '#characters', 'btn btn-primary'));
         return;
       }
       box.appendChild(el('ul', { class: 'rows' }, j.characters.map(function (c) {
@@ -789,36 +805,37 @@
         return el('li', null, [el('div', null, [el('div', { class: 'name', text: c.name || 'Unnamed crow' }), el('div', { class: 'meta', text: c.summary || '' })]),
           el('div', { class: 'btns' }, [state, act])]);
       })));
-      box.appendChild(el('p', { class: 'fine' }, ['Want a new crow for this campaign? Create one in ', a('My characters', '#characters', ''), ', then ' + again + '.']));
+      box.appendChild(el('p', { class: 'fine' }, ['Want a new crow for this campaign? Create one in ', a('Crows', '#characters', ''), ', then ' + again + '.']));
       if (!src.token) box.appendChild(el('p', null, [a('Back to Find a campaign', '#find', 'btn btn-small btn-ghost')]));
     }
     load();
   }
 
-  function viewCharacters() {
-    listPage('characters', {
-      title: 'My characters', manage: true, campaigns: true,
+  function CROWS_OPTS(extra) {
+    var o = {
+      title: 'Crows', manage: true, campaigns: true,
       intro: 'Create a character to roll up a new crow; it is saved to your account as a draft right away; press Finish crow when it is ready to play.',
-      empty: 'No characters yet. Use Create a character above, or upload a save file from the character generator.',
-      buttons: function (it) { return [a('Edit', GEN + '?id=' + it.id + '&mode=build', 'btn btn-small btn-primary'), a('Play', PLAY + '?id=' + it.id, 'btn btn-small')]; }
-    });
+      empty: 'No crows yet. Use Create a character above, or upload a save file from the character generator.',
+      main: function (it) {
+        return it.draft ? a('Continue building', GEN + '?id=' + it.id + '&mode=build', 'btn btn-small btn-primary')
+          : a('Play', PLAY + '?id=' + it.id, 'btn btn-small btn-primary');
+      }
+    };
+    for (var k in extra) o[k] = extra[k];
+    return o;
   }
-  function viewPlay() {
-    listPage('characters', {
-      title: 'Play', manage: false,
-      intro: 'Pick a crow to open in Play mode. Everything you change at the table is saved to your account as you go.',
-      empty: 'You have no characters yet. Create one in My characters first.',
-      buttons: function (it) { return [a('Play', PLAY + '?id=' + it.id, 'btn btn-small btn-primary')]; }
-    });
-  }
-  function viewCampaigns() {
-    listPage('campaigns', {
+  function CAMPAIGN_OPTS(extra) {
+    var o = {
       title: 'Campaigns', manage: true,
       intro: 'Open a campaign in the Ref Screen. Changes are saved to your account as you make them.',
       empty: 'No campaigns yet. Start a new one, or upload a campaign file saved from the Ref Screen.',
-      buttons: function (it) { return [a('Open in Ref Screen', REF + '?id=' + it.id, 'btn btn-small btn-primary')]; }
-    });
+      main: function (it) { return a('Open in Ref Screen', REF + '?id=' + it.id, 'btn btn-small btn-primary'); }
+    };
+    for (var k in extra) o[k] = extra[k];
+    return o;
   }
+  function viewCharacters() { listPage('characters', CROWS_OPTS({})); }
+  function viewCampaigns() { listPage('campaigns', CAMPAIGN_OPTS({})); }
 
   // ---------------------------------------------------------------- account
   function viewAccount() {

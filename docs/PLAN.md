@@ -1,8 +1,8 @@
 # UX streamlining plan (remaining phases)
 
 Done: phase 0 (party rests and XP claims on linked sheets) and phase 1 (src/shared/, split app.js and ref.js), in 658e657;
-phase 2; phase 3; phase 5; phase 6. Remaining phase: **4**. Do one phase per session, then commit (see Workflow). Tick its boxes here and
-commit this file with it.
+phase 2; phase 3; phase 4; phase 5; phase 6. All phases done. (Originally: do one phase per session, then commit (see Workflow). Tick its boxes here and
+commit this file with it.)
 
 ## Workflow (every phase)
 
@@ -154,10 +154,14 @@ commit this file with it.
 
 ## Phase 4: Portal (server/public/portal.js, portal.css)
 
-- [ ] Merge `viewCharacters` and `viewPlay` into one "Crows" list (`listPage('characters', …)`). Each row shows its status chip
+- [x] Merge `viewCharacters` and `viewPlay` into one "Crows" list (`listPage('characters', …)`). Each row shows its status chip
   (draft / ready / in *campaign*, from `characters.campaigns` / handed to …) and one main button by status: Continue building
   (`?id=N&mode=build`), Play (`play?id=N`), or Open. The other buttons go in a "More" menu. Keep `#play` working as an alias.
-- [ ] Home (`viewHome`): News, then "Your crows" (the top few, plus a link to all), then "Your campaigns" for Refs, then tiles for
+- [x] Home (`viewHome`): News, then "Your crows" (the top few, plus a link to all), then "Your campaigns" for Refs, then tiles for
   Find a campaign and Admin.
-- [ ] Tests: the smoke test only checks the API. Check the portal in the browser pane (it's already logged in on the test instance
+- [x] Tests: the smoke test only checks the API. Check the portal in the browser pane (it's already logged in on the test instance
   as test_player; don't log in with passwords).
+- Done as described: `viewCharacters` (also `#play`) is one "Crows" list from `listPage('characters', CROWS_OPTS())` with Draft/Ready chips
+  plus campaign chips, a main button by status (`main(it)`: Continue building for drafts, otherwise Play), and a `<details class="more">`
+  menu for the rest. `listPage` takes `embed`/`limit` for Home, which shows Your crows (4), Your campaigns (3, Refs), and a Find a
+  campaign tile (plus Admin). The browser pane isn't logged in, so the check is ref/test/run_portal_test.py (headless Firefox as test_player).

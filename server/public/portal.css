@@ -128,3 +128,11 @@ td select { min-height: 34px; padding: .2rem .4rem; width: auto; }
   .card { padding: 16px; }
   .rows li { align-items: flex-start; }
 }
+
+.more { position: relative; }
+.more > summary { list-style: none; cursor: pointer; }
+.more > summary::-webkit-details-marker { display: none; }
+.more-menu { position: absolute; right: 0; top: calc(100% + 4px); z-index: 5; display: flex; flex-direction: column; gap: .25rem; min-width: 10rem;
+  padding: .4rem; background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); box-shadow: 0 4px 14px rgba(0,0,0,.25); }
+.more-menu .btn { text-align: left; }
+.list-head h2.section-head { margin: 0; }
