@@ -336,11 +336,7 @@
   function rich(text) {
     return el('span', null, String(text).split('**').map(function (part, i) { return i % 2 ? el('b', { text: part }) : document.createTextNode(part); }));
   }
-  function btn(text, onclick, cls, extra) {
-    var a = { type: 'button', class: 'btn ' + (cls || ''), text: text, onclick: onclick };
-    Object.keys(extra || {}).forEach(function (k) { a[k] = extra[k]; });
-    return el('button', a);
-  }
+  var btn = window.CrowsDom.btn;
   function row(x) {
     var mine = x === me(), on = targets[0] === x.id, also = !on && targets.indexOf(x.id) >= 0, m = me();
     var nums = typeof x.st === 'number' ? 'Stamina ' + x.st + '/' + x.stMax + (x.adMax ? ' · AD ' + x.ad + '/' + x.adMax : '') + (x.wounds ? ' · ' + x.wounds + ' wound' + (x.wounds === 1 ? '' : 's') : '') : '';

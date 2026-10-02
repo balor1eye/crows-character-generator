@@ -27,7 +27,9 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
   player's sheet. The Party tab's **Party status** shows each linked crow's live Play mode vitals, using the
   sheet's own buttons (Stamina, AD, damage and healing, wounds, conditions, cruelty, coins), and **Open sheet**
   shows the whole character. Either way the Ref can change only those vitals, equipment, notes, and XP (pending
-  XP the Ref Screen awards, its history, and total XP when it's applied). The server applies just those fields,
+  XP the Ref Screen awards, its history, and total XP when it's applied), plus what ending a dungeon turn or the party's
+  rest changes on the sheet (the dungeon turn, expertise uses, lore book uses, pet Stamina, the last rest) and which of
+  the player's XP claims the Ref has answered. The server applies just those fields,
   and only if they haven't changed underneath (log and XP history entries from both sides are combined).
   The player sees which Refs have access and can remove any of them, or turn the link off or replace it.
 - **Handing a crow to someone else:** **Delegate Control** on a character in My characters gives control of it to another
@@ -130,6 +132,7 @@ python3 server/test_instance.py call test_ref list kind=campaigns
 python3 server/test_instance.py mail          # what it would have emailed
 python3 ref/test/run_combat_test.py --test-instance   # a four-player fight in the Ref Screen (see ref/test/README.md)
 python3 ref/test/run_live_combat_test.py             # a live fight between the Ref Screen and a player's Play page
+python3 ref/test/run_live_rest_test.py               # the party's rest and XP claims between the two
 ```
 
 `seed_test.php` (only staged for the test instance, and refusing to run unless config.php sets `test_instance`)

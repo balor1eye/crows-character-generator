@@ -28,18 +28,7 @@
   var page = null, layouts = {}, owner = null, editing = false, cols = [];
   var drag = null, saveTimer = null, pending = {};
 
-  function $(id) { return document.getElementById(id); }
-  function el(tag, attrs, kids) {
-    var n = document.createElement(tag);
-    Object.keys(attrs || {}).forEach(function (k) {
-      var v = attrs[k];
-      if (v === null || v === undefined || v === false) return;
-      if (k === 'text') n.textContent = v; else if (k === 'class') n.className = v;
-      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), v); else n.setAttribute(k, v === true ? '' : v);
-    });
-    (kids || []).forEach(function (c) { if (c) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
-    return n;
-  }
+  var $ = window.CrowsDom.$, el = window.CrowsDom.el;   // src/shared/dom.js
   function preset(id) { return PRESETS.filter(function (p) { return p[0] === id; })[0] || PRESETS[0]; }
   function template(id) {
     return preset(id)[2].map(function (w) { return w === 'N' ? cfg.narrow : 'minmax(0, 1fr)'; }).join(' ');

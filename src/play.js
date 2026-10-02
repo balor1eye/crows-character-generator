@@ -11,7 +11,8 @@
   var el = C.el, $ = C.$, d = C.d, fmt = C.fmt, signed = C.signed, item = C.item;
   var MODE_KEY = 'crows-pt2-mode';
   var CONDITIONS = ['Blessed', 'Grabbed', 'Prone', 'Vulnerable', 'Weakened', 'Unconscious'];
-  var DT_CONDITIONS = ['Blessed', 'Vulnerable', 'Weakened']; // end at the end of a dungeon turn
+  var Dice = window.CrowsDice, Rules = window.CrowsRules;   // src/shared/
+  var DT_CONDITIONS = Rules.DT_CONDITIONS; // end at the end of a dungeon turn
   // Rules book, Conditions (condensed). Shown as tooltips on the condition buttons.
   var CONDITION_RULES = {
     Blessed: 'Edge on all tests, and your attacks deal extra damage equal to the characteristic used. Ends at the end of the dungeon turn.',
@@ -95,13 +96,13 @@
   function loadCampaign() {
     var id = window.CrowsCloud && window.CrowsCloud.recordId;
     if (!id) return;
-    window.CrowsCloud.campaign().then(function (name) { campaign = name ? { id: id, name: name } : null; applyMode(mode()); }, function () { /* no title change */ });
+    window.CrowsCloud.campaign().then(function (name) { campaign = name ? { id: id, name: name } : null; C.render(); }, function () { /* no title change */ });   // title, and XP claims
     if (window.CrowsCombat) window.CrowsCombat.load();   // a fight the crow is in
   }
   /* A Ref accepted the open crow into `name` while the page was open. */
   function joined(name) {
     var id = window.CrowsCloud && window.CrowsCloud.recordId;
-    if (id) { campaign = { id: id, name: name }; applyMode(mode()); }
+    if (id) { campaign = { id: id, name: name }; C.render(); }
     if (window.CrowsCombat) window.CrowsCombat.load();
   }
   function gotoBuild(sectionId) {
@@ -181,23 +182,27 @@
     for (var k = 0; k < n && k < ws.length; k++) { delete p.wounds[ws[k]]; healed++; }
     return healed;
   }
+  /*
+   * Deal damage to this crow (the rules' order, Rules.damage): vulnerable, then the absorbers given (worn armor, shields,
+   * parry weapons) unless piercing, then Stamina, then wounds. vul: a vulnerable roll already made. Returns { parts, total, vul }.
+   */
+  function dealDamage(amount, piercing, abs, vul) {
+    var p = P(), cur = C.curStamina(), parts = [];
+    var r = Rules.damage({ amount: amount, vulnerable: !!p.conds.Vulnerable, vul: vul, piercing: piercing, ad: abs.map(function (c) { return C.adNow(c); }),
+      stamina: cur, woundRoom: 10 - C.woundCount() });
+    if (r.vul) parts.push('vulnerable +' + r.vul);
+    if (piercing) parts.push('piercing');
+    abs.forEach(function (c, i) { if (r.absorbed[i]) { c.dmg = (c.dmg || 0) + r.absorbed[i]; parts.push(c.key + ' absorbs ' + r.absorbed[i] + ' (AD ' + C.adNow(c) + ' left)'); } });
+    if (r.stamina) { setStamina(cur - r.stamina); parts.push('-' + r.stamina + ' Stamina'); }
+    if (r.total - r.stamina - r.absorbed.reduce(function (t, a) { return t + a; }, 0) > 0) { var w = addWounds(r.wounds, 'w'); parts.push(w + ' wound' + (w === 1 ? '' : 's')); }
+    return { parts: parts, total: r.total, vul: r.vul };
+  }
   function takeDamage() {
     var p = P(), amt = parseInt(ui.dmg, 10);
     if (!(amt > 0)) { C.toast('Enter the damage first.'); return; }
-    var parts = [], dmg = amt;
-    if (p.conds.Vulnerable) { var v = d(6); dmg += v; parts.push('vulnerable +' + v); }
-    if (!ui.pierce) {
-      var abs = absorbers().filter(function (c) { return C.adNow(c) > 0; });
-      abs.sort(function (a, b) { return (String(b.id) === ui.first) - (String(a.id) === ui.first); });
-      abs.forEach(function (c) {
-        if (!dmg) return;
-        var a = Math.min(dmg, C.adNow(c)); c.dmg = (c.dmg || 0) + a; dmg -= a;
-        parts.push(c.key + ' absorbs ' + a + ' (AD ' + C.adNow(c) + ' left)');
-      });
-    } else parts.push('piercing');
-    var cur = C.curStamina(), s = Math.min(dmg, cur);
-    if (s) { setStamina(cur - s); dmg -= s; parts.push('-' + s + ' Stamina'); }
-    if (dmg > 0) { var w = addWounds(dmg, 'w'); parts.push(w + ' wound' + (w === 1 ? '' : 's')); }
+    var abs = absorbers().filter(function (c) { return C.adNow(c) > 0; });
+    abs.sort(function (a, b) { return (String(b.id) === ui.first) - (String(a.id) === ui.first); });   // the one picked to take it first
+    var parts = dealDamage(amt, ui.pierce, abs).parts;
     ui.dmg = '';
     var dead = C.woundCount() >= 10;
     commit('Took ' + amt + ' damage: ' + parts.join(', ') + '.' + (dead ? ' All 10 backpack slots are wounded: your crow is dead.' : ''));
@@ -225,10 +230,8 @@
   function netEdge(extraE, extraB) {
     var e = 0, b = 0;
     if (ui.eb > 0) e = ui.eb; else b = -ui.eb;
-    e += extraE; b += extraB;
-    return Math.min(e, 2) - Math.min(b, 2);
+    return Dice.netEdges(e + extraE, b + extraB);
   }
-  function tierOf(total) { return total >= 17 ? 3 : total >= 12 ? 2 : 1; }
   // opts: label, charName, charVal, kind ('test'|'attack'|'cast'|'miasma'), group (expertise group allowed), wtype, melee, dmg {t2,t3,brutal}, card
   function rollTest(opts) {
     if (last && last.chaosPending) log(last.label + ': kept tier 1. ' + chaosRoll(last));
@@ -241,17 +244,11 @@
     var own = extraE + extraB;
     if (cm) { extraE += cm.e; extraB += cm.b; }
     var net = netEdge(extraE, extraB);
-    var a = d(10), b = d(10), nat = a + b;
-    var bonus = net === 1 ? 2 : net === -1 ? -2 : 0;
-    var mod = (opts.charVal || 0) + (ui.mod || 0) + (opts.extraMod || 0) + bonus + (cm ? cm.mod : 0);
-    var total = nat + mod;
-    var crit = nat >= 19, doom = nat <= 3;
-    if (p.conds.Unconscious && /Agility|Strength/.test(opts.charName || '')) doom = true;
-    var tier = doom ? 1 : crit ? 3 : tierOf(total);
-    if (!doom && !crit && net === 2) tier = Math.min(3, tier + 1);
-    if (!doom && !crit && net === -2) tier = Math.max(1, tier - 1);
-    if (cm && cm.autoT3) tier = 3;   // attacks against an unconscious creature
-    var r = { label: opts.label, opts: opts, dice: [a, b], nat: nat, mod: mod, total: total, net: net, crit: crit, doom: doom,
+    var t = Dice.test((opts.charVal || 0) + (ui.mod || 0) + (opts.extraMod || 0) + (cm ? cm.mod : 0), net,
+      { doom: !!(p.conds.Unconscious && /Agility|Strength/.test(opts.charName || '')) });   // unconscious: automatic doom
+    var tier = cm && cm.autoT3 ? 3 : t.tier;   // attacks against an unconscious creature
+    // r.mod includes an edge's +2 or a bane's -2 (the dice panel shows it as one modifier).
+    var r = { label: opts.label, opts: opts, dice: t.dice, nat: t.nat, mod: t.mod + t.bonus, total: t.total, net: net, crit: t.crit, doom: t.doom,
       baseTier: tier, tier: tier, exp: null, extra: [], conds: [] };
     if (p.conds.Blessed) r.conds.push('blessed: edge');
     if (own && (p.conds.Weakened || (isAttack(opts) && opts.melee && p.conds.Prone))) r.conds.push((p.conds.Weakened ? 'weakened' : 'prone') + ': bane');
@@ -436,15 +433,22 @@
   function caretakerBonus() { return (S().prosperity || 0) >= 6 ? 3 : 2; }
   function surgicalKit() { return carried().filter(function (c) { return c.key === 'Surgical Kit' && udNow(c) > 0; })[0] || null; }
   function foodCards() { return carried().filter(function (c) { return c.key === 'Ration' || c.key === 'Hearty Ration'; }); }
-  function rest() {
+  /*
+   * A rest's effects on this crow, whoever started it: the player's Rest button, or the Ref Screen finishing the party's
+   * rest (refChange rest). o: food ('Ration', 'Hearty Ration', 'none', or empty for a ration carried), activity (+ repair,
+   * study, useKit), tended, tendedKit, caretaker, miasma, xp (false: pending XP waits), by ('self' or 'ref'), dt (the DT
+   * the rest used up). Returns { ok, msg }. Records p.lastRest, so the same rest isn't taken twice (see refRest).
+   */
+  function doRest(o) {
     var s = S(), p = P(), msgs = [];
     var over = overloadedSlots();
-    if (over.length) { C.toast('You can\'t rest with two magic items in one slot (' + over.join(', ') + ').'); return; }
-    var food = ui.ration === 'none' ? null : foodCards().filter(function (c) { return c.key === (ui.ration || 'Ration'); })[0] || foodCards()[0] || null;
+    if (over.length) return { ok: false, msg: 'You can\'t rest with two magic items in one slot (' + over.join(', ') + ').' };
+    p.lastRest = { dt: o.dt, by: o.by || 'self', t: Date.now() };
+    var foods = foodCards();
+    var food = o.food === 'none' ? null : foods.filter(function (c) { return c.key === (o.food || 'Ration'); })[0] || foods[0] || null;
     if (!food) {
       var sw = addWounds(1, 's');
-      commit('Rested without eating: no rest benefits' + (sw ? ' and 1 starvation wound' : '') + '.');
-      return;
+      return { ok: true, msg: 'No food: no rest benefits' + (sw ? ' and 1 starvation wound' : '') + '.' };
     }
     var hearty = food.key === 'Hearty Ration';
     useOne(food);
@@ -454,12 +458,9 @@
     if (starve.length) msgs.push('Starvation wounds gone (' + starve.length + ').');
     setStamina(C.staminaMax());
     msgs.push('Stamina full.');
-    var heal = 1 + (hearty ? 1 : 0) + (ui.tended ? 1 : 0) + (ui.tended && ui.tendedKit ? 1 : 0) + (ui.caretaker ? caretakerBonus() : 0);
-    var h = healWounds(heal);
-    if (h) msgs.push('Healed ' + h + ' wound' + (h === 1 ? '' : 's') + '.');
     var uses = C.expertiseUses();
     p.temp = {};
-    if (p.miasma) {
+    if (o.miasma) {
       Object.keys(p.spent).forEach(function (k) { p.spent[k] = Math.min(p.spent[k], uses[k] || 0); if (!p.spent[k]) delete p.spent[k]; });
       msgs.push('In the Miasma: expertise uses are NOT restored. Make your Miasma RR.');
     } else {
@@ -469,27 +470,73 @@
     }
     s.inv.forEach(function (c) { var u = udInfo(c.key); if (u && u.rest && udNow(c) < u.max) { c.ud = u.max; msgs.push(c.key + ' recharged.'); } });
     CONDITIONS.forEach(function (k) { if (k !== 'Grabbed') delete p.conds[k]; });
-    if (ui.activity === 'repair') {
-      var rc = C.cardById(+ui.repair);
-      if (rc) { rc.dmg = 0; msgs.push('Repaired ' + rc.key + ' to full AD.'); }
-    } else if (ui.activity === 'study' && ui.study) {
-      p.temp[ui.study] = 1; msgs.push('Studied a lore book: +1 use of ' + ui.study + ' until the next rest.');
-    } else if (ui.activity === 'Tend Wounds') {
-      var kit = ui.useKit ? surgicalKit() : null;
-      if (kit) msgs.push('Tended an ally\'s wounds with a surgical kit: they lose 3 wounds instead of 1. ' + rollUD(kit, 'Tend Wounds'));
-      else msgs.push('Tended an ally\'s wounds: they lose 2 wounds instead of 1.');
-    } else if (ui.activity) msgs.push('Rest activity: ' + ui.activity + '.');
+    var heal = 1 + (hearty ? 1 : 0) + restActivity(o, msgs);
+    var h = healWounds(heal);
+    if (h) msgs.push('Healed ' + h + ' wound' + (h === 1 ? '' : 's') + '.');
     // pets eat animal feed
     s.pets.forEach(function (pet, i) {
-      var need = PET_FEED[pet] || 1, feed = findCarried('Animal Feed'), have = carried().filter(function (c) { return c.key === 'Animal Feed'; }).reduce(function (t, c) { return t + c.qty; }, 0);
+      var need = PET_FEED[pet] || 1, feed, have = carried().filter(function (c) { return c.key === 'Animal Feed'; }).reduce(function (t, c) { return t + c.qty; }, 0);
       if (have >= need) {
         for (var k = 0; k < need; k++) { feed = findCarried('Animal Feed'); useOne(feed); }
         delete p.petStam[i]; msgs.push('Your ' + pet.toLowerCase() + ' ate and rested.');
       } else msgs.push('Your ' + pet.toLowerCase() + ' had no animal feed (no rest benefit).');
     });
-    if (p.pendingXP) msgs.push(applyXP());
-    ui.activity = ''; ui.tended = false; ui.tendedKit = false; ui.useKit = false; ui.caretaker = false;
-    commit('Rested. ' + msgs.join(' '));
+    if (p.pendingXP && o.xp !== false) msgs.push(applyXP());
+    return { ok: true, msg: msgs.join(' ') };
+  }
+  /* The rest activity and the healing others give (Tend Wounds on me, my Caretaker): adds to msgs, returns the extra wounds healed. */
+  function restActivity(o, msgs) {
+    var p = P();
+    if (o.activity === 'repair') {
+      var rc = C.cardById(+o.repair);
+      if (rc) { rc.dmg = 0; msgs.push('Repaired ' + rc.key + ' to full AD.'); }
+    } else if (o.activity === 'study' && o.study) {
+      p.temp[o.study] = 1; msgs.push('Studied a lore book: +1 use of ' + o.study + ' until the next rest.');
+    } else if (o.activity === 'Tend Wounds') {
+      var kit = o.useKit ? surgicalKit() : null;
+      if (kit) msgs.push('Tended an ally\'s wounds with a surgical kit: they lose 3 wounds instead of 1. ' + rollUD(kit, 'Tend Wounds'));
+      else msgs.push('Tended an ally\'s wounds: they lose 2 wounds instead of 1.');
+    } else if (o.activity) msgs.push('Rest activity: ' + o.activity + '.');
+    return (o.tended ? 1 : 0) + (o.tended && o.tendedKit ? 1 : 0) + (o.caretaker ? caretakerBonus() : 0);
+  }
+  /* The rest choices made on the Rest card. */
+  function restChoices() {
+    return { food: ui.ration, activity: ui.activity, repair: ui.repair, study: ui.study, useKit: ui.useKit, tended: ui.tended, tendedKit: ui.tendedKit,
+      caretaker: ui.caretaker, miasma: P().miasma };
+  }
+  function clearRestChoices() { ui.activity = ''; ui.tended = false; ui.tendedKit = false; ui.useKit = false; ui.caretaker = false; }
+  /* The player's Rest button: a rest during the current dungeon turn (the one after the last the Ref ended). */
+  function rest() {
+    var o = restChoices(); o.by = 'self'; o.dt = P().dt + 1;
+    var r = doRest(o);
+    if (!r.ok) { C.toast(r.msg); return; }
+    clearRestChoices();
+    commit('Rested. ' + r.msg);
+  }
+  /* True after the Ref Screen rested the party and no dungeon turn has ended since: the sheet's own Rest would be a second one. */
+  function restedWithParty() { var lr = P().lastRest; return !!(lr && lr.by === 'ref' && lr.dt === P().dt); }
+  /* After the party's rest: the activity and extra healing only the player knows about. */
+  function restExtras() {
+    var p = P(), msgs = [], o = restChoices();
+    var h = healWounds(restActivity(o, msgs));
+    if (h) msgs.push('Healed ' + h + ' more wound' + (h === 1 ? '' : 's') + '.');
+    p.lastRest.extras = true;
+    clearRestChoices();
+    commit(msgs.length ? 'During the rest: ' + msgs.join(' ') : 'Nothing more from the rest.');
+  }
+  /*
+   * The Ref Screen finished the party's rest (refChange rest: { dt, miasma, xp }). Skipped if this crow already rested
+   * from its own sheet during that dungeon turn (in the last 12 hours, so an old rest on an unsynced DT doesn't count).
+   */
+  function refRest(r) {
+    var p = P(), lr = p.lastRest;
+    if (lr && lr.by === 'self' && lr.dt === r.dt && Date.now() - lr.t < 12 * 3600000) {
+      p.dt = r.dt;
+      return 'The party rested (DT ' + r.dt + '). You had already rested from your sheet this dungeon turn, so nothing more happens.';
+    }
+    var res = doRest({ by: 'ref', dt: r.dt, miasma: !!r.miasma || p.miasma, xp: r.xp });
+    p.dt = r.dt;
+    return res.ok ? 'Rested with the party (DT ' + r.dt + '). ' + res.msg : 'The party rested (DT ' + r.dt + '), but you couldn\'t: ' + res.msg;
   }
   function applyXP() {
     var s = S(), p = P(), before = C.esBonusCount(s.txp), cb = C.charBonusCount(s.txp), gained = p.pendingXP;
@@ -500,21 +547,11 @@
     if (nc) msg += ' New characteristic bonus' + (nc > 1 ? 'es' : '') + ' (' + nc + ').';
     return msg;
   }
-  function nextAt(txp) {
-    var es = null, ch = null;
-    CROWS.ES_ADV.forEach(function (r) { if (es === null && r[0] > txp) es = r[0]; });
-    if (es === null) es = 30000 * (Math.floor(txp / 30000) + 1);
-    CROWS.CHAR_ADV.forEach(function (t) { if (ch === null && t > txp) ch = t; });
-    if (ch === null) ch = 30000 * (Math.floor(txp / 30000) + 1);
-    return { es: es, ch: ch };
-  }
+  var nextAt = Rules.nextBonusAt;
+
 
   // ------------------------------------------------------------------ rendering
-  function btn(text, onclick, cls, extra) {
-    var a = { type: 'button', class: 'btn btn-small' + (cls ? ' ' + cls : ''), text: text, onclick: onclick };
-    if (extra) Object.keys(extra).forEach(function (k) { a[k] = extra[k]; });
-    return el('button', a);
-  }
+  function btn(text, onclick, cls, extra) { return window.CrowsDom.btn(text, onclick, 'btn-small' + (cls ? ' ' + cls : ''), extra); }
   function num(val, oninput, attrs) {
     var a = { type: 'number', value: val, oninput: function () { oninput(this.value); } };
     if (attrs) Object.keys(attrs).forEach(function (k) { a[k] = attrs[k]; });
@@ -616,8 +653,8 @@
       rationSel.appendChild(el('option', { value: k, text: 'Eat a ' + k.toLowerCase() + ' (' + n + ' carried)' }));
     });
     rationSel.appendChild(el('option', { value: 'none', text: kinds.length ? "Don't eat (no rest benefits)" : 'No rations! (no rest benefits, starvation wound)' }));
-    rationSel.value = kinds.indexOf(ui.ration) >= 0 || ui.ration === 'none' ? ui.ration : (kinds[0] || 'none');
-    ui.ration = rationSel.value;
+    rationSel.value = kinds.indexOf(ui.ration) >= 0 || (ui.ration === 'none' && kinds.length) ? ui.ration : (kinds[0] || 'none');
+    if (kinds.length) ui.ration = rationSel.value;   // "none" only when picked (not left over from a crow that had no food)
     var act = el('select', { onchange: function () { ui.activity = this.value; C.render(); } }, [
       el('option', { value: '', text: 'No rest activity / not tracked' }),
       el('option', { value: 'repair', text: 'Repair Armor' }),
@@ -646,23 +683,28 @@
         el('span', { class: 'fine', text: 'Pick someone with 2+ wounds (not you): they lose 2 wounds instead of 1.' });
       if (!kit) ui.useKit = false;
     }
-    var over = overloadedSlots();
+    var over = overloadedSlots(), party = restedWithParty(), done = party && p.lastRest.extras;
     var restBox = el('div', { class: 'rest-box' }, [
-      el('div', { class: 'row wrap' }, [
-        el('label', { class: 'field' }, ['Food', rationSel]),
+      party ? el('div', { class: 'banner ok', text: 'You rested with the party (dungeon turn ' + p.lastRest.dt + '): food, Stamina, a wound, expertise uses, and recharges are done. ' +
+        (done ? 'Your rest activity is recorded.' : 'Record your rest activity and any extra healing here.') }) : null,
+      done ? null : el('div', { class: 'row wrap' }, [
+        party ? null : el('label', { class: 'field' }, ['Food', rationSel]),
         el('label', { class: 'field' }, ['Rest activity', act]), sub
       ]),
-      el('div', { class: 'row wrap checks' }, [
-        el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: p.miasma, onchange: function () { p.miasma = this.checked; commit(); } }), ' Resting in the Miasma']),
+      done ? null : el('div', { class: 'row wrap checks' }, [
+        party ? null : el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: p.miasma, onchange: function () { p.miasma = this.checked; commit(); } }), ' Resting in the Miasma']),
         el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.tended, onchange: function () { ui.tended = this.checked; if (!this.checked) ui.tendedKit = false; C.render(); } }), ' Someone used Tend Wounds on me (+1 wound healed)']),
         ui.tended ? el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.tendedKit, onchange: function () { ui.tendedKit = this.checked; } }), ' ...with a surgical kit (+1 more)']) : null,
         s.connBenefit === 'Caretaker' ? el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.caretaker, onchange: function () { ui.caretaker = this.checked; } }),
           ' Resting at my Caretaker connection\'s home (+' + caretakerBonus() + ' wounds: 2, or 3 at Prosperity 6+; your village is at ' + (s.prosperity || 0) + ')']) : null
       ]),
       over.length ? el('div', { class: 'banner bad', text: 'You can\'t rest: two magic items are equipped in one slot (' + over.join(', ') + '). Unequip one under Magic item slots.' }) : null,
-      el('p', { class: 'fine', text: '6 uninterrupted hours (4 asleep), eat 1 ration: regain all Stamina, heal 1 wound, regain expertise uses (not in the Miasma), recharge spellbooks and other rest usage dice' +
-        (p.pendingXP ? ', and gain your ' + fmt(p.pendingXP) + ' pending XP' : '') + '.' }),
-      btn('Rest', rest, 'btn-primary', { disabled: over.length ? true : null })
+      party ? null : el('p', { class: 'fine', text: '6 uninterrupted hours (4 asleep), eat 1 ration: regain all Stamina, heal 1 wound, regain expertise uses (not in the Miasma), recharge spellbooks and other rest usage dice' +
+        (p.pendingXP ? ', and gain your ' + fmt(p.pendingXP) + ' pending XP' : '') + '. In a campaign, the Ref finishing the party\'s rest does this for you.' }),
+      el('div', { class: 'row wrap' }, party ? [
+        done ? null : btn('Record activity & extra healing', restExtras, 'btn-primary'),
+        btn('Rest again (a separate rest)', rest, 'btn-ghost', { disabled: over.length ? true : null, title: 'Only for a second, separate rest: the party\'s rest is already applied' })
+      ] : [btn('Rest', rest, 'btn-primary', { disabled: over.length ? true : null })])
     ]);
     card('play-time', 'Dungeon turns & rest', [
       el('div', { class: 'row wrap dt-row' }, [
@@ -891,6 +933,7 @@
     if (pool > used) todo.push('Assign ' + (pool - used) + ' bonus expertise use' + (pool - used === 1 ? '' : 's'));
     if (s.charBonus.some(function (c) { return !c; })) todo.push('Choose a characteristic bonus');
     var banner = todo.length ? el('div', { class: 'banner warn' }, [todo.join('. ') + '. ', el('a', { href: '#sec-advance', text: 'Open Advancement', onclick: function (e) { e.preventDefault(); gotoBuild('sec-advance'); } })]) : null;
+    var camp = campaignName();   // in a campaign the Ref awards XP: the player's treasure is a claim for them to answer
     var share = ui.tPlayers > 0 && parseInt(ui.tGc, 10) > 0 ? Math.floor(parseInt(ui.tGc, 10) / ui.tPlayers) : 0;
     var shareEl = el('span', { class: 'fine', id: 'play-share', text: share ? '= ' + fmt(share) + ' XP each' : '' });
     function updShare() { var sh = ui.tPlayers > 0 && parseInt(ui.tGc, 10) > 0 ? Math.floor(parseInt(ui.tGc, 10) / ui.tPlayers) : 0; shareEl.textContent = sh ? '= ' + fmt(sh) + ' XP each' : ''; }
@@ -899,7 +942,14 @@
       el('label', { class: 'field' }, ['Value (gc)', num(ui.tGc, function (v) { ui.tGc = v; updShare(); }, { min: 0, class: 'mini' })]),
       el('label', { class: 'field' }, ['Players', num(ui.tPlayers, function (v) { ui.tPlayers = Math.max(1, parseInt(v, 10) || 1); updShare(); }, { min: 1, max: 12, class: 'mini' })]),
       shareEl,
-      btn('Add XP', function () {
+      camp ? btn('Ask the Ref for XP', function () {
+        var gc = parseInt(ui.tGc, 10) || 0, n = Math.max(1, ui.tPlayers | 0);
+        if (!gc) { C.toast('Enter the treasure value.'); return; }
+        if (p.xpClaims.length >= 30) { C.toast('Wait for the Ref to answer your other claims first.'); return; }
+        p.xpClaims.push({ id: Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36), t: Date.now(), desc: ui.tDesc || 'Treasure', gc: gc, n: n });
+        var d1 = ui.tDesc || 'treasure'; ui.tDesc = ''; ui.tGc = '';
+        commit('Asked the Ref for XP: ' + d1 + ' worth ' + fmt(gc) + ' gc, split ' + n + ' ways.');
+      }, 'btn-primary', { title: 'In a campaign the Ref awards XP: they see this claim on their Party tab' }) : btn('Add XP', function () {
         var gc = parseInt(ui.tGc, 10) || 0, n = Math.max(1, ui.tPlayers | 0), xp = Math.floor(gc / n);
         if (!xp) { C.toast('Enter the treasure value.'); return; }
         p.pendingXP += xp;
@@ -909,7 +959,12 @@
         commit('Recovered ' + d0 + ' worth ' + fmt(gc) + ' gc: ' + fmt(xp) + ' XP each (applies after the next rest).');
       }, 'btn-primary')
     ]);
-    var other = el('div', { class: 'row wrap' }, [
+    var open = p.xpClaims.filter(function (c) { return p.claimsAnswered.indexOf(c.id) < 0; });
+    var claims = open.length ? el('div', { class: 'xp-hist' }, [el('h3', { text: 'Waiting for the Ref' })].concat(open.map(function (x) {
+      return el('div', { class: 'row wrap' }, [el('span', { class: 'grow' }, [el('span', { class: 'muted', text: new Date(x.t).toLocaleDateString() + ' ' }), x.desc + ' (' + fmt(x.gc) + ' gc / ' + x.n + ')']),
+        btn('Withdraw', function () { p.xpClaims = p.xpClaims.filter(function (c) { return c !== x; }); commit('Withdrew the XP claim for ' + x.desc + '.'); }, 'btn-small btn-ghost')]);
+    }))) : null;
+    var other = camp ? el('p', { class: 'fine', text: 'In ' + camp + ', your Ref awards XP: it arrives here as pending XP and applies after the next rest.' }) : el('div', { class: 'row wrap' }, [
       el('label', { class: 'field' }, ['Other XP (Ref award or correction)', num(ui.xpAmt, function (v) { ui.xpAmt = v; }, { class: 'mini' })]),
       btn('Add to pending', function () {
         var n = parseInt(ui.xpAmt, 10) || 0; if (!n) return;
@@ -922,11 +977,12 @@
       return el('div', {}, [el('span', { class: 'muted', text: new Date(x.t).toLocaleDateString() + ' ' }), x.desc + (x.gc ? ' (' + fmt(x.gc) + ' gc / ' + x.n + ')' : '') + ': ', el('b', { text: signed(x.xp) + ' XP' })]);
     }));
     card('play-advance', 'Experience & advancement', [
-      el('p', { class: 'hint', text: 'Recovered treasure (not bought, crafted, taken from innocents, or an ally\'s) gives XP = its gc value / number of players. XP and TXP bonuses apply only after a rest.' }),
+      el('p', { class: 'hint', text: 'Recovered treasure (not bought, crafted, taken from innocents, or an ally\'s) gives XP = its gc value / number of players. XP and TXP bonuses apply only after a rest.' +
+        (camp ? ' Your crow is in a campaign, so log treasure here to ask the Ref for the XP.' : '') }),
       stats, banner,
       el('p', { class: 'fine' }, ['Next Expertise & Stamina bonus at ' + fmt(nx.es) + ' TXP; next characteristic bonus at ' + fmt(nx.ch) + ' TXP. ',
         el('a', { href: '#sec-traits', text: 'Buy traits', onclick: function (e) { e.preventDefault(); gotoBuild('tree-browser'); } }), ' with unspent XP.']),
-      form, other, p.xpLog.length ? el('h3', { text: 'Recent XP' }) : null, hist
+      form, other, claims, p.xpLog.length ? el('h3', { text: 'Recent XP' }) : null, hist
     ]);
   }
 
@@ -1102,7 +1158,8 @@
      * overwritten values, so it adds to whatever the player did meanwhile. Any of:
      * xp (+ desc, gc, n): pending XP · apply: pending XP into TXP · full: full Stamina · st: Stamina +/- ·
      * wounds: ordinary wounds +/- · cruelty: +/- · setCruelty: a new value · endDT: dungeon turn n ended ·
-     * endConds: blessed, vulnerable, weakened end (with a rest) · dt: dungeon turn n ended (with a rest).
+     * endConds: blessed, vulnerable, weakened end (with a rest) · dt: dungeon turn n ended (with a rest) ·
+     * rest ({ dt, miasma, xp }): the party's rest, applied in full (see refRest) · claims: XP claims the Ref answered (ids).
      */
     refChange: refChange, refOps: refQueue,
     /* For the Ref Screen's combat tracker: this crow's vitals as the sheet has them (AD from worn armor and parry weapons). */
@@ -1144,17 +1201,9 @@
     var p = P(), parts = [], dmg = o.hit;
     var before = { stamina: p.stamina, wounds: JSON.parse(JSON.stringify(p.wounds)), dmg: {} };
     S().inv.forEach(function (c) { if (c.dmg) before.dmg[c.id] = c.dmg; });
-    if (p.conds.Vulnerable) { if (typeof o.vul !== 'number') o.vul = d(6); dmg += o.vul; parts.push('vulnerable +' + o.vul); }
-    var total = dmg;
-    if (!o.piercing) absorbers().filter(function (c) { return C.adNow(c) > 0; }).forEach(function (c) {
-      if (!dmg) return;
-      var a = Math.min(dmg, C.adNow(c)); c.dmg = (c.dmg || 0) + a; dmg -= a;
-      parts.push(c.key + ' absorbs ' + a);
-    });
-    else parts.push('piercing');
-    var cur = C.curStamina(), st = Math.min(dmg, cur);
-    if (st) { setStamina(cur - st); dmg -= st; parts.push('-' + st + ' Stamina'); }
-    if (dmg > 0) { var w = addWounds(dmg, 'w'); parts.push(w + ' wound' + (w === 1 ? '' : 's')); }
+    var res = dealDamage(dmg, !!o.piercing, absorbers().filter(function (c) { return C.adNow(c) > 0; }), o.vul), total = res.total;
+    if (res.vul) o.vul = res.vul;
+    parts = res.parts;
     if (p.conds.Unconscious) { delete p.conds.Unconscious; parts.push('wakes up'); }   // any damage wakes a sleeper
     o.result = { total: total, parts: parts, before: before };
     return 'Hit for ' + o.hit + (o.piercing ? ' piercing' : '') + (o.from ? ' by ' + o.from : '') + ': ' + parts.join(', ') + '.' +
@@ -1175,6 +1224,12 @@
       if (o.cond[k]) p.conds[k] = true; else delete p.conds[k];
       msgs.push((o.cond[k] ? 'Now ' : 'No longer ') + k.toLowerCase() + '.');
     });
+    if (o.rest) msgs.push(refRest(o.rest));
+    if (o.claims) {   // the player's own sheet takes them off its list (normalizePlay), even if they hadn't reached this copy yet
+      o.claims.forEach(function (id) { if (p.claimsAnswered.indexOf(id) < 0) p.claimsAnswered.push(id); });
+      if (p.claimsAnswered.length > 50) p.claimsAnswered.splice(0, p.claimsAnswered.length - 50);
+      if (!o.xp) msgs.push('The Ref answered your XP claim without an award.');
+    }
     if (o.endDT) msgs.push(endDT(o.endDT));
     if (o.endConds && (n = endDTConditions())) msgs.push('Resting: ' + n);
     if (o.dt && P().dt !== o.dt) { P().dt = o.dt; msgs.push('Dungeon turn ' + o.dt + ' ended with the rest.'); }

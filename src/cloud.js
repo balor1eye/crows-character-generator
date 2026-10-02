@@ -9,7 +9,7 @@
  * URL parameters: ?id=<n> opens that saved record, ?new=1 starts a new one; with neither, the record
  * last open in this browser is reopened (or the current local state is saved as a new one).
  * ?link=<n> is the Ref's view of a character a player shared: only the Play mode vitals (Stamina, wounds,
- * conditions, cruelty, coins, and their log), equipment, notes, and XP are sent back, and the server applies just those.
+ * conditions, cruelty, coins, and their log), equipment, notes, rests and dungeon turns, and XP are sent back, and the server applies just those.
  * ?id=<n> can also be someone else's character that its player handed to this user (control.give): it's opened
  * and saved like one of their own until the player takes it back, which shows a notice instead of saving a copy.
  *
@@ -41,7 +41,10 @@
     { name: 'stamina', path: ['play', 'stamina'], label: 'Stamina' }, { name: 'cruelty', path: ['play', 'cruelty'], label: 'cruelty' },
     { name: 'wounds', path: ['play', 'wounds'], label: 'wounds' }, { name: 'log', path: ['play', 'log'], label: 'log', union: true },
     { name: 'txp', path: ['txp'], label: 'total XP' }, { name: 'pendingXP', path: ['play', 'pendingXP'], label: 'pending XP' },
-    { name: 'xpLog', path: ['play', 'xpLog'], label: 'XP history', union: true, max: 100 }];
+    { name: 'xpLog', path: ['play', 'xpLog'], label: 'XP history', union: true, max: 100 },
+    { name: 'dt', path: ['play', 'dt'], label: 'dungeon turn' }, { name: 'spent', path: ['play', 'spent'], label: 'expertise uses' },
+    { name: 'temp', path: ['play', 'temp'], label: 'lore book uses' }, { name: 'petStam', path: ['play', 'petStam'], label: 'pet Stamina' },
+    { name: 'lastRest', path: ['play', 'lastRest'], label: 'rest' }, { name: 'claimsAnswered', path: ['play', 'claimsAnswered'], label: 'XP claims answered' }];
 
   var cfg = null;              // attach() options
   var user = null, csrf = null;

@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Nest · Ref Screen</title>
 <style>
+/* The Nest: colours, fonts, and the light/dark themes, shared by the Character Generator, the Ref Screen, and the accounts site. */
 :root {
   --paper: #f4efe6;
   --card: #fffdf8;
@@ -43,6 +44,9 @@
   --ok: #6fbf7c; --warn: #e0a84a; --bad: #ff7b6e; --sel: #d9a441;
   --shadow: 0 1px 2px rgba(0,0,0,.4);
 }
+
+</style>
+<style>
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.45 var(--font); }
@@ -400,6 +404,9 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .sit-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .4rem; margin: .5rem 0 .2rem; }
 .sit-row .cond { min-height: 30px; }
 .cond.st8 { border-style: dashed; }
+.claims { margin: .3rem 0 0; padding-left: 1.1rem; }
+.claims li { margin: .25rem 0; }
+.claims li .btn { margin-left: .25rem; }
 
 </style>
 <script>
@@ -557,11 +564,6 @@ REF.CONDITIONS = [
   ['Vulnerable', 'Take an extra 1d6 damage each time you take damage. Ends at the end of the dungeon turn.'],
   ['Weakened', 'Bane on all tests. Ends at the end of the dungeon turn.']
 ];
-REF.END_OF_DT_CONDITIONS = ['Blessed', 'Vulnerable', 'Weakened'];
-
-/* Expertise & Stamina bonus thresholds (TXP) and characteristic bonus thresholds. */
-REF.ES_ADV = [100, 500, 1250, 2250, 3500, 5000, 10000, 20000, 30000];
-REF.CHAR_ADV = [5000, 15000, 30000];
 
 /* Backgrounds in character-app order (index = saved "bg"): name, characteristic(s) at 2, starting Stamina. */
 REF.BACKGROUNDS = [
@@ -1406,6 +1408,185 @@ CROWS.NAME_IDEAS = {
 </script>
 <script>
 /*
+ * The Nest: small page helpers shared by the Character Generator, the Ref Screen, and the accounts site (window.CrowsDom).
+ * The apps inline this file when they're built; the accounts site serves it next to portal.js (server/stage.sh).
+ */
+(function () {
+  'use strict';
+
+  function $(id) { return document.getElementById(id); }
+  /*
+   * el('div', { class, text, html, value, checked, on<event>: fn, any attribute }, [children]). Attributes that are null,
+   * undefined, or false are left out; true sets an empty attribute. value and checked are set as properties after the
+   * children, so a <select> picks its option. Children can be nodes, strings, or numbers; null, undefined, and false are skipped.
+   */
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag), val, chk;
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      var v = attrs[k];
+      if (v === null || v === undefined || v === false) return;
+      if (k === 'class') n.className = v;
+      else if (k === 'text') n.textContent = v;
+      else if (k === 'html') n.innerHTML = v;
+      else if (k === 'value') val = v;
+      else if (k === 'checked') chk = v;
+      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v === true ? '' : v);
+    });
+    (kids || []).forEach(function (c) {
+      if (c == null || c === false) return;
+      n.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+    });
+    if (val !== undefined) n.value = val;
+    if (chk !== undefined) n.checked = !!chk;
+    return n;
+  }
+  /* A button with the .btn style. extra: a tooltip (string) or more attributes (object). */
+  function btn(text, onclick, cls, extra) {
+    var a = { type: 'button', class: 'btn' + (cls ? ' ' + cls : ''), text: text, onclick: onclick };
+    if (typeof extra === 'string') a.title = extra || null;
+    else if (extra) Object.keys(extra).forEach(function (k) { a[k] = extra[k]; });
+    return el('button', a);
+  }
+  /* A short message in the page's #toast box. */
+  function toast(msg, ms) {
+    var t = $('toast');
+    if (!t) return;
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, ms || 2800);
+  }
+  function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function signed(n) { return (n > 0 ? '+' : '') + n; }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  /* "1 wound", "3 wounds", "2 enemies", "2 bushes". */
+  function plural(n, w) { return n + ' ' + (n === 1 ? w : /[^aeiou]y$/.test(w) ? w.slice(0, -1) + 'ies' : /(ch|sh|s|x)$/.test(w) ? w + 'es' : w + 's'); }
+
+  window.CrowsDom = { $: $, el: el, btn: btn, toast: toast, fmt: fmt, signed: signed, clone: clone, plural: plural };
+})();
+
+</script>
+<script>
+/*
+ * The Nest: dice and tests, shared by the Character Generator's Play mode and the Ref Screen (window.CrowsDice),
+ * so a player's roll and the Ref's follow the same rules.
+ */
+(function () {
+  'use strict';
+
+  function d(n) { return 1 + Math.floor(Math.random() * n); }
+  function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+  function int(v, dflt) { var n = parseInt(v, 10); return isNaN(n) ? dflt : n; }
+
+  /* Roll "NdM", "NdM+K", "NdM x K" or a plain number: { total, detail }. */
+  function rollDice(expr) {
+    if (typeof expr === 'number') return { total: expr, detail: String(expr) };
+    var m = /^\s*(\d*)d(\d+)\s*(?:([+-])\s*(\d+))?\s*(?:[x*]\s*([\d,]+))?\s*$/i.exec(expr);
+    if (!m) { var k = int(expr, 0); return { total: k, detail: String(k) }; }
+    var n = Math.max(1, Math.min(100, int(m[1] || '1', 1))), s = int(m[2], 6), rolls = [], sum = 0;
+    for (var i = 0; i < n; i++) { var r = d(s); rolls.push(r); sum += r; }
+    if (m[3]) sum += (m[3] === '-' ? -1 : 1) * int(m[4], 0);
+    if (m[5]) sum *= int(m[5].replace(/,/g, ''), 1);
+    return { total: sum, detail: expr.replace(/\s+/g, '') + ' [' + rolls.join(', ') + ']' };
+  }
+  /* d100 from two d10s (00 = 100). */
+  function d100() { var a = d(10), b = d(10), v = (a % 10) * 10 + (b % 10); if (v === 0) v = 100; return { total: v, detail: 'd100 [' + (a % 10) + ', ' + (b % 10) + ']' }; }
+
+  /* Edges and banes cancel; at most two of either count. Returns -2..2. */
+  function netEdges(edges, banes) { return Math.min(2, edges) - Math.min(2, banes); }
+  function ebWord(net) { return net === 2 ? 'double edge' : net === 1 ? 'edge' : net === -1 ? 'bane' : net === -2 ? 'double bane' : ''; }
+  /* 11 or lower: tier 1; 12-16: tier 2; 17+: tier 3. */
+  function tierOf(total) { return total >= 17 ? 3 : total >= 12 ? 2 : 1; }
+  /*
+   * A test: 2d10 + mod, with net edges (-2..2): an edge is +2 and a bane -2; a double edge or bane moves the tier one step.
+   * A natural critMin+ (19) is a crit (tier 3), a natural 2-3 a doom (tier 1). o: { critMin, dice: [a, b] to use, doom: true forces one }.
+   * Returns { dice, nat, mod, bonus (the edge's +2 or bane's -2), net, total, tier, crit, doom }.
+   */
+  function test(mod, net, o) {
+    o = o || {};
+    var a = o.dice ? o.dice[0] : d(10), b = o.dice ? o.dice[1] : d(10), nat = a + b;
+    var bonus = net === 1 ? 2 : net === -1 ? -2 : 0, total = nat + mod + bonus, tier = tierOf(total);
+    if (net === 2) tier = Math.min(3, tier + 1);
+    if (net === -2) tier = Math.max(1, tier - 1);
+    var crit = nat >= (o.critMin || 19), doom = nat <= 3 || !!o.doom;
+    if (crit) tier = 3;
+    if (doom) tier = 1;
+    return { dice: [a, b], nat: nat, mod: mod, bonus: bonus, net: net, total: total, tier: tier, crit: crit, doom: doom };
+  }
+
+  window.CrowsDice = { d: d, pick: pick, rollDice: rollDice, d100: d100, netEdges: netEdges, ebWord: ebWord, tierOf: tierOf, test: test };
+})();
+
+</script>
+<script>
+/*
+ * The Nest: rules shared by the Character Generator (Build and Play) and the Ref Screen (window.CrowsRules), so a
+ * crow's sheet and the Ref's party entry for it count advancement and deal damage the same way.
+ * Needs CROWS (src/game-data.js) and CrowsDice (src/shared/dice.js).
+ */
+(function () {
+  'use strict';
+
+  // ------------------------------------------------------------------ advancement
+  /* Expertise & Stamina bonuses earned at this total XP (the table, then one every 30,000 from 60,000). */
+  function esBonusCount(txp) {
+    var n = 0;
+    CROWS.ES_ADV.forEach(function (r) { if (txp >= r[0]) n++; });
+    if (txp >= 60000) n += Math.floor((txp - 30000) / 30000);
+    return n;
+  }
+  /* The most uses each expertise can have at this total XP. */
+  function maxUses(txp) {
+    var m = 2;
+    CROWS.ES_ADV.forEach(function (r) { if (txp >= r[0]) m = r[1]; });
+    return m;
+  }
+  /* Characteristic bonuses earned at this total XP. */
+  function charBonusCount(txp) {
+    var n = 0;
+    CROWS.CHAR_ADV.forEach(function (t) { if (txp >= t) n++; });
+    if (txp >= 60000) n += Math.floor((txp - 30000) / 30000);
+    return n;
+  }
+  /* The total XP of the next Expertise & Stamina bonus (es) and characteristic bonus (ch). */
+  function nextBonusAt(txp) {
+    var es = null, ch = null;
+    CROWS.ES_ADV.forEach(function (r) { if (es === null && r[0] > txp) es = r[0]; });
+    if (es === null) es = 30000 * (Math.floor(txp / 30000) + 1);
+    CROWS.CHAR_ADV.forEach(function (t) { if (ch === null && t > txp) ch = t; });
+    if (ch === null) ch = 30000 * (Math.floor(txp / 30000) + 1);
+    return { es: es, ch: ch };
+  }
+
+  // ------------------------------------------------------------------ conditions and damage
+  /* Conditions that end at the end of a dungeon turn (and halfway through a rest). */
+  var DT_CONDITIONS = ['Blessed', 'Vulnerable', 'Weakened'];
+
+  /*
+   * Damage, the way the rules deal it: vulnerable adds 1d6, then worn armor, shields, and parry weapons absorb it in
+   * order (unless it's piercing), then Stamina, then wounds, one per point left, as far as there's room.
+   * o: { amount, vulnerable, vul (a 1d6 already rolled, so a replay deals the same), piercing, ad: [AD left on each
+   * absorber, in order], stamina, woundRoom }.
+   * Returns { total, vul (the roll, or 0), absorbed: [per absorber], stamina: Stamina lost, wounds: wounds taken }.
+   */
+  function damage(o) {
+    var vul = o.vulnerable ? (typeof o.vul === 'number' ? o.vul : CrowsDice.d(6)) : 0, total = (o.amount || 0) + vul, left = total;
+    var absorbed = (o.ad || []).map(function (ad) {
+      var a = o.piercing ? 0 : Math.max(0, Math.min(left, ad || 0));
+      left -= a;
+      return a;
+    });
+    var st = Math.max(0, Math.min(left, o.stamina || 0)); left -= st;
+    var w = Math.max(0, Math.min(left, o.woundRoom || 0));
+    return { total: total, vul: vul, absorbed: absorbed, stamina: st, wounds: w };
+  }
+
+  window.CrowsRules = { esBonusCount: esBonusCount, maxUses: maxUses, charBonusCount: charBonusCount, nextBonusAt: nextBonusAt,
+    DT_CONDITIONS: DT_CONDITIONS, damage: damage };
+})();
+
+</script>
+<script>
+/*
  * The Nest account autosave, shared by the Character Generator and the Ref Screen.
  *
  * When the app is served next to the accounts API (api.php) and the visitor is logged in, the thing
@@ -1416,7 +1597,7 @@ CROWS.NAME_IDEAS = {
  * URL parameters: ?id=<n> opens that saved record, ?new=1 starts a new one; with neither, the record
  * last open in this browser is reopened (or the current local state is saved as a new one).
  * ?link=<n> is the Ref's view of a character a player shared: only the Play mode vitals (Stamina, wounds,
- * conditions, cruelty, coins, and their log), equipment, notes, and XP are sent back, and the server applies just those.
+ * conditions, cruelty, coins, and their log), equipment, notes, rests and dungeon turns, and XP are sent back, and the server applies just those.
  * ?id=<n> can also be someone else's character that its player handed to this user (control.give): it's opened
  * and saved like one of their own until the player takes it back, which shows a notice instead of saving a copy.
  *
@@ -1448,7 +1629,10 @@ CROWS.NAME_IDEAS = {
     { name: 'stamina', path: ['play', 'stamina'], label: 'Stamina' }, { name: 'cruelty', path: ['play', 'cruelty'], label: 'cruelty' },
     { name: 'wounds', path: ['play', 'wounds'], label: 'wounds' }, { name: 'log', path: ['play', 'log'], label: 'log', union: true },
     { name: 'txp', path: ['txp'], label: 'total XP' }, { name: 'pendingXP', path: ['play', 'pendingXP'], label: 'pending XP' },
-    { name: 'xpLog', path: ['play', 'xpLog'], label: 'XP history', union: true, max: 100 }];
+    { name: 'xpLog', path: ['play', 'xpLog'], label: 'XP history', union: true, max: 100 },
+    { name: 'dt', path: ['play', 'dt'], label: 'dungeon turn' }, { name: 'spent', path: ['play', 'spent'], label: 'expertise uses' },
+    { name: 'temp', path: ['play', 'temp'], label: 'lore book uses' }, { name: 'petStam', path: ['play', 'petStam'], label: 'pet Stamina' },
+    { name: 'lastRest', path: ['play', 'lastRest'], label: 'rest' }, { name: 'claimsAnswered', path: ['play', 'claimsAnswered'], label: 'XP claims answered' }];
 
   var cfg = null;              // attach() options
   var user = null, csrf = null;
@@ -2105,18 +2289,7 @@ CROWS.NAME_IDEAS = {
   var page = null, layouts = {}, owner = null, editing = false, cols = [];
   var drag = null, saveTimer = null, pending = {};
 
-  function $(id) { return document.getElementById(id); }
-  function el(tag, attrs, kids) {
-    var n = document.createElement(tag);
-    Object.keys(attrs || {}).forEach(function (k) {
-      var v = attrs[k];
-      if (v === null || v === undefined || v === false) return;
-      if (k === 'text') n.textContent = v; else if (k === 'class') n.className = v;
-      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), v); else n.setAttribute(k, v === true ? '' : v);
-    });
-    (kids || []).forEach(function (c) { if (c) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
-    return n;
-  }
+  var $ = window.CrowsDom.$, el = window.CrowsDom.el;   // src/shared/dom.js
   function preset(id) { return PRESETS.filter(function (p) { return p[0] === id; })[0] || PRESETS[0]; }
   function template(id) {
     return preset(id)[2].map(function (w) { return w === 'N' ? cfg.narrow : 'minmax(0, 1fr)'; }).join(' ');
@@ -2526,89 +2699,63 @@ CROWS.NAME_IDEAS = {
 </script>
 <script>
 /*
- * Crows Playtest 2 Ref Screen — application logic.
- * Plain browser JavaScript (no build step, no network). Depends on REF (ref-data.js) and REF_RULES (rules-text.js).
- * All campaign state lives in one object, autosaved to localStorage and exportable as a .json file.
+ * Crows Playtest 2 Ref Screen: the core, loaded first. Plain browser JavaScript (no build step). Depends on REF (ref-data.js),
+ * REF_RULES (rules-text.js), CROWS (src/game-data.js), and src/shared/. All campaign state lives in one object, autosaved to
+ * localStorage (and the account, src/cloud.js) and exportable as a .json file.
+ *
+ * The Ref Screen is split by tab: ref-core.js (helpers, campaign state, the bound inputs, the dungeon turn timer, the tab bar and
+ * sidebar), ref-encounters.js, ref-travel.js, ref-session.js, ref-combat.js, ref-village.js, ref-party.js, ref-reference.js (World,
+ * Bestiary, Tables, Rules), and ref.js (files and start-up), loaded in that order. They share window.CrowsRefApp (A below).
  */
 (function () {
   'use strict';
+  // Shared by this app's files: their functions and constants (add), calls to another file's functions (fwd), and
+  // the variables more than one file reassigns, kept in step in every file (share, set).
+  var watch = {};
+  var A = window.CrowsRefApp = {
+    fwd: function (name) { return function () { return A[name].apply(this, arguments); }; },
+    add: function (o) { Object.keys(o).forEach(function (k) { A[k] = o[k]; }); },
+    share: function (name, fn) { (watch[name] = watch[name] || []).push(fn); },
+    set: function (name, v) { A[name] = v; (watch[name] || []).forEach(function (fn) { fn(v); }); return v; }
+  }, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var allClaims = f('allClaims'), applyAct = f('applyAct'), byId = f('byId'), cloudOn = f('cloudOn'), counterAct = f('counterAct'),
+      counterDamage = f('counterDamage'), dropFromFallen = f('dropFromFallen'), endDT = f('endDT'), feed = f('feed'), fxItems = f('fxItems'),
+      heal = f('heal'), liveChanged = f('liveChanged'), newRound = f('newRound'), pcOf = f('pcOf'), pendingText = f('pendingText'),
+      releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderEncounters = f('renderEncounters'),
+      renderInvite = f('renderInvite'), renderParty = f('renderParty'), renderRules = f('renderRules'), renderSession = f('renderSession'),
+      renderStatus = f('renderStatus'), renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
+      renderWorld = f('renderWorld'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
+  var state = A.state; A.share('state', function (v) { state = v; });
+  var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
   var STORAGE_KEY = 'crows-pt2-ref-campaign';
   var TAB_KEY = 'crows-pt2-ref-tab';
   var TABS = [['session', 'Session'], ['encounters', 'Encounters'], ['travel', 'Travel'], ['village', 'Village'], ['party', 'Party'], ['world', 'World'], ['bestiary', 'Bestiary'], ['tables', 'Tables'], ['rules', 'Rules']];
   var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge' };
   var EB_LABELS = [[-2, 'DB'], [-1, 'Bane'], [0, '—'], [1, 'Edge'], [2, 'DE']];
-  var state, tab, uid = 1;
+  var uid = 1;   // state (the campaign) and tab (the open tab) are shared: A.set('state', ...)
   var ui = { dice: null, tables: {}, beastQ: '', beastType: '', rulesQ: '', lastEnc: null, travelEnc: null, alarmFired: false, encSrc: '', encDraft: null, encFilter: 'open', encOpen: {}, encFocus: null, encEnd: null };
 
   // ------------------------------------------------------------------ helpers
-  function $(id) { return document.getElementById(id); }
-  function el(tag, attrs, kids) {
-    var n = document.createElement(tag), val, chk;
-    if (attrs) Object.keys(attrs).forEach(function (k) {
-      var v = attrs[k];
-      if (v === null || v === undefined || v === false) return;
-      if (k === 'class') n.className = v;
-      else if (k === 'text') n.textContent = v;
-      else if (k === 'value') val = v;
-      else if (k === 'checked') chk = v;
-      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), v);
-      else n.setAttribute(k, v === true ? '' : v);
-    });
-    (kids || []).forEach(function (c) { if (c != null && c !== false) n.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c); });
-    if (val !== undefined) n.value = val;
-    if (chk !== undefined) n.checked = !!chk;
-    return n;
-  }
-  function d(n) { return 1 + Math.floor(Math.random() * n); }
-  function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
-  function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
-  function signed(n) { return (n > 0 ? '+' : '') + n; }
-  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  var Dom = window.CrowsDom, Dice = window.CrowsDice, Rules = window.CrowsRules;   // src/shared/
+  var $ = Dom.$, el = Dom.el, fmt = Dom.fmt, signed = Dom.signed, clone = Dom.clone, plural = Dom.plural, toast = Dom.toast;
+  var d = Dice.d, pick = Dice.pick, rollDice = Dice.rollDice, d100 = Dice.d100, netEdges = Dice.netEdges, ebWord = Dice.ebWord;
   function clamp(n, lo, hi) { return Math.max(lo, Math.min(hi, n)); }
   function int(v, dflt) { var n = parseInt(v, 10); return isNaN(n) ? dflt : n; }
   function nid() { return 'i' + Date.now().toString(36) + (uid++); }
-  function toast(msg) {
-    var t = $('toast'); t.textContent = msg; t.classList.add('show');
-    clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, 2800);
-  }
   function lookup(rows, n) { for (var i = 0; i < rows.length; i++) if (n >= rows[i][0] && n <= rows[i][1]) return rows[i]; return rows[rows.length - 1]; }
   function nowStamp() { var t = new Date(); return ('0' + t.getHours()).slice(-2) + ':' + ('0' + t.getMinutes()).slice(-2); }
   function today() { var t = new Date(); return t.getFullYear() + '-' + ('0' + (t.getMonth() + 1)).slice(-2) + '-' + ('0' + t.getDate()).slice(-2); }
   function beast(name) { for (var i = 0; i < REF.BESTIARY.length; i++) if (REF.BESTIARY[i].n === name) return REF.BESTIARY[i]; return null; }
-  function plural(n, w) { return n + ' ' + (n === 1 ? w : /[^aeiou]y$/.test(w) ? w.slice(0, -1) + 'ies' : /(ch|sh|s|x)$/.test(w) ? w + 'es' : w + 's'); }
 
-  /* Roll "NdM", "NdM+K", "NdM x K" or a plain number. */
-  function rollDice(expr) {
-    if (typeof expr === 'number') return { total: expr, detail: String(expr) };
-    var m = /^\s*(\d*)d(\d+)\s*(?:([+-])\s*(\d+))?\s*(?:[x*]\s*([\d,]+))?\s*$/i.exec(expr);
-    if (!m) { var k = int(expr, 0); return { total: k, detail: String(k) }; }
-    var n = int(m[1] || '1', 1), s = int(m[2], 6), rolls = [], sum = 0;
-    n = clamp(n, 1, 100);
-    for (var i = 0; i < n; i++) { var r = d(s); rolls.push(r); sum += r; }
-    if (m[3]) sum += (m[3] === '-' ? -1 : 1) * int(m[4], 0);
-    if (m[5]) sum *= int(m[5].replace(/,/g, ''), 1);
-    return { total: sum, detail: expr.replace(/\s+/g, '') + ' [' + rolls.join(', ') + ']' };
-  }
   /* Roll every dice expression inside a sentence, e.g. "gem worth 10d10 gc" -> "gem worth 10d10 (= 57) gc". */
   function rollInText(text) {
     return text.replace(/\b(\d+)d(\d+)(\s*\+\s*\d+)?(\s*x\s*[\d,]+)?/g, function (all) { return all + ' (= ' + fmt(rollDice(all.replace(/\s+/g, '')).total) + ')'; });
   }
 
-  /* A test: 2d10 + mod with net edges (-2..2). Returns nat, total, tier, crit, doom. */
-  function test(mod, net, critMin, dice) {
-    var a = dice ? dice[0] : d(10), b = dice ? dice[1] : d(10), nat = a + b;
-    var total = nat + mod + (net === 1 ? 2 : net === -1 ? -2 : 0);
-    var tier = total <= 11 ? 1 : total <= 16 ? 2 : 3;
-    if (net === 2) tier = Math.min(3, tier + 1);
-    if (net === -2) tier = Math.max(1, tier - 1);
-    var crit = nat >= (critMin || 19), doom = nat <= 3;
-    if (crit) tier = 3;
-    if (doom) tier = 1;
-    return { dice: [a, b], nat: nat, mod: mod, net: net, total: total, tier: tier, crit: crit, doom: doom };
-  }
-  function netEdges(edges, banes) { return Math.min(2, edges) - Math.min(2, banes); }
-  function ebWord(net) { return net === 2 ? 'double edge' : net === 1 ? 'edge' : net === -1 ? 'bane' : net === -2 ? 'double bane' : ''; }
+  /* A test: 2d10 + mod with net edges (-2..2) (CrowsDice.test). Returns dice, nat, mod, net, total, tier, crit, doom. */
+  function test(mod, net, critMin, dice) { return Dice.test(mod, net, { critMin: critMin, dice: dice }); }
   function testLine(r) {
     return '2d10 [' + r.dice.join(', ') + ']' + (r.mod ? ' ' + signed(r.mod) : '') + (r.net ? ' with ' + ebWord(r.net) : '') + ' = ' + r.total +
       (r.crit ? ' (crit!)' : r.doom ? ' (doom!)' : '');
@@ -2733,7 +2880,7 @@ CROWS.NAME_IDEAS = {
         onclick: function () { obj[key] = p[0]; save(); if (onchange) onchange(); else render(); }, text: p[1] });
     }));
   }
-  function btn(text, onclick, cls, title) { return el('button', { type: 'button', class: 'btn ' + (cls || ''), onclick: onclick, title: title || null, text: text }); }
+  function btn(text, onclick, cls, title) { return Dom.btn(text, onclick, cls, title); }
   function card(id, title, kids) {
     var c = $(id); c.innerHTML = '';
     if (title) c.appendChild(typeof title === 'string' ? el('h2', { text: title }) : title);
@@ -2778,16 +2925,8 @@ CROWS.NAME_IDEAS = {
     var p = state.village.prosperity, base = lookup(REF.SALE_PCT, p)[2];
     return base + (state.village.saleMod || 0);
   }
-  function esBonusCount(txp) {
-    var n = 0; REF.ES_ADV.forEach(function (t) { if (txp >= t) n++; });
-    if (txp >= 60000) n += Math.floor((txp - 30000) / 30000);
-    return n;
-  }
-  function nextES(txp) {
-    for (var i = 0; i < REF.ES_ADV.length; i++) if (txp < REF.ES_ADV[i]) return REF.ES_ADV[i];
-    return 30000 * (Math.floor(txp / 30000) + 1);
-  }
-  function charBonusCount(txp) { var n = 0; REF.CHAR_ADV.forEach(function (t) { if (txp >= t) n++; }); if (txp >= 60000) n += Math.floor((txp - 30000) / 30000); return n; }
+  var esBonusCount = Rules.esBonusCount, charBonusCount = Rules.charBonusCount;
+  function nextES(txp) { return Rules.nextBonusAt(txp).es; }
 
   // ------------------------------------------------------------------ dungeon turn timer
   function remainMs() { var s = S(); return s.running ? s.endAt - Date.now() : s.remain; }
@@ -2826,6 +2965,159 @@ CROWS.NAME_IDEAS = {
       renderSideLog();
     }
   }
+
+  var inv = { id: null, loading: false, hasLink: false, link: '', listed: false, note: '', draft: null, requests: [], latest: 0, at: 0 };
+  // ================================================================== RENDERING
+  function setTab(t) { A.set('tab', t); document.body.setAttribute('data-tab', t); if (window.CrowsLayout) window.CrowsLayout.apply(); try { localStorage.setItem(TAB_KEY, t); } catch (e) { /* ignore */ } render(); window.scrollTo(0, 0); }
+  function renderTabbar() {
+    var bar = $('tabbar'); bar.innerHTML = '';
+    TABS.forEach(function (t) {
+      var badge = null;
+      if (t[0] === 'session' && (S().pending || S().combat.list.some(function (c) { return !c.dead && c.kind === 'foe'; }))) badge = el('span', { class: 'badge', text: S().pending ? '!' : '⚔' });
+      if (t[0] === 'encounters' && runningEnc()) badge = el('span', { class: 'badge', text: '⚔', title: 'An encounter is running' });
+      if (t[0] === 'party' && inv.requests.length && inv.id === (window.CrowsCloud && window.CrowsCloud.recordId)) badge = el('span', { class: 'badge', text: String(inv.requests.length), title: 'Join requests waiting' });
+      else if (t[0] === 'party' && allClaims().length) badge = el('span', { class: 'badge', text: 'XP', title: plural(allClaims().length, 'XP claim') + ' from players waiting' });
+      bar.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': tab === t[0] ? 'true' : 'false', onclick: function () { setTab(t[0]); } }, [t[1], badge]));
+    });
+    $('camp-name').textContent = state.name || state.village.name || '';
+  }
+  var layoutFitQueued = false;
+  function render() {
+    // A fight with linked crows needs their sheets loaded (Party status), whichever tab is open: hits land there.
+    if (tab !== 'party' && cloudOn() && S().combat.list.some(function (x) { var p = pcOf(x); return p && p.link; })) renderStatus();
+    renderTabbar();
+    renderSide();
+    if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
+    ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, world: renderWorld, bestiary: renderBestiary, tables: renderTables, rules: renderRules })[tab]();
+    tick();
+  }
+
+  // ------------------------------------------------------------------ sidebar
+  function renderSide() {
+    var s = S();
+    $('side-timer').innerHTML = '';
+    $('side-timer').appendChild(el('div', null, [
+      el('h3', { text: (s.rest.active ? 'Resting · ' : '') + 'Dungeon turn ' + s.dt + (greedBonus() ? ' · greed +' + greedBonus() + '%' : '') }),
+      el('div', { class: 'row center' }, [el('div', { 'data-clock': '1', class: 'clock' }), el('span', { class: 'spacer' }),
+        s.mode === 'timer' ? (s.running ? btn('Pause', pauseTimer, 'btn-small') : btn('Start', startTimer, 'btn-small btn-primary')) : btn('+1 room', function () { s.roomsDone++; save(); render(); }, 'btn-small'),
+        btn('End DT', endDT, 'btn-small', 'Roll usage dice, end DT conditions, and make the encounter check')]),
+      el('div', { class: 'meter', 'data-meter': '1' }, [el('span')]),
+      s.pending ? el('div', { class: 'pending' }, [el('b', { text: 'Encounter due this DT: ' }), pendingText(s.pending)]) : null
+    ]));
+
+    var dc = state.dice, box = $('side-dice'); box.innerHTML = '';
+    var res = null;
+    if (ui.dice) {
+      var r = ui.dice;
+      res = el('div', { class: 'result' }, [el('div', { class: 'r-head', text: r.label }),
+        r.r ? el('div', null, [el('div', { class: 'r-roll', text: testLine(r.r) }), tierChip(r.r), r.dmg ? el('div', null, [el('b', { text: r.dmg })]) : null, r.note ? el('div', { class: 'fine', text: r.note }) : null, hitControls(r.hit)].concat((r.counters || []).map(function (k) {
+            if (k.act) return el('div', null, [el('span', { class: 'fine', text: k.by.name + '\u2019s counter: ' }), hitControls(k.act)]);
+            var cd = counterDamage(k.by, k.doom);
+            return cd && rxLeft(k.by) > 0 && !k.by.dead ? btn(k.by.name + ' counters ' + k.vs.name + ' (' + cd.n + ')', function () { k.act = counterAct(k.by, k.vs, k.doom); save(); render(); }, 'btn-small', 'A counter (reaction): its melee attack\u2019s tier 2 damage, tier 3 on a doom') : null;
+          })))
+          : el('div', null, [el('b', { text: r.text })])]);
+    }
+    box.appendChild(el('div', null, [
+      el('h3', { text: 'Dice' }),
+      el('div', { class: 'row center' }, [field('Bonus', inp(dc, 'mod', { type: 'number', min: -10, max: 20, class: 'tiny' }, { dflt: 0 })), segEB(dc, 'net')]),
+      el('div', { class: 'btn-row' }, [
+        el('button', { type: 'button', class: 'btn btn-primary', style: 'grid-column: span 2', text: 'Test 2d10', onclick: function () {
+          var r = test(dc.mod, dc.net); ui.dice = { label: 'Test' + (dc.mod ? ' ' + signed(dc.mod) : ''), r: r };
+          log('', 'Test: ' + testLine(r) + ' → **T' + r.tier + '**.'); render();
+        } }),
+        diceBtn('d6', '1d6'), diceBtn('d10', '1d10'), diceBtn('2d6', '2d6'), diceBtn('3d6', '3d6'), diceBtn('d100', 'd100'),
+        el('button', { type: 'button', class: 'btn', text: 'Initiative', title: 'Each round a player rolls 1d10: 6+ means crows and allies act first', onclick: rollInitiative })
+      ]),
+      el('div', { class: 'row center', style: 'margin-top:.4rem' }, [
+        inp(dc, 'expr', { class: 'in', style: 'width:7rem', 'aria-label': 'Dice expression' }),
+        btn('Roll', function () { var r = rollDice(dc.expr || '1d6'); ui.dice = { label: dc.expr, text: r.detail + ' = ' + r.total }; log('', 'Rolled ' + r.detail + ' = **' + r.total + '**.'); render(); }, 'btn-small'),
+        inp(dc, 'ud', { type: 'number', min: 1, max: 12, class: 'tiny', 'aria-label': 'Usage dice count', title: 'Usage dice' }, { dflt: 1 }),
+        btn('UD', function () {
+          var rolls = [], keep = 0; for (var i = 0; i < dc.ud; i++) { var x = d(6); rolls.push(x); if (x > 2) keep++; }
+          ui.dice = { label: 'Usage dice ×' + dc.ud, text: '[' + rolls.join(', ') + '] → ' + keep + ' UD left' + (keep ? '' : ' (effect ends / item used up)') };
+          log('', 'Usage dice ' + dc.ud + ' [' + rolls.join(', ') + '] → **' + keep + ' left**.'); render();
+        }, 'btn-small', 'Roll usage dice: each 1-2 is removed')
+      ]),
+      res
+    ]));
+    renderSideLog();
+    renderInvite();
+  }
+  /* What an action does, in words: "5 damage, prone", "regains 4 Stamina", "grabbed". */
+  function fxText(items) {
+    var f = items[0] || {}, parts = [];
+    if (f.damage) parts.push(f.damage + (f.piercing ? ' piercing' : '') + ' damage');
+    if (f.heal) parts.push('+' + f.heal + ' Stamina');
+    if (f.ad) parts.push('+' + f.ad + ' AD');
+    if (f.wounds) parts.push('heal ' + plural(f.wounds, 'wound'));
+    if (f.conds) Object.keys(f.conds).forEach(function (k) { parts.push((f.conds[k] ? '' : 'not ') + k.toLowerCase()); });
+    if (f.grab) parts.push('grabbed');
+    return parts.join(', ') || 'effect';
+  }
+  /* An action's effects (an attack, a counter, a stray shot, a heal, a grab): dealt, with Undo, or waiting for Apply. */
+  function hitControls(h) {
+    var items = h ? fxItems(h).filter(function (f) { return byId(f.id); }) : [];
+    if (!items.length) return null;
+    var names = items.map(function (f) { return byId(f.id).name; }).join(', '), what = fxText(items);
+    return el('span', { class: 'row center hit-ctl' }, h.applied ? [el('span', { class: 'chip ok', text: what + ' \u2192 ' + names }), btn('Undo', function () { undoAct(h); }, 'btn-small btn-ghost', 'Put ' + names + ' back as they were (Stamina, AD, wounds, conditions)')]
+      : [btn('Apply ' + what + ' \u2192 ' + names, function () { applyAct(h); }, 'btn-small btn-primary', 'Deal it (damage goes through AD first, then Stamina, then wounds)')]);
+  }
+  function diceBtn(label, expr) {
+    return btn(label, function () {
+      var r = expr === 'd100' ? d100() : rollDice(expr);
+      ui.dice = { label: label, text: r.detail + ' = ' + r.total }; log('', 'Rolled ' + r.detail + ' = **' + r.total + '**.'); render();
+    });
+  }
+  function rollInitiative() {
+    var r = d(10), first = r >= 6;
+    var c = S().combat, fresh = !c.round; c.round = (c.round || 0) + (c.round ? 0 : 1); c.first = first ? 'crows' : 'foes'; if (fresh) newRound(c);
+    feed('Initiative for round ' + c.round + ': **' + (first ? 'crows and allies first' : 'enemies first') + '**.');
+    ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (first ? 'crows and allies act first' : 'enemies act first') };
+    log('', 'Initiative for round ' + c.round + ': 1d10 = ' + r + ' → **' + (first ? 'crows and allies first' : 'enemies first') + '**.');
+    save(); render();
+  }
+  function renderSideLog() {
+    var box = $('side-log'); box.innerHTML = '';
+    var list = el('ol'), recent = state.log.slice(-14).reverse();
+    recent.forEach(function (e) { list.appendChild(logItem(e)); });
+    box.appendChild(el('div', null, [el('div', { class: 'row center' }, [el('h3', { text: 'Log' }), el('span', { class: 'spacer' }), el('a', { href: '#', class: 'fine', onclick: function (e) { e.preventDefault(); setTab('session'); setTimeout(function () { $('sec-log').scrollIntoView(); }, 0); }, text: 'full log' })]),
+      recent.length ? list : el('p', { class: 'fine', text: 'Rolls and events appear here.' })]));
+  }
+
+  A.add({ clamp: clamp, int: int, nid: nid, lookup: lookup, nowStamp: nowStamp, today: today, beast: beast, rollInText: rollInText, test: test,
+      testLine: testLine, tierChip: tierChip, freshVillage: freshVillage, freshState: freshState, withDefaults: withDefaults, save: save,
+      startNew: startNew, isCampaign: isCampaign, load: load, S: S, repairObjects: repairObjects, log: log, rich: rich, logItem: logItem, inp: inp,
+      area: area, sel: sel, chk: chk, field: field, segEB: segEB, btn: btn, card: card, more: more, rowsTable: rowsTable, currentPlace: currentPlace,
+      dungeonEN: dungeonEN, travelCalc: travelCalc, greedBonus: greedBonus, activePCs: activePCs, salePct: salePct, nextES: nextES,
+      remainMs: remainMs, clockText: clockText, startTimer: startTimer, pauseTimer: pauseTimer, resetTimer: resetTimer, beep: beep, tick: tick,
+      setTab: setTab, renderTabbar: renderTabbar, render: render, renderSide: renderSide, fxText: fxText, hitControls: hitControls, diceBtn: diceBtn,
+      rollInitiative: rollInitiative, renderSideLog: renderSideLog, STORAGE_KEY: STORAGE_KEY, TAB_KEY: TAB_KEY, TABS: TABS, SIZES: SIZES,
+      EB_LABELS: EB_LABELS, ui: ui, Dom: Dom, Dice: Dice, Rules: Rules, $: $, el: el, fmt: fmt, signed: signed, clone: clone, plural: plural,
+      toast: toast, d: d, pick: pick, rollDice: rollDice, d100: d100, netEdges: netEdges, ebWord: ebWord, esBonusCount: esBonusCount,
+      charBonusCount: charBonusCount, inv: inv, layoutFitQueued: layoutFitQueued });
+})();
+
+</script>
+<script>
+/*
+ * Ref Screen: encounter checks and monster tables, saved encounters (run, end, outcomes), and the Encounters tab. See ref-core.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsRefApp, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var activePCs = f('activePCs'), addCombatant = f('addCombatant'), addParty = f('addParty'), area = f('area'), beast = f('beast'),
+      beastCard = f('beastCard'), btn = f('btn'), card = f('card'), chk = f('chk'), clamp = f('clamp'), clearCombat = f('clearCombat'),
+      combatUI = f('combatUI'), currentPlace = f('currentPlace'), dungeonEN = f('dungeonEN'), field = f('field'), greedBonus = f('greedBonus'),
+      groundText = f('groundText'), inp = f('inp'), int = f('int'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'),
+      nowStamp = f('nowStamp'), render = f('render'), rollMerchant = f('rollMerchant'), rollMiasmaTouched = f('rollMiasmaTouched'),
+      rollTravelEncounter = f('rollTravelEncounter'), rollTravelers = f('rollTravelers'), rollWildAnimal = f('rollWildAnimal'), S = f('S'),
+      save = f('save'), sel = f('sel'), setTab = f('setTab'), test = f('test'), testLine = f('testLine'), today = f('today'),
+      travelResultBox = f('travelResultBox');
+  var $ = A.$, clone = A.clone, d = A.d, el = A.el, plural = A.plural, rollDice = A.rollDice, signed = A.signed, SIZES = A.SIZES, toast = A.toast,
+      ui = A.ui;
+  var state = A.state; A.share('state', function (v) { state = v; });
+  var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
   // ------------------------------------------------------------------ encounters
   function rollAdds(adds) {
@@ -3017,6 +3309,196 @@ CROWS.NAME_IDEAS = {
     return n;
   }
 
+  // ------------------------------------------------------------------ Encounters tab
+  var ENC_SOURCES = [['Blood Creatures', 'Blood creatures (d6)'], ['Undead', 'Undead (d10)'], ['Any', 'Any monster type (d10)'], ['Travel', 'Travel encounter (d100)'],
+    ['Animal', 'Wild animal (habitat + reaction)'], ['Travelers', 'Travelers'], ['Miasma-touched', 'Miasma-touched humans'], ['Merchant', 'Merchant caravan']];
+  function rollEncounterDraft(src) {
+    var t = state.travel, r;
+    if (REF.DUNGEON_TABLES[src]) { r = rollDungeonTable(src); return { name: src + ': ' + addsText(r.adds), roll: src + ' d' + r.die + ' = ' + r.roll, lines: [r.text], adds: r.adds }; }
+    if (src === 'Any') {
+      var m = d(10), row = lookup(REF.ANY_MONSTER, m), e = row[3] ? rollDungeonTable(row[3]) : null;
+      return { name: e ? row[2] + ': ' + addsText(e.adds) : row[2].replace(/ \(.*$/, ''), roll: 'Any monster d10 = ' + m + (e ? ', ' + row[3] + ' d' + e.die + ' = ' + e.roll : ''),
+        lines: [row[2] + (e ? ': ' + e.text : '')], adds: e ? e.adds : [] };
+    }
+    if (src === 'Travel') { r = rollTravelEncounter(); return { name: 'Travel: ' + r.kind, roll: 'Travel d100 = ' + r.roll + ' (' + t.habitat + ', ' + t.climate + ')', lines: r.lines, adds: r.adds }; }
+    if (src === 'Animal') { r = rollWildAnimal(t.habitat); return { name: 'Wild animal: ' + addsText(r.adds), roll: t.habitat, lines: r.lines, adds: r.adds }; }
+    r = src === 'Travelers' ? rollTravelers() : src === 'Merchant' ? rollMerchant() : rollMiasmaTouched();
+    return { name: src === 'Travelers' ? 'Travelers' : src === 'Merchant' ? 'Merchant caravan' : 'Miasma-touched humans', roll: src, lines: r.lines, adds: r.adds };
+  }
+  function renderEncounters() {
+    renderEncRun();
+    if (!ui.encSrc) ui.encSrc = REF.DUNGEON_TABLES[S().table] ? S().table : 'Travel';
+    var dr = ui.encDraft;
+    function srcLabel() { return ENC_SOURCES.filter(function (o) { return o[0] === ui.encSrc; })[0][1]; }
+    function roll() { var r = rollEncounterDraft(ui.encSrc); r.src = srcLabel(); ui.encDraft = r; log('', 'Rolled an encounter (' + r.src + '): ' + r.name + '. ' + r.lines.join(' ')); render(); }
+    card('sec-enc-new', el('h2', null, ['New Encounter', el('small', { text: 'roll one or build your own' })]), [
+      el('p', { class: 'hint', text: 'Roll on a table, look it over, and save the ones you want to keep and edit. Travel, wild animal, and nearest-dungeon rolls use the Travel tab\'s climate, habitat, and nearest dungeon. Encounter checks that hit (End DT, loud noise, rests, travel) are saved here on their own.' }),
+      el('div', { class: 'row' }, [field('Table', sel(ui, 'encSrc', ENC_SOURCES, { label: 'Encounter table' }), 'grow'),
+        btn('Roll encounter', roll, 'btn-primary'),
+        btn('Create encounter manually', function () { var e = newEncounter({ src: 'Manual', where: '' }); save(); openEncounter(e.id, true); }, 'btn-ghost')]),
+      dr ? el('div', { class: 'result' }, [
+        el('div', { class: 'r-head', text: dr.name }), el('div', { class: 'r-roll', text: dr.roll }),
+        el('ul', null, dr.lines.map(function (l) { return el('li', { text: l }); })),
+        dr.adds.length ? el('div', null, ['Creatures: ', el('b', { text: addsText(dr.adds) })]) : el('div', { class: 'muted', text: 'No creatures from this roll; add them after saving if you need any.' }),
+        el('div', { class: 'row' }, [
+          btn('Save encounter', function () {
+            var e = newEncounter({ name: dr.name, src: dr.src, roll: dr.roll, text: dr.lines.join('\n'), adds: dr.adds });
+            ui.encDraft = null; log('', 'Saved encounter: ' + e.name + '.'); save(); openEncounter(e.id);
+          }, 'btn-small btn-primary'),
+          btn('Reroll', roll, 'btn-small'),
+          btn('Discard', function () { ui.encDraft = null; render(); }, 'btn-small btn-ghost')])
+      ]) : null
+    ]);
+
+    var open = state.encounters.filter(function (e) { return !e.done; }).length, resolved = state.encounters.length - open;
+    var list = state.encounters.filter(function (e) { return ui.encFilter === 'all' || (ui.encFilter === 'done') === !!e.done; });
+    card('sec-enc-list', el('h2', null, ['Saved Encounters', el('small', { text: open + ' open · ' + resolved + ' resolved' })]), [
+      el('div', { class: 'row center' }, [
+        el('div', { class: 'seg' }, [['open', 'Open'], ['all', 'All'], ['done', 'Resolved']].map(function (o) {
+          return el('button', { type: 'button', class: ui.encFilter === o[0] ? 'on' : '', 'aria-pressed': ui.encFilter === o[0] ? 'true' : 'false', text: o[1], onclick: function () { ui.encFilter = o[0]; render(); } });
+        })),
+        el('span', { class: 'spacer' }),
+        resolved ? btn('Delete resolved', function () {
+          if (!confirm('Delete ' + plural(resolved, 'resolved encounter') + '?')) return;
+          state.encounters = state.encounters.filter(function (e) { return !e.done; }); save(); render();
+        }, 'btn-small btn-ghost btn-danger') : null]),
+      list.length ? el('div', { class: 'enc-list' }, list.map(encCard))
+        : el('p', { class: 'hint', text: state.encounters.length ? 'No ' + (ui.encFilter === 'done' ? 'resolved' : 'open') + ' encounters.' : 'No saved encounters yet. Roll or create one above, or make an encounter check in the Session tab.' })
+    ]);
+  }
+  /* The running encounter: what's going on, surprise, morale cues, the combat tracker, creature notes, and the wrap-up. */
+  function renderEncRun() {
+    var e = runningEnc(), box = $('sec-enc-run');
+    box.hidden = !e;
+    if (!e) { box.innerHTML = ''; return; }
+    var c = S().combat, them = c.list.filter(function (x) { return x.kind === 'foe'; }), up = them.filter(function (x) { return !x.dead && x.st > 0; });
+    var cues = [], kinds = {};
+    them.forEach(function (x) { var b = beast(x.cref); if (b) kinds[b.t] = true; });
+    var humans = them.filter(function (x) { var b = beast(x.cref); return b && b.t === 'Human'; }), humansDown = humans.filter(function (x) { return x.dead || x.st <= 0; }).length;
+    if (them.length && !up.length) cues.push(['ok', 'Every foe is down. End the encounter below.']);
+    else {
+      if (humans.length > 1 && humansDown * 2 >= humans.length && humansDown < humans.length) cues.push(['warn', 'Half the human foes are down: the group flees (Ref\'s call).']);
+      if (humans.length === 1 && humansDown === 1) cues.push(['warn', 'The lone human is at 0 Stamina: they flee.']);
+      them.forEach(function (x) { var b = beast(x.cref); if (b && b.t === 'Animal' && !x.dead && x.st <= 0) cues.push(['warn', x.name + ' is at 0 Stamina: animals flee.']); });
+      if (them.length > 2 && up.length * 2 <= them.length && (kinds['Blood Creature'] || kinds.Undead)) cues.push(['', 'Half the monsters are down: monsters flee losing fights (weak ones stay with the pack).']);
+    }
+    var monsters = them.filter(function (x) { var b = beast(x.cref); return b && /Blood Creature|Undead|Unique/.test(b.t); });
+    var types = Object.keys(kinds), beasts = [];
+    them.concat(c.list.filter(function (x) { return x.kind === 'ally'; })).forEach(function (x) { var b = beast(x.cref); if (b && beasts.indexOf(b) < 0) beasts.push(b); });
+    var end = ui.encEnd || (ui.encEnd = { outcome: 'won', resolve: true });
+
+    card('sec-enc-run', el('h2', null, ['Running: ' + (e.name || 'untitled'), el('small', { text: c.round ? 'round ' + c.round : 'not started' })]), [
+      el('div', { class: 'fine', text: [e.where, e.src, e.roll].filter(Boolean).join(' · ') }),
+      e.text ? el('div', { class: 'run-text', text: e.text }) : null,
+      c.round ? null : el('div', { class: 'row center run-setup' }, [
+        el('span', { class: 'fine', text: 'Surprise:' }),
+        el('div', { class: 'seg', role: 'group', 'aria-label': 'Surprise' }, [['none', 'No one'], ['crows', 'Crows surprised'], ['foes', 'Foes surprised']].map(function (o) {
+          return el('button', { type: 'button', class: c.surprise === o[0] ? 'on' : '', 'aria-pressed': c.surprise === o[0] ? 'true' : 'false', text: o[1], onclick: function () { c.surprise = o[0]; save(); render(); } });
+        })),
+        monsters.length ? btn('Like/hate check (2d10+M)', function () { likeHateCheck(monsters); }, 'btn-small btn-ghost', 'When a like or hate is in an odd or dangerous place: T1 they approach unsuspecting, T2 they investigate it first, T3 they withdraw and set an ambush or gather allies') : null,
+        el('span', { class: 'fine', text: 'A surprised side takes no turn in round 1, and attacks against it get +1.' })]),
+      cues.length ? el('div', { class: 'run-cues' }, cues.map(function (q) { return el('div', { class: 'cue ' + q[0], text: q[1] }); })) : null,
+      el('div', { class: 'row center', style: 'margin:.4rem 0' }, [
+        el('span', { class: 'fine', text: them.length ? up.length + ' of ' + plural(them.length, 'foe') + ' standing' : 'No foes in the tracker.' }),
+        el('span', { class: 'spacer' }),
+        btn('Encounter check (loud noise, EN ' + dungeonEN() + ')', function () {
+          var s = S(), res = encounterCheck('Loud noise during ' + (e.name || 'the encounter'), dungeonEN(), s.table === 'none' ? null : s.table);
+          ui.lastEnc = res; if (res.hit && !res.immediate) s.pending = pendingFrom(res);
+          if (res.hit) toast(res.immediate ? 'More creatures arrive now: see the Session tab.' : 'Something else is coming: see the Session tab.');
+          save(); render();
+        }, 'btn-small btn-ghost', 'Encounters can happen even mid-combat')])
+    ].concat(combatUI(true), [
+      beasts.length ? more('Creature notes (likes, hates, how they fight)', types.map(function (t) { return REF.TYPE_NOTES[t] ? el('p', null, [el('b', { text: t + 's: ' }), REF.TYPE_NOTES[t]]) : null; })
+        .concat([el('div', { class: 'beast-list' }, beasts.map(beastCard))])) : null,
+      field('Ref notes', area(e, 'notes', { rows: 2, placeholder: 'Tactics, loot, how it went…' })),
+      el('div', { class: 'run-end' }, [
+        el('h4', { text: 'End the encounter' }),
+        el('div', { class: 'row center' }, [
+          field('How it ended', sel(end, 'outcome', ENC_OUTCOMES, { re: false })),
+          chk(end, 'resolve', 'Mark it resolved', { re: false }),
+          el('span', { class: 'spacer' }),
+          btn('End encounter', function () { endEncounter(e, end.outcome, end.resolve); }, 'btn-primary', 'Write the result into the encounter\'s notes and clear the combat tracker'),
+          btn('Award treasure XP', function () { ui.award = { gc: 0, greed: greedBonus(), players: activePCs().length || 1, what: e.name || '' }; setTab('party'); setTimeout(function () { $('sec-xp').scrollIntoView(); }, 0); }, 'btn-ghost', 'Open the Experience card in the Party tab for this encounter\'s treasure'),
+          btn('Stop without a result', function () { cancelRun(e); }, 'btn-ghost btn-danger')]),
+        el('p', { class: 'fine', text: 'Ending writes the outcome, the rounds, who fell, who\'s still standing, the crows\' Stamina and wounds, and the corpses to harvest into the notes, then clears the tracker.' })])
+    ]));
+  }
+  function encCard(e) {
+    var s = S(), due = !!(s.pending && s.pending.encId === e.id);
+    var creatures = e.creatures.map(function (c) {
+      return el('div', { class: 'li-row' }, [beastSelect(c.n, function (v) { c.n = v; save(); }),
+        inp(c, 'k', { type: 'number', min: 1, max: 30, class: 'tiny', 'aria-label': 'How many' }, { dflt: 1 }),
+        sel(c, 'side', [['foe', 'Foe'], ['ally', 'Ally']], { class: 'in mini', label: 'Side', re: false }),
+        el('button', { type: 'button', class: 'x', text: '×', 'aria-label': 'Remove ' + c.n, onclick: function () { e.creatures = e.creatures.filter(function (x) { return x !== c; }); save(); render(); } })]);
+    });
+    return el('details', { class: 'enc' + (e.done ? ' done' : '') + (due ? ' due' : '') + (ui.encFocus === e.id ? ' focus' : ''), id: 'enc-' + e.id, open: ui.encOpen[e.id] || null,
+      ontoggle: function () { ui.encOpen[e.id] = this.open; } }, [
+      el('summary', null, [
+        el('span', { class: 'enc-name', text: e.name || 'Untitled encounter' }),
+        runningEnc() === e ? el('span', { class: 'chip warn', text: 'running' }) : null,
+        due ? el('span', { class: 'chip accent', text: 'due this DT' }) : null,
+        e.done ? el('span', { class: 'chip ok', text: 'resolved' + (e.outcome ? ': ' + e.outcome.toLowerCase() : '') }) : null,
+        el('span', { class: 'enc-sum', text: [encSummary(e), e.where, 'session ' + e.session + (e.dt ? ', DT ' + e.dt : '')].filter(Boolean).join(' · ') })]),
+      runningEnc() === e ? el('div', { class: 'enc-body' }, [el('p', { class: 'fine' }, ['Running now: its notes and creatures are in the card at the top of this tab. ',
+        el('a', { href: '#sec-enc-run', class: 'enc-link', onclick: function (ev) { ev.preventDefault(); $('sec-enc-run').scrollIntoView({ block: 'start' }); }, text: 'Go to the fight' })])]) :
+      el('div', { class: 'enc-body' }, [
+        el('div', { class: 'li-row' }, [inp(e, 'name', { placeholder: 'Name', 'aria-label': 'Encounter name' }, { re: true }), inp(e, 'where', { placeholder: 'Where (place, hex, room)', 'aria-label': 'Where' }, { re: true })]),
+        el('div', { class: 'fine', text: e.src + ' · ' + (e.roll || 'made ' + e.made) }),
+        field('What happens', area(e, 'text', { rows: 3, placeholder: 'Set-up, signs of their approach, what they want…' })),
+        el('h4', { text: 'Creatures' }),
+        creatures.length ? el('div', { class: 'enc-cre' }, creatures) : el('p', { class: 'fine', text: 'No creatures yet.' }),
+        el('div', { class: 'row' }, [btn('Add creature', function () { e.creatures.push({ n: ui.addName || 'Blood Creature A', k: 1, side: 'foe' }); save(); render(); }, 'btn-small btn-ghost')]),
+        field('Ref notes', area(e, 'notes', { rows: 2, placeholder: 'Tactics, loot, how it went…' })),
+        el('div', { class: 'row' }, [runEncBtn(e), encCombatBtn(e, 'btn-small btn-ghost'),
+          due || e.done ? null : btn('Make it due this DT', function () {
+            s.pending = { dt: s.dt, text: encSummary(e) || e.name, adds: e.creatures.map(function (c) { return [c.n, c.k, null]; }), encId: e.id };
+            log('enc', 'Encounter due this DT: **' + (e.name || 'untitled') + '**.'); save(); render(); toast('Shown in the Dungeon Turn block.');
+          }, 'btn-small', 'Show it in the Dungeon Turn block as the encounter due this DT'),
+          btn(e.done ? 'Reopen' : 'Mark resolved', function () {
+            e.done = !e.done; if (e.done && due) s.pending = null; save(); render();
+          }, 'btn-small btn-ghost'),
+          btn('Duplicate', function () {
+            var c = clone(e); c.id = nid(); c.name = (e.name || 'Encounter') + ' (copy)'; c.done = false; delete c.outcome; c.made = today() + ' ' + nowStamp();
+            state.encounters.splice(state.encounters.indexOf(e), 0, c); ui.encOpen[c.id] = true; save(); render();
+          }, 'btn-small btn-ghost'),
+          btn('Delete', function () {
+            if (!confirm('Delete ' + (e.name || 'this encounter') + '?')) return;
+            state.encounters = state.encounters.filter(function (x) { return x !== e; }); if (due) s.pending.encId = null;
+            if (s.combat.encId === e.id) { s.combat.encId = null; s.combat.surprise = 'none'; }
+            save(); render();
+          }, 'btn-small btn-ghost btn-danger')])
+      ])
+    ]);
+  }
+
+  A.add({ rollAdds: rollAdds, addsText: addsText, rollDungeonTable: rollDungeonTable, encounterCheck: encounterCheck,
+      encounterResultBox: encounterResultBox, addToCombatBtn: addToCombatBtn, newEncounter: newEncounter, findEncounter: findEncounter,
+      encName: encName, encSummary: encSummary, saveCheckEncounter: saveCheckEncounter, pendingFrom: pendingFrom, pendingEnc: pendingEnc,
+      pendingText: pendingText, encLink: encLink, openEncounter: openEncounter, encCombatBtn: encCombatBtn, runningEnc: runningEnc,
+      runEncounter: runEncounter, runEncBtn: runEncBtn, cancelRun: cancelRun, tally: tally, endEncounter: endEncounter, likeHateCheck: likeHateCheck,
+      beastSelect: beastSelect, rollEncounterDraft: rollEncounterDraft, renderEncounters: renderEncounters, renderEncRun: renderEncRun,
+      encCard: encCard, ENC_OUTCOMES: ENC_OUTCOMES, ENC_SOURCES: ENC_SOURCES });
+})();
+
+</script>
+<script>
+/*
+ * Ref Screen: travel encounters (weather, merchants, travelers, wild animals) and the Travel tab, with Miasma RRs. See ref-core.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsRefApp, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var activePCs = f('activePCs'), addsText = f('addsText'), addToCombatBtn = f('addToCombatBtn'), btn = f('btn'), card = f('card'), chk = f('chk'),
+      clamp = f('clamp'), clearCruelty = f('clearCruelty'), encounterCheck = f('encounterCheck'), encounterResultBox = f('encounterResultBox'),
+      field = f('field'), inp = f('inp'), log = f('log'), lookup = f('lookup'), miasmaOutcome = f('miasmaOutcome'), more = f('more'),
+      render = f('render'), rollAdds = f('rollAdds'), rollDungeonTable = f('rollDungeonTable'), rollInText = f('rollInText'),
+      rowsTable = f('rowsTable'), S = f('S'), save = f('save'), segEB = f('segEB'), sel = f('sel'), setTab = f('setTab'), test = f('test'),
+      testLine = f('testLine'), travelCalc = f('travelCalc');
+  var d = A.d, el = A.el, rollDice = A.rollDice, signed = A.signed, ui = A.ui;
+  var state = A.state; A.share('state', function (v) { state = v; });
+  var tab = A.tab; A.share('tab', function (v) { tab = v; });
+
   function rollTravelEncounter() {
     var t = state.travel, n = d(100), kind = lookup(REF.TRAVEL_ENCOUNTERS, n)[2], out = { roll: n, kind: kind, lines: [], adds: [] };
     if (kind === 'Any Monster') {
@@ -3092,12 +3574,131 @@ CROWS.NAME_IDEAS = {
     return { adds: adds, lines: [habitat + ' (d' + h.die + ' = ' + n + '): ' + row[2] + ' → ' + addsText(adds) + '.', 'Reaction (d100 = ' + r + '): ' + lookup(REF.ANIMAL_REACTION, r)[2]] };
   }
 
+  // ------------------------------------------------------------------ Travel tab
+  function renderTravel() {
+    var t = state.travel, calc = travelCalc();
+    card('sec-travel-day', el('h2', null, ['Overland Travel', el('small', { text: 'day ' + t.day })]), [
+      el('p', { class: 'hint', text: 'Each day: set the pace; role tests (supporters, guides, scouts, trackers); encounter check; explore the destination or a POI in DTs; rest; each human rolls a Miasma RR after resting. Hexes are 5 miles.' }),
+      el('div', { class: 'grid3' }, [
+        field('Pace', sel(t, 'pace', Object.keys(REF.PACES).map(function (k) { return [k, k + ' (' + REF.PACES[k].hex + ' hex, EN ' + REF.PACES[k].en + ')']; }))),
+        field('Slowest speed in the group', inp(t, 'speed', { type: 'number', min: 0, max: 20 }, { re: true, dflt: 5 })),
+        field('Water', sel(t, 'water', [['none', 'None'], ['against', 'Crossing major water / upstream (-1 hex)'], ['down', 'Downstream (+1 hex)']])),
+        field('Weather today', sel(t, 'weather', [['', 'Fair']].concat(Object.keys(REF.WEATHER).map(function (w) { return [w, w]; })))),
+        field('Hex adjustment (roles)', inp(t, 'hexAdj', { type: 'number', min: -5, max: 5 }, { re: true })),
+        field('Travel EN adjustment (roles)', inp(t, 'enAdj', { type: 'number', min: -5, max: 5 }, { re: true })),
+        field('Rest EN adjustment (roles)', inp(t, 'restEnAdj', { type: 'number', min: -5, max: 5 }, { re: true })),
+        el('div', { class: 'checks span2' }, [chk(t, 'road', 'On a road all day'), chk(t, 'inMiasma', 'In the Miasma'), chk(t, 'beacon', 'Only beacon-protected hexes'), chk(t, 'strong', 'Strong Miasma today')])
+      ]),
+      el('div', { class: 'stat-row', style: 'margin-top:.7rem' }, [
+        el('div', { class: 'stat big hot' }, [el('div', { class: 'lbl', text: 'Hexes today' }), el('div', { class: 'val', text: String(calc.hex) })]),
+        el('div', { class: 'stat big' }, [el('div', { class: 'lbl', text: 'Travel EN' }), el('div', { class: 'val', text: String(calc.en) })]),
+        el('div', { class: 'stat big' }, [el('div', { class: 'lbl', text: 'Rest EN' }), el('div', { class: 'val', text: String(calc.restEn) })])
+      ]),
+      el('p', { class: 'fine', text: [calc.paceNote ? t.pace + ' pace: ' + calc.paceNote : ''].concat(calc.notes).filter(Boolean).join(' · ') + (t.weather ? ' · ' + REF.WEATHER[t.weather].txt : '') }),
+      t.strong ? el('div', { class: 'banner warn', text: 'Strong Miasma: ' + REF.STRONG_MIASMA }) : null,
+      el('div', { class: 'row', style: 'margin-top:.6rem' }, [
+        btn('Travel encounter check (EN ' + calc.en + ')', function () { ui.travelEnc = encounterCheck('Travel day ' + t.day, calc.en, 'Travel'); save(); render(); }, 'btn-primary'),
+        btn('Next day', function () {
+          log('dt', '**Travel day ' + t.day + ' ends.** ' + calc.hex + ' hexes at a ' + t.pace.toLowerCase() + ' pace' + (t.weather ? ', ' + t.weather.toLowerCase() : '') + '.');
+          t.day += 1; t.hexAdj = 0; t.enAdj = 0; t.restEnAdj = 0; t.weather = ''; t.strong = false; save(); render();
+        }),
+        btn('Set up an outdoor rest', function () { S().rest.where = 'outdoors'; save(); setTab('session'); }, 'btn-ghost')
+      ]),
+      ui.travelEnc ? encounterResultBox(ui.travelEnc, function () { ui.travelEnc = null; render(); }) : null,
+      el('h3', { text: 'Lost?' }),
+      el('div', { class: 'row center' }, [chk(t, 'lost', 'The group is lost (secret)'),
+        t.lost ? btn('They leave a hex: roll secret direction', function () {
+          var r = d(6); ui.lostDir = 'd6 = ' + r + ': they actually enter the hex to the ' + REF.DIRECTIONS[r] + '.';
+          log('secret', '(Ref only) Lost: they enter the hex to the ' + REF.DIRECTIONS[r] + ' (d6 = ' + r + ').'); render();
+        }) : null]),
+      t.lost && ui.lostDir ? el('div', { class: 'result', text: ui.lostDir }) : null,
+      el('p', { class: 'fine', text: 'While lost, the Ref tracks the group secretly. Each hex they leave, roll 1d6 counting clockwise from north (1 N, 2 NE, 3 SE, 4 S, 5 SW, 6 NW). A guide can try Back on Track at the start of a day; a map, a recognizable place, or an NPC\'s directions also help.' })
+    ]);
+
+    card('sec-travel-enc', el('h2', null, ['Travel Encounters', el('small', { text: 'd100, any time in the travel day' })]), [
+      el('div', { class: 'grid3' }, [
+        field('Climate / season', sel(t, 'climate', Object.keys(REF.WEATHER_BY_CLIMATE))),
+        field('Habitat', sel(t, 'habitat', Object.keys(REF.HABITATS))),
+        field('Nearest dungeon type', sel(t, 'nearby', [['Undead', 'Undead'], ['Blood Creatures', 'Blood creatures'], ['other', 'Other (Ref\'s choice)']]))
+      ]),
+      el('div', { class: 'row', style: 'margin-top:.6rem' }, [
+        btn('Roll travel encounter', function () { var r = rollTravelEncounter(); ui.travelRoll = r; log('enc', r.summary); render(); }, 'btn-primary'),
+        btn('Bad weather', function () { var w = rollWeather(); ui.travelRoll = { roll: '—', kind: 'Bad Weather', lines: [w.text], adds: [] }; t.weather = w.name; log('', w.text); save(); render(); }),
+        btn('Wild animal', function () { var w = rollWildAnimal(t.habitat); ui.travelRoll = { roll: '—', kind: 'Wild Animal', lines: w.lines, adds: w.adds }; log('', 'Wild animal: ' + w.lines.join(' ')); render(); }),
+        btn('Travelers', function () { var w = rollTravelers(); ui.travelRoll = { roll: '—', kind: 'Traveler', lines: w.lines, adds: w.adds }; log('', 'Travelers: ' + w.lines.join(' ')); render(); }),
+        btn('Miasma-touched', function () { var w = rollMiasmaTouched(); ui.travelRoll = { roll: '—', kind: 'Miasma-Touched', lines: w.lines, adds: w.adds }; log('', 'Miasma-touched: ' + w.lines.join(' ')); render(); }),
+        btn('Merchant', function () { var w = rollMerchant(); ui.travelRoll = { roll: '—', kind: 'Merchant', lines: w.lines, adds: w.adds }; log('', 'Merchant: ' + w.lines.join(' ')); render(); })
+      ]),
+      ui.travelRoll ? el('div', { class: 'result' }, [travelResultBox(ui.travelRoll)]) : null,
+      more('The travel encounter table', [rowsTable(REF.TRAVEL_ENCOUNTERS, 'd100', ui.travelRoll && typeof ui.travelRoll.roll === 'number' ? ui.travelRoll.roll : null),
+        el('p', { class: 'fine', text: 'Check after role tests; the Ref picks the time and may add more checks. POIs are explored in DTs using the day\'s EN.' })])
+    ]);
+
+    renderMiasma('sec-miasma');
+
+    card('sec-travel-roles', 'Travel Roles', [
+      el('p', { class: 'hint', text: 'Any role may be vacant; up to 3 per role doing different tasks (guide only 1); others may assist. Resolve in order: supporters, guides, scouts, trackers.' }),
+      el('div', { class: 'tbl-wrap' }, [el('table', { class: 'tbl' }, [
+        el('thead', null, [el('tr', null, ['Role', 'Task', 'Test', 'Tier 1', 'Tier 2', 'Tier 3'].map(function (h) { return el('th', { text: h }); }))]),
+        el('tbody', null, REF.TRAVEL_ROLES.map(function (r) { return el('tr', null, r.map(function (x, i) { return el('td', { class: i === 0 ? 'n' : '', text: x }); })); }))
+      ])])
+    ]);
+  }
+  function renderMiasma(id) {
+    var t = state.travel, pcs = activePCs();
+    card(id, el('h2', null, ['Miasma', el('small', { text: 'RRs after each rest in the Miasma' })]), [
+      el('p', { class: 'hint', text: REF.MIASMA_RULES }),
+      el('div', { class: 'row center' }, [el('span', { class: 'fine', text: 'Modifier for today\'s RRs (Fight the Miasma: edge / double edge; Strong Miasma: bane)' }), segEB(t, 'miasmaMod')]),
+      pcs.length ? el('div', { class: 'list' }, pcs.map(function (p) {
+        var net = t.miasmaMod + (t.strong ? -1 : 0);
+        net = clamp(net, -2, 2);
+        return el('div', { class: 'li' }, [el('div', { class: 'li-main' }, [
+          el('div', null, [el('b', { text: p.name || 'Crow' }), ' · M ' + signed(p.M) + ' · cruelty ' + (p.cruelty || 0) + ' (RR ' + signed(p.M - (p.cruelty || 0)) + ')']),
+          p.miasma.length ? el('div', { class: 'fine', text: p.miasma.map(function (k) { var row = lookup(REF.MIASMA_EFFECTS, k); return row[2].split(':')[0] + ' / ' + row[3]; }).join(' · ') }) : null
+        ]), el('div', { class: 'li-row' }, [
+          btn('Roll RR', function () { var r = test(p.M - (p.cruelty || 0), net); miasmaOutcome(p, r.tier, '(' + testLine(r) + ')'); }, 'btn-small btn-primary'),
+          btn('T1', function () { miasmaOutcome(p, 1); }, 'btn-small', 'Player rolled tier 1'),
+          btn('T2', function () { miasmaOutcome(p, 2); }, 'btn-small', 'Player rolled tier 2'),
+          btn('T3', function () { miasmaOutcome(p, 3); }, 'btn-small', 'Player rolled tier 3'),
+          btn('Clear cruelty', function () { clearCruelty(p); }, 'btn-small btn-ghost', 'Rested without Miasma, or a T3 removed it')
+        ])]);
+      })) : el('p', { class: 'hint', text: 'Add crows in the Party tab to roll their Miasma RRs here.' }),
+      more('Miasma effects table (1d10 + cruelty)', [rowsTable(REF.MIASMA_EFFECTS, '1d10+cruelty', null, function (r) { return r[2] + ' + ' + r[3]; })])
+    ]);
+  }
+
+  A.add({ rollTravelEncounter: rollTravelEncounter, travelResultBox: travelResultBox, rollWeather: rollWeather, rollMerchant: rollMerchant,
+      tallyHumans: tallyHumans, rollMiasmaTouched: rollMiasmaTouched, rollTravelers: rollTravelers, rollWildAnimal: rollWildAnimal,
+      renderTravel: renderTravel, renderMiasma: renderMiasma });
+})();
+
+</script>
+<script>
+/*
+ * Ref Screen: ending dungeon turns, rests and the Miasma, and the Session tab (timer, rest, log). See ref-core.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsRefApp, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var activePCs = f('activePCs'), addsText = f('addsText'), addToCombatBtn = f('addToCombatBtn'), btn = f('btn'), card = f('card'), chk = f('chk'),
+      currentPlace = f('currentPlace'), download = f('download'), dungeonEN = f('dungeonEN'), encounterCheck = f('encounterCheck'),
+      encounterResultBox = f('encounterResultBox'), field = f('field'), greedBonus = f('greedBonus'), inp = f('inp'), log = f('log'),
+      logItem = f('logItem'), lookup = f('lookup'), more = f('more'), nowStamp = f('nowStamp'), pauseTimer = f('pauseTimer'),
+      pendingEnc = f('pendingEnc'), pendingFrom = f('pendingFrom'), pendingText = f('pendingText'), render = f('render'),
+      renderCombat = f('renderCombat'), resetTimer = f('resetTimer'), rollDungeonTable = f('rollDungeonTable'), runEncBtn = f('runEncBtn'),
+      S = f('S'), save = f('save'), sel = f('sel'), sheetOp = f('sheetOp'), startTimer = f('startTimer'), today = f('today'),
+      travelCalc = f('travelCalc');
+  var d = A.d, el = A.el, fmt = A.fmt, plural = A.plural, Rules = A.Rules, toast = A.toast, ui = A.ui;
+  var state = A.state; A.share('state', function (v) { state = v; });
+  var tab = A.tab; A.share('tab', function (v) { tab = v; });
+
   // ------------------------------------------------------------------ dungeon turns
   function endDT() {
     var s = S(), place = currentPlace(), cleared = [];
     if (s.rest.active) { toast('Finish or cancel the rest first.'); return; }
     log('dt', '**End of DT ' + s.dt + '**' + (place ? ' at ' + place.name : '') + '. Roll usage dice (lights, spells, backlashes, DT items); DT effects end.');
-    s.combat.list.forEach(function (c) { REF.END_OF_DT_CONDITIONS.forEach(function (k) { if (c.conds[k]) { delete c.conds[k]; cleared.push(c.name + ' ' + k.toLowerCase()); } }); });
+    s.combat.list.forEach(function (c) { Rules.DT_CONDITIONS.forEach(function (k) { if (c.conds[k]) { delete c.conds[k]; cleared.push(c.name + ' ' + k.toLowerCase()); } }); });
     if (cleared.length) log('', 'Conditions ended: ' + cleared.join(', ') + '.');
     activePCs().forEach(function (p) { sheetOp(p, { endDT: s.dt }); });   // linked crows: lights, conditions, overloaded slots on their sheets
     if (s.pending) log('enc', '**Reminder:** the encounter signalled during DT ' + s.pending.dt + ' was due this DT (' + (pendingEnc() ? pendingEnc().name : s.pending.text) + ').');
@@ -3119,6 +3720,207 @@ CROWS.NAME_IDEAS = {
     else { s.mode = 'timer'; s.dtLen = mins; resetTimer(); }
     save(); render();
   }
+
+  // ------------------------------------------------------------------ rest & Miasma
+  function startRest() {
+    var s = S();
+    if (s.running) { s.remain = Math.max(0, s.endAt - Date.now()); s.running = false; }
+    s.rest.active = true; s.rest.half = false;
+    log('dt', '**Rest begins** (' + s.rest.where + (s.rest.seclude ? ', secluded camp' : '') + '). DT ' + s.dt + ' ends without an encounter check.');
+    save(); render();
+  }
+  function restEN() { return S().rest.where === 'outdoors' ? travelCalc().restEn : dungeonEN(); }
+  function restHalf() {
+    var s = S(), cleared = [];
+    s.rest.half = true;
+    s.combat.list.forEach(function (c) { Rules.DT_CONDITIONS.forEach(function (k) { if (c.conds[k]) { delete c.conds[k]; cleared.push(c.name + ' ' + k.toLowerCase()); } }); });
+    activePCs().forEach(function (p) { sheetOp(p, { endConds: true }); });   // and on linked crows' sheets
+    log('', 'Rest halfway: effects lasting to the end of the DT, and DT-rolled usage-dice effects, end.' + (cleared.length ? ' Ended: ' + cleared.join(', ') + '.' : ''));
+    save(); render();
+  }
+  function finishRest() {
+    var s = S(), applied = [];
+    activePCs().forEach(function (p) {
+      var xp = s.rest.applyXP && p.pending;
+      if (xp) applied.push((p.name || 'Crow') + ' +' + fmt(p.pending));
+      // The whole rest on each sheet (food, Stamina, a wound, expertise uses, recharges, XP); the rest used up DT s.dt.
+      sheetOp(p, { rest: { dt: s.dt, miasma: s.rest.where === 'outdoors' && !!state.travel.inMiasma, xp: !!s.rest.applyXP } });
+    });
+    s.combat.list.forEach(function (c) { c.used = {}; if (c.kind === 'pc') { var p = state.party.filter(function (x) { return x.id === c.pcId; })[0]; if (p) { c.st = p.st; c.wounds = p.wounds; } } });
+    log('dt', '**Rest complete.** Crows regain all Stamina, heal 1 wound, and regain expertise uses' + (s.rest.where === 'outdoors' && state.travel.inMiasma ? ' (NOT in the Miasma: no expertise uses; roll Miasma RRs)' : '') +
+      '. Spellbook UD restored. Each crow ate a ration (or takes a starvation wound).' + (applied.length ? ' XP applied: ' + applied.join(', ') + '.' : '') +
+      (activePCs().some(function (p) { return p.link; }) ? ' Linked crows\u2019 sheets did all of this (a crow that already rested from its own sheet this DT is skipped).' : ''));
+    s.rest.active = false; s.rest.half = false; s.dt += 1; resetTimer();
+    if (s.mode === 'rooms') { s.rooms = d(6); s.roomsDone = 0; }
+    log('dt', 'DT ' + s.dt + ' begins.');
+    save(); render();
+    if (s.rest.where === 'outdoors' && state.travel.inMiasma) toast('Rested in the Miasma: roll each human\'s Miasma RR.');
+  }
+  function miasmaOutcome(p, tier, detail) {
+    var msg = (p.name || 'Crow') + ' Miasma RR' + (detail ? ' ' + detail : '') + ': T' + tier;
+    if (tier === 1) {
+      sheetOp(p, { cruelty: 1 });
+      var tries = 0, n, row;
+      do { n = d(10) + p.cruelty; row = lookup(REF.MIASMA_EFFECTS, n); tries++; } while (tries < 20 && row[0] < 13 && p.miasma.indexOf(row[0]) >= 0);
+      if (p.miasma.indexOf(row[0]) < 0) p.miasma.push(row[0]);
+      msg += ' → **gains 1 cruelty (now ' + p.cruelty + ')** and a Miasma effect (1d10+cruelty = ' + n + '): **' + row[2] + '** ' + row[3];
+      if (row[0] >= 13) { p.status = 'lost'; msg += ' ' + (p.name || 'The crow') + ' becomes a Ref NPC.'; }
+    } else if (tier === 2) msg += ' → no effect.';
+    else msg += ' → may remove all their cruelty, or improve another human\'s result by 1 tier.';
+    log(tier === 1 ? 'enc' : '', msg);
+    save(); render();
+  }
+  function clearCruelty(p) { sheetOp(p, { setCruelty: 0 }); p.miasma = []; log('', (p.name || 'Crow') + ' loses all cruelty and Miasma effects.'); save(); render(); }
+
+  // ------------------------------------------------------------------ Session tab
+  function renderSession() {
+    var s = S(), place = currentPlace();
+    var placeOpts = [['', '— none / free text —']].concat(state.places.map(function (p) { return [p.id, p.name + (p.kind ? ' (' + p.kind + ')' : '')]; }));
+    var clock = el('div', { class: 'clock-box' }, [
+      el('div', { class: 'lbl', text: (s.rest.active ? 'Resting — ' : '') + 'Dungeon turn ' + s.dt }),
+      el('div', { 'data-clock': '1', class: 'clock' }),
+      el('div', { class: 'meter', 'data-meter': '1' }, [el('span')]),
+      el('div', { class: 'row center' }, s.mode === 'timer' ? [
+        s.running ? btn('Pause', pauseTimer) : btn('Start timer', startTimer, 'btn-primary'),
+        btn('Reset', function () { resetTimer(); render(); }, 'btn-ghost'),
+        btn('+5 min', function () { if (s.running) s.endAt += 300000; else s.remain += 300000; ui.alarmFired = false; save(); render(); }, 'btn-ghost btn-small'),
+        btn('-5 min', function () { if (s.running) s.endAt -= 300000; else s.remain = Math.max(0, s.remain - 300000); save(); render(); }, 'btn-ghost btn-small')
+      ] : [btn('+1 room explored', function () { s.roomsDone++; save(); if (s.roomsDone >= s.rooms) toast('That was the last room of this DT: end the DT.'); render(); }, 'btn-primary'),
+        btn('-1', function () { s.roomsDone = Math.max(0, s.roomsDone - 1); save(); render(); }, 'btn-ghost btn-small')]),
+      el('div', { class: 'row center', style: 'margin-top:.5rem' }, [
+        el('div', { class: 'seg' }, [[60, '60 min'], [30, '30 min'], [20, '20 min'], ['rooms', '1d6 rooms']].map(function (o) {
+          var on = o[0] === 'rooms' ? s.mode === 'rooms' : s.mode === 'timer' && s.dtLen === o[0];
+          return el('button', { type: 'button', class: on ? 'on' : '', text: o[1], onclick: function () { setDTLen(o[0]); } });
+        })),
+        chk(s, 'sound', 'Chime'), chk(s, 'autoNext', 'Auto-start next DT', { title: 'When you end a DT while the timer runs, start the next one immediately' })
+      ])
+    ]);
+    var en = dungeonEN(), g = greedBonus();
+    var settings = el('div', null, [
+      el('div', { class: 'grid2' }, [
+        field('Location', sel(s, 'place', placeOpts, { on: function (id) {
+          var p = currentPlace(); if (p) { s.table = p.table === 'Travel' ? 'Travel' : REF.DUNGEON_TABLES[p.table] ? p.table : 'none'; s.firstVisit = !p.visited; s.enAdj = 0; }
+        } })),
+        field('Monster table', sel(s, 'table', [['Blood Creatures', 'Blood creatures (d6)'], ['Undead', 'Undead (d10)'], ['Travel', 'Travel encounters (outdoors)'], ['none', 'Ref\'s choice (no roll)']]))
+      ]),
+      el('div', { class: 'checks' }, [
+        chk(s, 'crowded', 'Crowded (20+ creatures on the level)'), chk(s, 'chaos', 'Crows left chaos (trail of bodies)'),
+        chk(s, 'firstVisit', 'First visit (greed bonus)')
+      ]),
+      el('div', { class: 'row center' }, [el('span', { class: 'fine', text: 'Other EN adjustment (e.g. bloodstained crows)' }), inp(s, 'enAdj', { type: 'number', min: -5, max: 5, class: 'tiny' }, { re: true })]),
+      el('div', { class: 'stat-row', style: 'margin-top:.6rem' }, [
+        el('div', { class: 'stat hot' }, [el('div', { class: 'lbl', text: 'Encounter #' }), el('div', { class: 'val', text: String(en) })]),
+        el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: 'Greed bonus' }), el('div', { class: 'val', text: g ? '+' + g + '%' : '—' })]),
+        el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: 'Session' }), el('div', { class: 'val', text: String(s.n) })])
+      ]),
+      place && place.notes ? el('p', { class: 'fine', text: place.name + ': ' + place.notes }) : null
+    ]);
+    card('sec-dt', el('h2', null, ['Dungeon Turns', el('small', { text: 'shared timer, encounter checks, greed bonus' })]), [
+      el('div', { class: 'dt-grid' }, [clock, settings]),
+      el('div', { class: 'row', style: 'margin-top:.8rem' }, [
+        btn('End dungeon turn', endDT, 'btn-primary', 'Usage dice, end-of-DT conditions, encounter check'),
+        btn('Encounter check (loud noise)', function () { var res = encounterCheck('Loud noise', dungeonEN(), s.table === 'none' ? null : s.table); ui.lastEnc = res; if (res.hit && !res.immediate) s.pending = pendingFrom(res); save(); render(); }),
+        btn('Roll on monster table', function () {
+          if (!REF.DUNGEON_TABLES[s.table]) { toast('Pick the blood creature or undead table first.'); return; }
+          var e = rollDungeonTable(s.table); ui.lastEnc = { reason: 'Monster table', roll: '—', en: '—', hit: true, immediate: false, table: s.table, enc: e, t: nowStamp() };
+          log('', s.table + ' table d' + e.die + ' = ' + e.roll + ': ' + addsText(e.adds) + '.'); render();
+        }, 'btn-ghost')
+      ]),
+      s.pending ? el('div', { class: 'pending' }, [el('b', { text: 'Encounter signalled during DT ' + s.pending.dt + ': ' }), pendingText(s.pending), '. It arrives any time this DT.',
+        el('div', { class: 'row' }, [pendingEnc() ? runEncBtn(pendingEnc()) : addToCombatBtn(s.pending.adds), btn('It happened / cancel', function () { s.pending = null; save(); render(); }, 'btn-small btn-ghost')])]) : null,
+      ui.lastEnc ? encounterResultBox(ui.lastEnc, function () { ui.lastEnc = null; render(); }) : null,
+      more('End of each DT (checklist)', [el('ol', null, [
+        el('li', { text: 'Roll usage dice for lights and anything tagged DT; spell and backlash durations in UD.' }),
+        el('li', { text: 'Blessed, vulnerable, weakened, and "until the end of the DT" effects end.' }),
+        el('li', { text: 'Encounter check: 1d10 ≥ EN. A 10: now. 9 or less: give a sign; it happens during the next DT.' }),
+        el('li', { text: 'Greed bonus steps down (DT 1 +30%, DT 2 +20%, DT 3 +10%, first visit only).' }),
+        el('li', { text: 'Outside dungeons, 2 in-game hours = 1 DT.' })
+      ])])
+    ]);
+    renderCombat();
+    renderRest();
+    renderLogCard();
+    card('sec-quick', 'Quick Reference', [el('dl', { class: 'kv' }, REF.QUICK.reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, [])),
+      more('Conditions', [el('dl', { class: 'kv' }, REF.CONDITIONS.reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, []))])]);
+  }
+
+  function renderRest() {
+    var s = S(), r = s.rest;
+    var kids = [
+      el('div', { class: 'grid2' }, [
+        field('Where', sel(r, 'where', [['dungeon', 'In a dungeon (dungeon EN)'], ['outdoors', 'Outdoors (travel rest EN)'], ['town', 'In a village (no encounters)']])),
+        el('div', { class: 'checks' }, [chk(r, 'seclude', 'Seclude Camp (EN +1)'), chk(r, 'applyXP', 'Apply pending XP at the end')])
+      ]),
+      el('div', { class: 'row', style: 'margin-top:.6rem' }, r.active ? [
+        btn('Rest encounter check (EN ' + restEN() + ')', function () {
+          if (r.where === 'town') { toast('No encounters in a village.'); return; }
+          ui.lastEnc = encounterCheck('Rest', restEN(), r.where === 'outdoors' ? 'Travel' : s.table === 'none' ? null : s.table);
+          if (ui.lastEnc.hit) log('', 'Combat or strenuous activity interrupts the rest: it must restart.');
+          save(); render();
+        }, 'btn-primary'),
+        r.half ? null : btn('Halfway (DT effects end)', restHalf),
+        btn('Finish rest', finishRest, 'btn-primary'),
+        btn('Interrupted: restart', function () { r.half = false; log('', 'The rest was interrupted and restarts.'); save(); render(); }, 'btn-ghost'),
+        btn('Cancel rest', function () { r.active = false; save(); render(); }, 'btn-ghost')
+      ] : [btn('Start rest', startRest, 'btn-primary'), el('span', { class: 'fine', text: 'Starting a rest ends the current DT without an encounter check.' })]),
+      r.active && ui.lastEnc && ui.lastEnc.reason === 'Rest' ? encounterResultBox(ui.lastEnc, function () { ui.lastEnc = null; render(); }) : null,
+      more('Rest rules and activities', [
+        el('p', { text: 'Rest: 6 uninterrupted hours in one place, no strenuous activity, 4+ hours asleep, eat 1 ration (pets eat too). At the end: all Stamina, lose 1 wound (their choice), all expertise uses (not in the Miasma), spellbook UD restored. One rest activity each:' }),
+        el('dl', { class: 'kv' }, [['Craft Equipment', '1 crafting roll.'], ['Harvest', 'Destroy a corpse for parts: Medium or smaller 1d6, Large 2d6, Huge 3d6, Holy Shit 4d6.'], ['Identify Item', 'Learn a magic item\'s properties.'],
+          ['Prepare for Task', 'A specific, intimately known task and place that needs a test: +2 on it until the next rest.'], ['Repair Armor', '1 armor or shield back to full AD (needs a repair kit, included with armor).'],
+          ['Seclude Camp', 'EN +1 during the rest; 1 per group; works even if the rest is interrupted.'], ['Tend Wounds', 'Another creature with 2+ wounds loses 2 wounds instead of 1 (1 benefit per creature per rest).'],
+          ['In town', 'No encounters. Up to 4 activities a day without resting, about 2 hours each; Tend Wounds once a day, benefit after 4 hours of sleep.']
+        ].reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, []))
+      ])
+    ];
+    card('sec-rest', el('h2', null, ['Rest', r.active ? el('span', { class: 'chip accent', text: r.half ? 'second half' : 'in progress' }) : null]), kids);
+  }
+  function renderLogCard() {
+    var note = { t: '' };
+    var list = el('ol', { class: 'log-list' }, state.log.slice().reverse().map(logItem));
+    var noteIn = inp(note, 't', { placeholder: 'Add a note to the log…', 'aria-label': 'Log note' });
+    noteIn.addEventListener('keydown', function (e) { if (e.key === 'Enter' && note.t.trim()) { log('note', note.t.trim()); render(); } });
+    card('sec-log', el('h2', null, ['Session Log', el('small', { text: 'Session ' + S().n })]), [
+      el('div', { class: 'grid2' }, [field('Session title', inp(S(), 'title', { placeholder: 'e.g. Into the Blood Library' })), field('Date', inp(S(), 'date', { type: 'date' }))]),
+      el('div', { class: 'row', style: 'margin:.6rem 0' }, [el('div', { class: 'grow' }, [noteIn]), btn('Add', function () { if (note.t.trim()) { log('note', note.t.trim()); render(); } }),
+        btn('Export text', function () { download(logText(S().n, S().title, S().date, state.log), 'Crows_Session_' + S().n + '.txt', 'text/plain'); }, 'btn-ghost'),
+        btn('End session & archive', function () {
+          if (!confirm('Archive this session\'s log to the World tab and start session ' + (S().n + 1) + '?')) return;
+          state.history.push({ n: S().n, title: S().title, date: S().date, log: state.log });
+          state.log = []; S().n += 1; S().title = ''; S().date = today(); S().pending = null; ui.lastEnc = null;
+          save(); render(); toast('Session archived.');
+        }, 'btn-ghost')]),
+      state.log.length ? list : el('p', { class: 'hint', text: 'Nothing logged yet this session.' })
+    ]);
+  }
+  function logText(n, title, date, entries) {
+    return 'Crows session ' + n + (title ? ': ' + title : '') + (date ? ' (' + date + ')' : '') + '\n\n' + entries.map(function (e) { return e.t + '  ' + e.s.replace(/\*\*/g, ''); }).join('\n') + '\n';
+  }
+
+  A.add({ endDT: endDT, setDTLen: setDTLen, startRest: startRest, restEN: restEN, restHalf: restHalf, finishRest: finishRest,
+      miasmaOutcome: miasmaOutcome, clearCruelty: clearCruelty, renderSession: renderSession, renderRest: renderRest, renderLogCard: renderLogCard,
+      logText: logText });
+})();
+
+</script>
+<script>
+/*
+ * Ref Screen: the combat tracker: combatants, damage, monster attacks and maneuvers, reactions, effects and undo, items on the
+ * ground, and the live fight shared with the players’ Play pages. See ref-core.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsRefApp, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var activePCs = f('activePCs'), beast = f('beast'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
+      clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), field = f('field'), hitControls = f('hitControls'), inp = f('inp'),
+      int = f('int'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
+      rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), sheetOp = f('sheetOp'), sheetWin = f('sheetWin'),
+      test = f('test'), testLine = f('testLine');
+  var $ = A.$, clone = A.clone, d = A.d, d100 = A.d100, el = A.el, netEdges = A.netEdges, pick = A.pick, plural = A.plural, Rules = A.Rules,
+      signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
+  var state = A.state; A.share('state', function (v) { state = v; });
+  var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
   // ------------------------------------------------------------------ combat
   /* Creatures added while an encounter is running (from anywhere) join that encounter. */
@@ -3189,13 +3991,12 @@ CROWS.NAME_IDEAS = {
         return { sheet: o.result.before };
       }
     }
-    var parts = [], total = amount, st0 = c.st, w0 = c.wounds;
-    if (c.conds.Vulnerable) { var v = d(6); total += v; parts.push('vulnerable +' + v); }
-    var left = total;
-    if (!piercing && c.ad > 0) { var absorbed = Math.min(c.ad, left); c.ad -= absorbed; left -= absorbed; parts.push(absorbed + ' to AD'); }
-    if (left > 0) { var st = Math.min(c.st, left); c.st -= st; left -= st; if (st) parts.push(st + ' to Stamina'); }
-    var slots = slotsOf(c);
-    if (left > 0 && slots) { var wn = Math.min(slots - c.wounds, left); c.wounds += wn; left -= wn; if (wn) parts.push(plural(wn, 'wound')); }
+    var parts = [], st0 = c.st, w0 = c.wounds, slots = slotsOf(c);
+    var r = Rules.damage({ amount: amount, vulnerable: !!c.conds.Vulnerable, piercing: piercing, ad: [c.ad], stamina: c.st, woundRoom: slots ? slots - c.wounds : 0 }), total = r.total;
+    if (r.vul) parts.push('vulnerable +' + r.vul);
+    if (r.absorbed[0]) { c.ad -= r.absorbed[0]; parts.push(r.absorbed[0] + ' to AD'); }
+    if (r.stamina) { c.st -= r.stamina; parts.push(r.stamina + ' to Stamina'); }
+    if (r.wounds) { c.wounds += r.wounds; parts.push(plural(r.wounds, 'wound')); }
     if (c.conds.Unconscious && total > 0) { delete c.conds.Unconscious; parts.push('wakes up'); }   // any damage wakes a sleeper
     var fate = '';
     if (c.kind === 'pc') { if (c.wounds >= 10) fate = ' — all backpack slots wounded: dead.'; }
@@ -3866,416 +4667,6 @@ CROWS.NAME_IDEAS = {
     ]);
   }
 
-  // ------------------------------------------------------------------ rest & Miasma
-  function startRest() {
-    var s = S();
-    if (s.running) { s.remain = Math.max(0, s.endAt - Date.now()); s.running = false; }
-    s.rest.active = true; s.rest.half = false;
-    log('dt', '**Rest begins** (' + s.rest.where + (s.rest.seclude ? ', secluded camp' : '') + '). DT ' + s.dt + ' ends without an encounter check.');
-    save(); render();
-  }
-  function restEN() { return S().rest.where === 'outdoors' ? travelCalc().restEn : dungeonEN(); }
-  function restHalf() {
-    var s = S(), cleared = [];
-    s.rest.half = true;
-    s.combat.list.forEach(function (c) { REF.END_OF_DT_CONDITIONS.forEach(function (k) { if (c.conds[k]) { delete c.conds[k]; cleared.push(c.name + ' ' + k.toLowerCase()); } }); });
-    activePCs().forEach(function (p) { sheetOp(p, { endConds: true }); });   // and on linked crows' sheets
-    log('', 'Rest halfway: effects lasting to the end of the DT, and DT-rolled usage-dice effects, end.' + (cleared.length ? ' Ended: ' + cleared.join(', ') + '.' : ''));
-    save(); render();
-  }
-  function finishRest() {
-    var s = S(), applied = [];
-    activePCs().forEach(function (p) {
-      var xp = s.rest.applyXP && p.pending;
-      if (xp) applied.push((p.name || 'Crow') + ' +' + fmt(p.pending));
-      sheetOp(p, { full: true, wounds: p.wounds > 0 ? -1 : 0, apply: !!xp, endConds: true, dt: s.dt });   // the rest used up DT s.dt
-    });
-    s.combat.list.forEach(function (c) { c.used = {}; if (c.kind === 'pc') { var p = state.party.filter(function (x) { return x.id === c.pcId; })[0]; if (p) { c.st = p.st; c.wounds = p.wounds; } } });
-    log('dt', '**Rest complete.** Crows regain all Stamina, heal 1 wound, and regain expertise uses' + (s.rest.where === 'outdoors' && state.travel.inMiasma ? ' (NOT in the Miasma: no expertise uses; roll Miasma RRs)' : '') +
-      '. Spellbook UD restored. Each crow ate a ration (or takes a starvation wound).' + (applied.length ? ' XP applied: ' + applied.join(', ') + '.' : ''));
-    s.rest.active = false; s.rest.half = false; s.dt += 1; resetTimer();
-    if (s.mode === 'rooms') { s.rooms = d(6); s.roomsDone = 0; }
-    log('dt', 'DT ' + s.dt + ' begins.');
-    save(); render();
-    if (s.rest.where === 'outdoors' && state.travel.inMiasma) toast('Rested in the Miasma: roll each human\'s Miasma RR.');
-  }
-  function miasmaOutcome(p, tier, detail) {
-    var msg = (p.name || 'Crow') + ' Miasma RR' + (detail ? ' ' + detail : '') + ': T' + tier;
-    if (tier === 1) {
-      sheetOp(p, { cruelty: 1 });
-      var tries = 0, n, row;
-      do { n = d(10) + p.cruelty; row = lookup(REF.MIASMA_EFFECTS, n); tries++; } while (tries < 20 && row[0] < 13 && p.miasma.indexOf(row[0]) >= 0);
-      if (p.miasma.indexOf(row[0]) < 0) p.miasma.push(row[0]);
-      msg += ' → **gains 1 cruelty (now ' + p.cruelty + ')** and a Miasma effect (1d10+cruelty = ' + n + '): **' + row[2] + '** ' + row[3];
-      if (row[0] >= 13) { p.status = 'lost'; msg += ' ' + (p.name || 'The crow') + ' becomes a Ref NPC.'; }
-    } else if (tier === 2) msg += ' → no effect.';
-    else msg += ' → may remove all their cruelty, or improve another human\'s result by 1 tier.';
-    log(tier === 1 ? 'enc' : '', msg);
-    save(); render();
-  }
-  function clearCruelty(p) { sheetOp(p, { setCruelty: 0 }); p.miasma = []; log('', (p.name || 'Crow') + ' loses all cruelty and Miasma effects.'); save(); render(); }
-
-  // ------------------------------------------------------------------ village cycle
-  function instDef(type) { return REF.INSTITUTIONS[type] || { found: 0, up: [], roles: '', txt: '' }; }
-  function maxLevel(type) { return instDef(type).up.length + 1; }
-  function randomInst(role) {
-    var list = state.village.inst.filter(function (i) { return !role || instDef(i.type).roles.indexOf(role) >= 0; });
-    return list.length ? pick(list).type : null;
-  }
-  function endCycle() {
-    var v = state.village, before = v.prosperity, change = 0, notes = [];
-    if (v.upgrades > 0) { change += v.upgrades; notes.push(v.upgrades + ' founded/upgraded'); }
-    if (v.spent10k) { change += 1; notes.push('10,000+ gc spent at merchants'); }
-    if (!change) { change = -1; notes.push('nothing raised it'); }
-    v.prosperity = clamp(before + change, -10, 10);
-    var opened = [];
-    v.inst.forEach(function (i) { if (i.pending) { i.level = Math.min(maxLevel(i.type), i.level + i.pending); i.pending = 0; opened.push(i.type + (i.isNew ? ' opens' : ' reaches level ' + i.level)); } i.isNew = false; i.closed = false; });
-    var r = d(10), total = r + v.prosperity, ev = lookup(REF.VILLAGE_EVENTS, total)[2], who = [];
-    if (/merchant/i.test(ev)) { var m = randomInst('merchant'); if (m) who.push('merchant: ' + m); }
-    if (/artisan/i.test(ev)) { var a = randomInst('artisan'); if (a) who.push('artisan: ' + a); }
-    if (/institution/i.test(ev) && !/institution the crows/.test(ev)) { var ii = randomInst(''); if (ii) who.push('institution: ' + ii); }
-    if (/crow's quarters/.test(ev) && activePCs().length) who.push('crow: ' + (pick(activePCs()).name || 'a crow'));
-    v.saleMod = 0;
-    if (/Sale percentage -5%/.test(ev)) v.saleMod = -5;
-    if (/Sale percentage \+5%/.test(ev)) v.saleMod = 5;
-    v.event = 'Cycle ' + (v.cycle + 1) + ' event (d10 ' + r + ' + Prosperity ' + v.prosperity + ' = ' + total + '): ' + ev + (who.length ? ' (' + who.join('; ') + ')' : '');
-    log('dt', '**End of village cycle ' + v.cycle + '.** Prosperity ' + before + ' → ' + v.prosperity + ' (' + notes.join(', ') + ').' + (opened.length ? ' ' + opened.join('; ') + '.' : '') + ' Merchants restock. ' + v.event);
-    v.cycle += 1; v.day = 1; v.upgrades = 0; v.spent10k = false;
-    save(); render();
-  }
-
-  // ------------------------------------------------------------------ import a character file from the character generator
-  function importCharacter(s) {
-    var pc = pcFromSave(s);
-    var existing = state.party.filter(function (p) { return p.name && p.name === pc.name; })[0];
-    if (existing) {
-      pc.id = existing.id; pc.miasma = existing.miasma || []; pc.ad = existing.ad || 0;
-      if (existing.link) { pc.link = existing.link; pc.owner = existing.owner; }
-      state.party[state.party.indexOf(existing)] = pc;
-      return pc.name + ' (updated)';
-    }
-    state.party.push(pc);
-    return pc.name || 'a crow';
-  }
-  /* A party entry built from a Character Generator save. */
-  function pcFromSave(s) {
-    if (!s || s.v !== 1 || typeof s.bg !== 'number' || !REF.BACKGROUNDS[s.bg]) throw new Error('not a Crows character file');
-    var bg = REF.BACKGROUNDS[s.bg], two = bg[1].indexOf(s.twoChar) >= 0 ? s.twoChar : bg[1][0];
-    var others = REF.CHARS.filter(function (c) { return c !== two; });
-    var high = others.indexOf(s.highChar) >= 0 ? s.highChar : others[0], low = others[0] === high ? others[1] : others[0];
-    var v = {}; v[two] = 2;
-    if (s.pattern === 'm12') { v[high] = 2; v[low] = -1; } else { v[high] = 1; v[low] = 0; }
-    var extra = 0;
-    (s.charBonus || []).forEach(function (c) { if (!c) return; if (REF.CHARS.every(function (k) { return v[k] >= 4; })) { extra += 2; return; } if (v[c] < 4) v[c]++; });
-    var stMax = bg[2] + extra;
-    (s.esBonus || []).forEach(function (o) { if (o === 'stamina') stMax += 2; else if (o === 'mix') stMax += 1; });
-    var play = s.play || {};
-    var pc = { id: nid(), name: s.name || '', player: s.player || '', bg: bg[0], feature: s.feature || '', A: v.Agility, M: v.Mind, S: v.Strength,
-      stMax: stMax, st: typeof play.stamina === 'number' ? clamp(play.stamina, 0, stMax) : stMax, ad: 0,
-      wounds: play.wounds ? Object.keys(play.wounds).length : 0, cruelty: play.cruelty | 0, txp: s.txp | 0, pending: play.pendingXP | 0,
-      status: 'active', conn: s.connName || '', rel: s.connRel || '', benefit: s.connBenefit || '', miasma: [], notes: s.notes || '',
-      conds: play.conds && typeof play.conds === 'object' && !Array.isArray(play.conds) ? clone(play.conds) : {} };
-    return pc;
-  }
-
-  // ------------------------------------------------------------------ crows linked to a player's account
-  /*
-   * A player can share a character with a link (from their character list). Added here, the crow stays tied
-   * to the player's sheet: Party status shows its live vitals, "Open sheet" shows the whole thing, where the Ref
-   * can change the vitals, equipment, and notes, and the party entry refreshes from the sheet about a second
-   * after the player changes it. Combat, rests, Miasma RRs, and XP awards here reach the sheet too (sheetOp).
-   * Needs the Ref to be logged in on the hosted site.
-   */
-  function cloudOn() { return !!(window.CrowsCloud && window.CrowsCloud.active); }
-  function linkToken(text) { var m = /(?:share=|addlink=)?([0-9a-f]{64})/.exec(String(text || '').trim()); return m ? m[1] : null; }
-  /* Add or refresh a linked crow from the server's copy. Ref-side bookkeeping (status, AD, Miasma, Ref notes) is kept. */
-  function linkPC(item) {
-    var pc = pcFromSave(item.data), existing = state.party.filter(function (p) { return p.link === item.id; })[0];
-    pc.link = item.id; pc.owner = item.owner || '';
-    if (existing) {
-      ['id', 'status', 'ad', 'miasma', 'notes', 'owed'].forEach(function (k) { if (k in existing) pc[k] = existing[k]; });
-      (pc.owed || []).forEach(function (o) { applyOp(pc, o); });
-      // A crow already in the combat tracker picks up the sheet's Stamina and wounds.
-      if (S() && S().combat) S().combat.list.forEach(function (c) {
-        if (c.kind !== 'pc' || c.pcId !== pc.id) return;
-        c.st = Math.min(pc.st, c.stMax); c.wounds = pc.wounds; c.conds = clone(pc.conds || {});
-        if (!c.conds.Grabbed) delete c.grabbedBy;
-      });
-      state.party[state.party.indexOf(existing)] = pc;
-      if (S() && S().combat) S().combat.list.forEach(function (c) { if (c.kind === 'pc' && c.pcId === pc.id) pullVitals(c); });
-    } else state.party.push(pc);
-    watchLinked(item);
-    return pc;
-  }
-  /* Refresh the party entry soon after the player's sheet changes (not while the Ref is typing). */
-  function watchLinked(item) {
-    var C = window.CrowsCloud, key = 'link-' + item.id;
-    if (!C || !C.watch) return;
-    C.watch(key, item.watch, item.version, function () {
-      var p = state.party.filter(function (x) { return x.link === item.id; })[0];
-      if (!p) { C.watch(key, null); return; }
-      if (C.typing) return;
-      return refreshLinked(p, true);
-    });
-  }
-  function addFromLink(text) {
-    var tok = linkToken(text);
-    if (!tok) { toast('That doesn\'t look like a character link. Ask the player to copy it again from their character list.'); return Promise.resolve(); }
-    return window.CrowsCloud.api('POST', 'link.redeem', '', { token: tok }).then(function (j) {
-      var pc = linkPC(j.item);
-      log('', 'Added ' + (pc.name || 'a crow') + ' (' + pc.owner + '\u2019s character) to the party.');
-      save(); render(); toast('Added ' + (pc.name || 'the crow') + '.');
-    }, function (e) { toast(e.message); });
-  }
-  function refreshLinked(p, quiet) {
-    return window.CrowsCloud.api('GET', 'link.get', 'id=' + p.link).then(function (j) {
-      linkPC(j.item); save(); render(); if (!quiet) toast('Updated ' + (j.item.name || 'the crow') + ' from the sheet.');
-    }, function (e) {
-      if (e.status === 404) window.CrowsCloud.watch('link-' + p.link, null);
-      if (!quiet || e.status === 404) toast((p.name || 'A crow') + ': ' + e.message);
-    });
-  }
-  function unlinkPC(p, quietly) {
-    var id = p.link;
-    if (window.CrowsCloud) window.CrowsCloud.watch('link-' + id, null);
-    delete p.link; delete p.owner; save(); render();
-    if (cloudOn()) window.CrowsCloud.api('POST', 'link.remove', '', { id: id }).then(function () { if (!quietly) toast('Unlinked. The crow stays in the party as a copy.'); }, function () { /* already gone */ });
-  }
-  /*
-   * The Ref changing a crow's sheet numbers (XP, Stamina, wounds, cruelty, the end of a DT or a rest; see CrowsPlay.refChange): the party
-   * entry changes at once, and a linked crow's change goes onto the player's sheet through its Party status frame.
-   * If that frame isn't loaded yet, the change waits in p.owed and is delivered as soon as the frame reports in;
-   * until then it's replayed over each refresh from the sheet, so it doesn't flicker away.
-   */
-  function applyOp(p, o) {
-    if (o.xp) p.pending = (p.pending || 0) + o.xp;
-    if (o.apply) { p.txp = (p.txp || 0) + (p.pending || 0); p.pending = 0; }
-    if (o.full) p.st = p.stMax;
-    if (o.st) p.st = clamp((p.st || 0) + o.st, 0, p.stMax);
-    if (o.wounds) p.wounds = clamp((p.wounds || 0) + o.wounds, 0, 10);
-    if (o.cruelty) p.cruelty = Math.max(0, (p.cruelty || 0) + o.cruelty);
-    if (typeof o.setCruelty === 'number') p.cruelty = o.setCruelty;
-    if (o.cond) { p.conds = p.conds || {}; Object.keys(o.cond).forEach(function (k) { if (o.cond[k]) p.conds[k] = true; else delete p.conds[k]; }); }
-  }
-  function sheetWin(p) {
-    var f = p.link && statusFrames[p.link];
-    // Only once the player's character is in the frame (before that it holds this browser's own character).
-    try { var w = f && f.frame.contentWindow; return w && w.CrowsPlay && w.CrowsPlay.refChange && w.CrowsRefView && w.CrowsRefView.loaded ? w : null; } catch (e) { return null; }
-  }
-  function sheetOp(p, o) {
-    applyOp(p, o);
-    if (!p.link || !cloudOn()) return;
-    (p.owed = p.owed || []).push(o);
-    flushOps(p);
-  }
-  function flushOps(p) {
-    var w = sheetWin(p);
-    if (!w || !p.owed || !p.owed.length) return;
-    p.owed.forEach(function (o) { w.CrowsPlay.refChange(o); });
-    delete p.owed; save();
-  }
-  function openSheet(p) { window.open('play?link=' + encodeURIComponent(p.link), '_blank', 'noopener'); }
-  /* Play a linked crow yourself, as if its player had handed it to you (they're told, and can take it back). */
-  function takeControl(p) {
-    if (!confirm('Take control of ' + (p.name || 'this crow') + '? You can open, edit, and play the whole sheet until ' + (p.owner || 'the player') +
-      ' takes it back. They\u2019re told. Hand it back from Handed to you in My characters.')) return;
-    var w = window.open('', '_blank');   // opened now, while the click still counts, so it isn't blocked as a pop-up
-    window.CrowsCloud.api('POST', 'control.claim', '', { id: p.link }).then(function (j) {
-      if (w) w.location.href = new URL('play?id=' + j.characterId, location.href).href; else toast('You have control of ' + (p.name || 'the crow') + '. Open it from My characters.');
-    }, function (e) { if (w) w.close(); toast(e.message); });
-  }
-  function takeBtn(p) { return btn('Take control', function () { takeControl(p); }, 'btn-small btn-ghost', 'Play this crow yourself, say for a session its player will miss'); }
-  function newPC() { return { id: nid(), name: '', player: '', bg: '', feature: '', A: 0, M: 0, S: 0, stMax: 7, st: 7, ad: 0, wounds: 0, cruelty: 0, txp: 0, pending: 0, status: 'active', conn: '', rel: '', benefit: '', miasma: [], notes: '' }; }
-
-  // ================================================================== RENDERING
-  function setTab(t) { tab = t; document.body.setAttribute('data-tab', t); if (window.CrowsLayout) window.CrowsLayout.apply(); try { localStorage.setItem(TAB_KEY, t); } catch (e) { /* ignore */ } render(); window.scrollTo(0, 0); }
-  function renderTabbar() {
-    var bar = $('tabbar'); bar.innerHTML = '';
-    TABS.forEach(function (t) {
-      var badge = null;
-      if (t[0] === 'session' && (S().pending || S().combat.list.some(function (c) { return !c.dead && c.kind === 'foe'; }))) badge = el('span', { class: 'badge', text: S().pending ? '!' : '⚔' });
-      if (t[0] === 'encounters' && runningEnc()) badge = el('span', { class: 'badge', text: '⚔', title: 'An encounter is running' });
-      if (t[0] === 'party' && inv.requests.length && inv.id === (window.CrowsCloud && window.CrowsCloud.recordId)) badge = el('span', { class: 'badge', text: String(inv.requests.length), title: 'Join requests waiting' });
-      bar.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': tab === t[0] ? 'true' : 'false', onclick: function () { setTab(t[0]); } }, [t[1], badge]));
-    });
-    $('camp-name').textContent = state.name || state.village.name || '';
-  }
-  var layoutFitQueued = false;
-  function render() {
-    // A fight with linked crows needs their sheets loaded (Party status), whichever tab is open: hits land there.
-    if (tab !== 'party' && cloudOn() && S().combat.list.some(function (x) { var p = pcOf(x); return p && p.link; })) renderStatus();
-    renderTabbar();
-    renderSide();
-    if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
-    ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, world: renderWorld, bestiary: renderBestiary, tables: renderTables, rules: renderRules })[tab]();
-    tick();
-  }
-
-  // ------------------------------------------------------------------ sidebar
-  function renderSide() {
-    var s = S();
-    $('side-timer').innerHTML = '';
-    $('side-timer').appendChild(el('div', null, [
-      el('h3', { text: (s.rest.active ? 'Resting · ' : '') + 'Dungeon turn ' + s.dt + (greedBonus() ? ' · greed +' + greedBonus() + '%' : '') }),
-      el('div', { class: 'row center' }, [el('div', { 'data-clock': '1', class: 'clock' }), el('span', { class: 'spacer' }),
-        s.mode === 'timer' ? (s.running ? btn('Pause', pauseTimer, 'btn-small') : btn('Start', startTimer, 'btn-small btn-primary')) : btn('+1 room', function () { s.roomsDone++; save(); render(); }, 'btn-small'),
-        btn('End DT', endDT, 'btn-small', 'Roll usage dice, end DT conditions, and make the encounter check')]),
-      el('div', { class: 'meter', 'data-meter': '1' }, [el('span')]),
-      s.pending ? el('div', { class: 'pending' }, [el('b', { text: 'Encounter due this DT: ' }), pendingText(s.pending)]) : null
-    ]));
-
-    var dc = state.dice, box = $('side-dice'); box.innerHTML = '';
-    var res = null;
-    if (ui.dice) {
-      var r = ui.dice;
-      res = el('div', { class: 'result' }, [el('div', { class: 'r-head', text: r.label }),
-        r.r ? el('div', null, [el('div', { class: 'r-roll', text: testLine(r.r) }), tierChip(r.r), r.dmg ? el('div', null, [el('b', { text: r.dmg })]) : null, r.note ? el('div', { class: 'fine', text: r.note }) : null, hitControls(r.hit)].concat((r.counters || []).map(function (k) {
-            if (k.act) return el('div', null, [el('span', { class: 'fine', text: k.by.name + '\u2019s counter: ' }), hitControls(k.act)]);
-            var cd = counterDamage(k.by, k.doom);
-            return cd && rxLeft(k.by) > 0 && !k.by.dead ? btn(k.by.name + ' counters ' + k.vs.name + ' (' + cd.n + ')', function () { k.act = counterAct(k.by, k.vs, k.doom); save(); render(); }, 'btn-small', 'A counter (reaction): its melee attack\u2019s tier 2 damage, tier 3 on a doom') : null;
-          })))
-          : el('div', null, [el('b', { text: r.text })])]);
-    }
-    box.appendChild(el('div', null, [
-      el('h3', { text: 'Dice' }),
-      el('div', { class: 'row center' }, [field('Bonus', inp(dc, 'mod', { type: 'number', min: -10, max: 20, class: 'tiny' }, { dflt: 0 })), segEB(dc, 'net')]),
-      el('div', { class: 'btn-row' }, [
-        el('button', { type: 'button', class: 'btn btn-primary', style: 'grid-column: span 2', text: 'Test 2d10', onclick: function () {
-          var r = test(dc.mod, dc.net); ui.dice = { label: 'Test' + (dc.mod ? ' ' + signed(dc.mod) : ''), r: r };
-          log('', 'Test: ' + testLine(r) + ' → **T' + r.tier + '**.'); render();
-        } }),
-        diceBtn('d6', '1d6'), diceBtn('d10', '1d10'), diceBtn('2d6', '2d6'), diceBtn('3d6', '3d6'), diceBtn('d100', 'd100'),
-        el('button', { type: 'button', class: 'btn', text: 'Initiative', title: 'Each round a player rolls 1d10: 6+ means crows and allies act first', onclick: rollInitiative })
-      ]),
-      el('div', { class: 'row center', style: 'margin-top:.4rem' }, [
-        inp(dc, 'expr', { class: 'in', style: 'width:7rem', 'aria-label': 'Dice expression' }),
-        btn('Roll', function () { var r = rollDice(dc.expr || '1d6'); ui.dice = { label: dc.expr, text: r.detail + ' = ' + r.total }; log('', 'Rolled ' + r.detail + ' = **' + r.total + '**.'); render(); }, 'btn-small'),
-        inp(dc, 'ud', { type: 'number', min: 1, max: 12, class: 'tiny', 'aria-label': 'Usage dice count', title: 'Usage dice' }, { dflt: 1 }),
-        btn('UD', function () {
-          var rolls = [], keep = 0; for (var i = 0; i < dc.ud; i++) { var x = d(6); rolls.push(x); if (x > 2) keep++; }
-          ui.dice = { label: 'Usage dice ×' + dc.ud, text: '[' + rolls.join(', ') + '] → ' + keep + ' UD left' + (keep ? '' : ' (effect ends / item used up)') };
-          log('', 'Usage dice ' + dc.ud + ' [' + rolls.join(', ') + '] → **' + keep + ' left**.'); render();
-        }, 'btn-small', 'Roll usage dice: each 1-2 is removed')
-      ]),
-      res
-    ]));
-    renderSideLog();
-    renderInvite();
-  }
-  /* What an action does, in words: "5 damage, prone", "regains 4 Stamina", "grabbed". */
-  function fxText(items) {
-    var f = items[0] || {}, parts = [];
-    if (f.damage) parts.push(f.damage + (f.piercing ? ' piercing' : '') + ' damage');
-    if (f.heal) parts.push('+' + f.heal + ' Stamina');
-    if (f.ad) parts.push('+' + f.ad + ' AD');
-    if (f.wounds) parts.push('heal ' + plural(f.wounds, 'wound'));
-    if (f.conds) Object.keys(f.conds).forEach(function (k) { parts.push((f.conds[k] ? '' : 'not ') + k.toLowerCase()); });
-    if (f.grab) parts.push('grabbed');
-    return parts.join(', ') || 'effect';
-  }
-  /* An action's effects (an attack, a counter, a stray shot, a heal, a grab): dealt, with Undo, or waiting for Apply. */
-  function hitControls(h) {
-    var items = h ? fxItems(h).filter(function (f) { return byId(f.id); }) : [];
-    if (!items.length) return null;
-    var names = items.map(function (f) { return byId(f.id).name; }).join(', '), what = fxText(items);
-    return el('span', { class: 'row center hit-ctl' }, h.applied ? [el('span', { class: 'chip ok', text: what + ' \u2192 ' + names }), btn('Undo', function () { undoAct(h); }, 'btn-small btn-ghost', 'Put ' + names + ' back as they were (Stamina, AD, wounds, conditions)')]
-      : [btn('Apply ' + what + ' \u2192 ' + names, function () { applyAct(h); }, 'btn-small btn-primary', 'Deal it (damage goes through AD first, then Stamina, then wounds)')]);
-  }
-  function diceBtn(label, expr) {
-    return btn(label, function () {
-      var r = expr === 'd100' ? d100() : rollDice(expr);
-      ui.dice = { label: label, text: r.detail + ' = ' + r.total }; log('', 'Rolled ' + r.detail + ' = **' + r.total + '**.'); render();
-    });
-  }
-  function d100() { var a = d(10), b = d(10), v = (a % 10) * 10 + (b % 10); if (v === 0) v = 100; return { total: v, detail: 'd100 [' + (a % 10) + ', ' + (b % 10) + ']' }; }
-  function rollInitiative() {
-    var r = d(10), first = r >= 6;
-    var c = S().combat, fresh = !c.round; c.round = (c.round || 0) + (c.round ? 0 : 1); c.first = first ? 'crows' : 'foes'; if (fresh) newRound(c);
-    feed('Initiative for round ' + c.round + ': **' + (first ? 'crows and allies first' : 'enemies first') + '**.');
-    ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (first ? 'crows and allies act first' : 'enemies act first') };
-    log('', 'Initiative for round ' + c.round + ': 1d10 = ' + r + ' → **' + (first ? 'crows and allies first' : 'enemies first') + '**.');
-    save(); render();
-  }
-  function renderSideLog() {
-    var box = $('side-log'); box.innerHTML = '';
-    var list = el('ol'), recent = state.log.slice(-14).reverse();
-    recent.forEach(function (e) { list.appendChild(logItem(e)); });
-    box.appendChild(el('div', null, [el('div', { class: 'row center' }, [el('h3', { text: 'Log' }), el('span', { class: 'spacer' }), el('a', { href: '#', class: 'fine', onclick: function (e) { e.preventDefault(); setTab('session'); setTimeout(function () { $('sec-log').scrollIntoView(); }, 0); }, text: 'full log' })]),
-      recent.length ? list : el('p', { class: 'fine', text: 'Rolls and events appear here.' })]));
-  }
-
-  // ------------------------------------------------------------------ Session tab
-  function renderSession() {
-    var s = S(), place = currentPlace();
-    var placeOpts = [['', '— none / free text —']].concat(state.places.map(function (p) { return [p.id, p.name + (p.kind ? ' (' + p.kind + ')' : '')]; }));
-    var clock = el('div', { class: 'clock-box' }, [
-      el('div', { class: 'lbl', text: (s.rest.active ? 'Resting — ' : '') + 'Dungeon turn ' + s.dt }),
-      el('div', { 'data-clock': '1', class: 'clock' }),
-      el('div', { class: 'meter', 'data-meter': '1' }, [el('span')]),
-      el('div', { class: 'row center' }, s.mode === 'timer' ? [
-        s.running ? btn('Pause', pauseTimer) : btn('Start timer', startTimer, 'btn-primary'),
-        btn('Reset', function () { resetTimer(); render(); }, 'btn-ghost'),
-        btn('+5 min', function () { if (s.running) s.endAt += 300000; else s.remain += 300000; ui.alarmFired = false; save(); render(); }, 'btn-ghost btn-small'),
-        btn('-5 min', function () { if (s.running) s.endAt -= 300000; else s.remain = Math.max(0, s.remain - 300000); save(); render(); }, 'btn-ghost btn-small')
-      ] : [btn('+1 room explored', function () { s.roomsDone++; save(); if (s.roomsDone >= s.rooms) toast('That was the last room of this DT: end the DT.'); render(); }, 'btn-primary'),
-        btn('-1', function () { s.roomsDone = Math.max(0, s.roomsDone - 1); save(); render(); }, 'btn-ghost btn-small')]),
-      el('div', { class: 'row center', style: 'margin-top:.5rem' }, [
-        el('div', { class: 'seg' }, [[60, '60 min'], [30, '30 min'], [20, '20 min'], ['rooms', '1d6 rooms']].map(function (o) {
-          var on = o[0] === 'rooms' ? s.mode === 'rooms' : s.mode === 'timer' && s.dtLen === o[0];
-          return el('button', { type: 'button', class: on ? 'on' : '', text: o[1], onclick: function () { setDTLen(o[0]); } });
-        })),
-        chk(s, 'sound', 'Chime'), chk(s, 'autoNext', 'Auto-start next DT', { title: 'When you end a DT while the timer runs, start the next one immediately' })
-      ])
-    ]);
-    var en = dungeonEN(), g = greedBonus();
-    var settings = el('div', null, [
-      el('div', { class: 'grid2' }, [
-        field('Location', sel(s, 'place', placeOpts, { on: function (id) {
-          var p = currentPlace(); if (p) { s.table = p.table === 'Travel' ? 'Travel' : REF.DUNGEON_TABLES[p.table] ? p.table : 'none'; s.firstVisit = !p.visited; s.enAdj = 0; }
-        } })),
-        field('Monster table', sel(s, 'table', [['Blood Creatures', 'Blood creatures (d6)'], ['Undead', 'Undead (d10)'], ['Travel', 'Travel encounters (outdoors)'], ['none', 'Ref\'s choice (no roll)']]))
-      ]),
-      el('div', { class: 'checks' }, [
-        chk(s, 'crowded', 'Crowded (20+ creatures on the level)'), chk(s, 'chaos', 'Crows left chaos (trail of bodies)'),
-        chk(s, 'firstVisit', 'First visit (greed bonus)')
-      ]),
-      el('div', { class: 'row center' }, [el('span', { class: 'fine', text: 'Other EN adjustment (e.g. bloodstained crows)' }), inp(s, 'enAdj', { type: 'number', min: -5, max: 5, class: 'tiny' }, { re: true })]),
-      el('div', { class: 'stat-row', style: 'margin-top:.6rem' }, [
-        el('div', { class: 'stat hot' }, [el('div', { class: 'lbl', text: 'Encounter #' }), el('div', { class: 'val', text: String(en) })]),
-        el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: 'Greed bonus' }), el('div', { class: 'val', text: g ? '+' + g + '%' : '—' })]),
-        el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: 'Session' }), el('div', { class: 'val', text: String(s.n) })])
-      ]),
-      place && place.notes ? el('p', { class: 'fine', text: place.name + ': ' + place.notes }) : null
-    ]);
-    card('sec-dt', el('h2', null, ['Dungeon Turns', el('small', { text: 'shared timer, encounter checks, greed bonus' })]), [
-      el('div', { class: 'dt-grid' }, [clock, settings]),
-      el('div', { class: 'row', style: 'margin-top:.8rem' }, [
-        btn('End dungeon turn', endDT, 'btn-primary', 'Usage dice, end-of-DT conditions, encounter check'),
-        btn('Encounter check (loud noise)', function () { var res = encounterCheck('Loud noise', dungeonEN(), s.table === 'none' ? null : s.table); ui.lastEnc = res; if (res.hit && !res.immediate) s.pending = pendingFrom(res); save(); render(); }),
-        btn('Roll on monster table', function () {
-          if (!REF.DUNGEON_TABLES[s.table]) { toast('Pick the blood creature or undead table first.'); return; }
-          var e = rollDungeonTable(s.table); ui.lastEnc = { reason: 'Monster table', roll: '—', en: '—', hit: true, immediate: false, table: s.table, enc: e, t: nowStamp() };
-          log('', s.table + ' table d' + e.die + ' = ' + e.roll + ': ' + addsText(e.adds) + '.'); render();
-        }, 'btn-ghost')
-      ]),
-      s.pending ? el('div', { class: 'pending' }, [el('b', { text: 'Encounter signalled during DT ' + s.pending.dt + ': ' }), pendingText(s.pending), '. It arrives any time this DT.',
-        el('div', { class: 'row' }, [pendingEnc() ? runEncBtn(pendingEnc()) : addToCombatBtn(s.pending.adds), btn('It happened / cancel', function () { s.pending = null; save(); render(); }, 'btn-small btn-ghost')])]) : null,
-      ui.lastEnc ? encounterResultBox(ui.lastEnc, function () { ui.lastEnc = null; render(); }) : null,
-      more('End of each DT (checklist)', [el('ol', null, [
-        el('li', { text: 'Roll usage dice for lights and anything tagged DT; spell and backlash durations in UD.' }),
-        el('li', { text: 'Blessed, vulnerable, weakened, and "until the end of the DT" effects end.' }),
-        el('li', { text: 'Encounter check: 1d10 ≥ EN. A 10: now. 9 or less: give a sign; it happens during the next DT.' }),
-        el('li', { text: 'Greed bonus steps down (DT 1 +30%, DT 2 +20%, DT 3 +10%, first visit only).' }),
-        el('li', { text: 'Outside dungeons, 2 in-game hours = 1 DT.' })
-      ])])
-    ]);
-    renderCombat();
-    renderRest();
-    renderLogCard();
-    card('sec-quick', 'Quick Reference', [el('dl', { class: 'kv' }, REF.QUICK.reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, [])),
-      more('Conditions', [el('dl', { class: 'kv' }, REF.CONDITIONS.reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, []))])]);
-  }
-
   function renderCombat() {
     var c = S().combat, living = c.list.filter(function (x) { return !x.dead && x.kind === 'foe'; }), run = runningEnc();
     card('sec-combat', el('h2', null, ['Combat', el('small', { text: living.length ? plural(living.length, 'foe') + ' standing' : 'tracker' })]), [
@@ -4398,312 +4789,62 @@ CROWS.NAME_IDEAS = {
   }
   function btnPM(t, fn) { return el('button', { type: 'button', class: 'pm', text: t, onclick: fn, 'aria-label': t === '+' ? 'increase' : 'decrease' }); }
 
-  function renderRest() {
-    var s = S(), r = s.rest;
-    var kids = [
-      el('div', { class: 'grid2' }, [
-        field('Where', sel(r, 'where', [['dungeon', 'In a dungeon (dungeon EN)'], ['outdoors', 'Outdoors (travel rest EN)'], ['town', 'In a village (no encounters)']])),
-        el('div', { class: 'checks' }, [chk(r, 'seclude', 'Seclude Camp (EN +1)'), chk(r, 'applyXP', 'Apply pending XP at the end')])
-      ]),
-      el('div', { class: 'row', style: 'margin-top:.6rem' }, r.active ? [
-        btn('Rest encounter check (EN ' + restEN() + ')', function () {
-          if (r.where === 'town') { toast('No encounters in a village.'); return; }
-          ui.lastEnc = encounterCheck('Rest', restEN(), r.where === 'outdoors' ? 'Travel' : s.table === 'none' ? null : s.table);
-          if (ui.lastEnc.hit) log('', 'Combat or strenuous activity interrupts the rest: it must restart.');
-          save(); render();
-        }, 'btn-primary'),
-        r.half ? null : btn('Halfway (DT effects end)', restHalf),
-        btn('Finish rest', finishRest, 'btn-primary'),
-        btn('Interrupted: restart', function () { r.half = false; log('', 'The rest was interrupted and restarts.'); save(); render(); }, 'btn-ghost'),
-        btn('Cancel rest', function () { r.active = false; save(); render(); }, 'btn-ghost')
-      ] : [btn('Start rest', startRest, 'btn-primary'), el('span', { class: 'fine', text: 'Starting a rest ends the current DT without an encounter check.' })]),
-      r.active && ui.lastEnc && ui.lastEnc.reason === 'Rest' ? encounterResultBox(ui.lastEnc, function () { ui.lastEnc = null; render(); }) : null,
-      more('Rest rules and activities', [
-        el('p', { text: 'Rest: 6 uninterrupted hours in one place, no strenuous activity, 4+ hours asleep, eat 1 ration (pets eat too). At the end: all Stamina, lose 1 wound (their choice), all expertise uses (not in the Miasma), spellbook UD restored. One rest activity each:' }),
-        el('dl', { class: 'kv' }, [['Craft Equipment', '1 crafting roll.'], ['Harvest', 'Destroy a corpse for parts: Medium or smaller 1d6, Large 2d6, Huge 3d6, Holy Shit 4d6.'], ['Identify Item', 'Learn a magic item\'s properties.'],
-          ['Prepare for Task', 'A specific, intimately known task and place that needs a test: +2 on it until the next rest.'], ['Repair Armor', '1 armor or shield back to full AD (needs a repair kit, included with armor).'],
-          ['Seclude Camp', 'EN +1 during the rest; 1 per group; works even if the rest is interrupted.'], ['Tend Wounds', 'Another creature with 2+ wounds loses 2 wounds instead of 1 (1 benefit per creature per rest).'],
-          ['In town', 'No encounters. Up to 4 activities a day without resting, about 2 hours each; Tend Wounds once a day, benefit after 4 hours of sleep.']
-        ].reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, []))
-      ])
-    ];
-    card('sec-rest', el('h2', null, ['Rest', r.active ? el('span', { class: 'chip accent', text: r.half ? 'second half' : 'in progress' }) : null]), kids);
-  }
-  function renderLogCard() {
-    var note = { t: '' };
-    var list = el('ol', { class: 'log-list' }, state.log.slice().reverse().map(logItem));
-    var noteIn = inp(note, 't', { placeholder: 'Add a note to the log…', 'aria-label': 'Log note' });
-    noteIn.addEventListener('keydown', function (e) { if (e.key === 'Enter' && note.t.trim()) { log('note', note.t.trim()); render(); } });
-    card('sec-log', el('h2', null, ['Session Log', el('small', { text: 'Session ' + S().n })]), [
-      el('div', { class: 'grid2' }, [field('Session title', inp(S(), 'title', { placeholder: 'e.g. Into the Blood Library' })), field('Date', inp(S(), 'date', { type: 'date' }))]),
-      el('div', { class: 'row', style: 'margin:.6rem 0' }, [el('div', { class: 'grow' }, [noteIn]), btn('Add', function () { if (note.t.trim()) { log('note', note.t.trim()); render(); } }),
-        btn('Export text', function () { download(logText(S().n, S().title, S().date, state.log), 'Crows_Session_' + S().n + '.txt', 'text/plain'); }, 'btn-ghost'),
-        btn('End session & archive', function () {
-          if (!confirm('Archive this session\'s log to the World tab and start session ' + (S().n + 1) + '?')) return;
-          state.history.push({ n: S().n, title: S().title, date: S().date, log: state.log });
-          state.log = []; S().n += 1; S().title = ''; S().date = today(); S().pending = null; ui.lastEnc = null;
-          save(); render(); toast('Session archived.');
-        }, 'btn-ghost')]),
-      state.log.length ? list : el('p', { class: 'hint', text: 'Nothing logged yet this session.' })
-    ]);
-  }
-  function logText(n, title, date, entries) {
-    return 'Crows session ' + n + (title ? ': ' + title : '') + (date ? ' (' + date + ')' : '') + '\n\n' + entries.map(function (e) { return e.t + '  ' + e.s.replace(/\*\*/g, ''); }).join('\n') + '\n';
-  }
+  A.add({ addCombatant: addCombatant, addPartyToCombat: addPartyToCombat, addParty: addParty, surprised: surprised, slotsOf: slotsOf, byId: byId,
+      sizeOf: sizeOf, noBigger: noBigger, setCond: setCond, damage: damage, heal: heal, syncPC: syncPC, pullVitals: pullVitals,
+      targetsFor: targetsFor, targetOf: targetOf, twoTargets: twoTargets, rxMax: rxMax, rxLeft: rxLeft, useRx: useRx, releaseGrabs: releaseGrabs,
+      grabbing: grabbing, tauntOn: tauntOn, newRound: newRound, rollMods: rollMods, tierFx: tierFx, hitDamage: hitDamage, testWith: testWith,
+      meleeAtk: meleeAtk, monsterAttack: monsterAttack, prompt: prompt, monsterManeuver: monsterManeuver, fxItems: fxItems, applyAct: applyAct,
+      undoAct: undoAct, counterDamage: counterDamage, counterAct: counterAct, feed: feed, clearCombat: clearCombat, itemName: itemName,
+      itemsText: itemsText, newItem: newItem, onGround: onGround, itemNews: itemNews, putDown: putDown, creaturePickUp: creaturePickUp,
+      creatureDrop: creatureDrop, dropFromFallen: dropFromFallen, groundText: groundText, itemsPanel: itemsPanel, pcOf: pcOf, healthWord: healthWord,
+      publicCombat: publicCombat, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,
+      doomOptions: doomOptions, livePanel: livePanel, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
+      SIZE_ORDER: SIZE_ORDER, live: live, dropQueued: dropQueued, MANEUVER_NOTES: MANEUVER_NOTES });
+})();
 
-  // ------------------------------------------------------------------ Encounters tab
-  var ENC_SOURCES = [['Blood Creatures', 'Blood creatures (d6)'], ['Undead', 'Undead (d10)'], ['Any', 'Any monster type (d10)'], ['Travel', 'Travel encounter (d100)'],
-    ['Animal', 'Wild animal (habitat + reaction)'], ['Travelers', 'Travelers'], ['Miasma-touched', 'Miasma-touched humans'], ['Merchant', 'Merchant caravan']];
-  function rollEncounterDraft(src) {
-    var t = state.travel, r;
-    if (REF.DUNGEON_TABLES[src]) { r = rollDungeonTable(src); return { name: src + ': ' + addsText(r.adds), roll: src + ' d' + r.die + ' = ' + r.roll, lines: [r.text], adds: r.adds }; }
-    if (src === 'Any') {
-      var m = d(10), row = lookup(REF.ANY_MONSTER, m), e = row[3] ? rollDungeonTable(row[3]) : null;
-      return { name: e ? row[2] + ': ' + addsText(e.adds) : row[2].replace(/ \(.*$/, ''), roll: 'Any monster d10 = ' + m + (e ? ', ' + row[3] + ' d' + e.die + ' = ' + e.roll : ''),
-        lines: [row[2] + (e ? ': ' + e.text : '')], adds: e ? e.adds : [] };
-    }
-    if (src === 'Travel') { r = rollTravelEncounter(); return { name: 'Travel: ' + r.kind, roll: 'Travel d100 = ' + r.roll + ' (' + t.habitat + ', ' + t.climate + ')', lines: r.lines, adds: r.adds }; }
-    if (src === 'Animal') { r = rollWildAnimal(t.habitat); return { name: 'Wild animal: ' + addsText(r.adds), roll: t.habitat, lines: r.lines, adds: r.adds }; }
-    r = src === 'Travelers' ? rollTravelers() : src === 'Merchant' ? rollMerchant() : rollMiasmaTouched();
-    return { name: src === 'Travelers' ? 'Travelers' : src === 'Merchant' ? 'Merchant caravan' : 'Miasma-touched humans', roll: src, lines: r.lines, adds: r.adds };
+</script>
+<script>
+/*
+ * Ref Screen: the village cycle and the Village tab (Prosperity, institutions, the crypt). See ref-core.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsRefApp, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var area = f('area'), btn = f('btn'), card = f('card'), chk = f('chk'), clamp = f('clamp'), field = f('field'), inp = f('inp'), int = f('int'),
+      log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rowsTable = f('rowsTable'),
+      salePct = f('salePct'), save = f('save'), sel = f('sel');
+  var $ = A.$, d = A.d, el = A.el, fmt = A.fmt, pick = A.pick, plural = A.plural, signed = A.signed;
+  var state = A.state; A.share('state', function (v) { state = v; });
+  var tab = A.tab; A.share('tab', function (v) { tab = v; });
+
+  // ------------------------------------------------------------------ village cycle
+  function instDef(type) { return REF.INSTITUTIONS[type] || { found: 0, up: [], roles: '', txt: '' }; }
+  function maxLevel(type) { return instDef(type).up.length + 1; }
+  function randomInst(role) {
+    var list = state.village.inst.filter(function (i) { return !role || instDef(i.type).roles.indexOf(role) >= 0; });
+    return list.length ? pick(list).type : null;
   }
-  function renderEncounters() {
-    renderEncRun();
-    if (!ui.encSrc) ui.encSrc = REF.DUNGEON_TABLES[S().table] ? S().table : 'Travel';
-    var dr = ui.encDraft;
-    function srcLabel() { return ENC_SOURCES.filter(function (o) { return o[0] === ui.encSrc; })[0][1]; }
-    function roll() { var r = rollEncounterDraft(ui.encSrc); r.src = srcLabel(); ui.encDraft = r; log('', 'Rolled an encounter (' + r.src + '): ' + r.name + '. ' + r.lines.join(' ')); render(); }
-    card('sec-enc-new', el('h2', null, ['New Encounter', el('small', { text: 'roll one or build your own' })]), [
-      el('p', { class: 'hint', text: 'Roll on a table, look it over, and save the ones you want to keep and edit. Travel, wild animal, and nearest-dungeon rolls use the Travel tab\'s climate, habitat, and nearest dungeon. Encounter checks that hit (End DT, loud noise, rests, travel) are saved here on their own.' }),
-      el('div', { class: 'row' }, [field('Table', sel(ui, 'encSrc', ENC_SOURCES, { label: 'Encounter table' }), 'grow'),
-        btn('Roll encounter', roll, 'btn-primary'),
-        btn('Create encounter manually', function () { var e = newEncounter({ src: 'Manual', where: '' }); save(); openEncounter(e.id, true); }, 'btn-ghost')]),
-      dr ? el('div', { class: 'result' }, [
-        el('div', { class: 'r-head', text: dr.name }), el('div', { class: 'r-roll', text: dr.roll }),
-        el('ul', null, dr.lines.map(function (l) { return el('li', { text: l }); })),
-        dr.adds.length ? el('div', null, ['Creatures: ', el('b', { text: addsText(dr.adds) })]) : el('div', { class: 'muted', text: 'No creatures from this roll; add them after saving if you need any.' }),
-        el('div', { class: 'row' }, [
-          btn('Save encounter', function () {
-            var e = newEncounter({ name: dr.name, src: dr.src, roll: dr.roll, text: dr.lines.join('\n'), adds: dr.adds });
-            ui.encDraft = null; log('', 'Saved encounter: ' + e.name + '.'); save(); openEncounter(e.id);
-          }, 'btn-small btn-primary'),
-          btn('Reroll', roll, 'btn-small'),
-          btn('Discard', function () { ui.encDraft = null; render(); }, 'btn-small btn-ghost')])
-      ]) : null
-    ]);
-
-    var open = state.encounters.filter(function (e) { return !e.done; }).length, resolved = state.encounters.length - open;
-    var list = state.encounters.filter(function (e) { return ui.encFilter === 'all' || (ui.encFilter === 'done') === !!e.done; });
-    card('sec-enc-list', el('h2', null, ['Saved Encounters', el('small', { text: open + ' open · ' + resolved + ' resolved' })]), [
-      el('div', { class: 'row center' }, [
-        el('div', { class: 'seg' }, [['open', 'Open'], ['all', 'All'], ['done', 'Resolved']].map(function (o) {
-          return el('button', { type: 'button', class: ui.encFilter === o[0] ? 'on' : '', 'aria-pressed': ui.encFilter === o[0] ? 'true' : 'false', text: o[1], onclick: function () { ui.encFilter = o[0]; render(); } });
-        })),
-        el('span', { class: 'spacer' }),
-        resolved ? btn('Delete resolved', function () {
-          if (!confirm('Delete ' + plural(resolved, 'resolved encounter') + '?')) return;
-          state.encounters = state.encounters.filter(function (e) { return !e.done; }); save(); render();
-        }, 'btn-small btn-ghost btn-danger') : null]),
-      list.length ? el('div', { class: 'enc-list' }, list.map(encCard))
-        : el('p', { class: 'hint', text: state.encounters.length ? 'No ' + (ui.encFilter === 'done' ? 'resolved' : 'open') + ' encounters.' : 'No saved encounters yet. Roll or create one above, or make an encounter check in the Session tab.' })
-    ]);
-  }
-  /* The running encounter: what's going on, surprise, morale cues, the combat tracker, creature notes, and the wrap-up. */
-  function renderEncRun() {
-    var e = runningEnc(), box = $('sec-enc-run');
-    box.hidden = !e;
-    if (!e) { box.innerHTML = ''; return; }
-    var c = S().combat, them = c.list.filter(function (x) { return x.kind === 'foe'; }), up = them.filter(function (x) { return !x.dead && x.st > 0; });
-    var cues = [], kinds = {};
-    them.forEach(function (x) { var b = beast(x.cref); if (b) kinds[b.t] = true; });
-    var humans = them.filter(function (x) { var b = beast(x.cref); return b && b.t === 'Human'; }), humansDown = humans.filter(function (x) { return x.dead || x.st <= 0; }).length;
-    if (them.length && !up.length) cues.push(['ok', 'Every foe is down. End the encounter below.']);
-    else {
-      if (humans.length > 1 && humansDown * 2 >= humans.length && humansDown < humans.length) cues.push(['warn', 'Half the human foes are down: the group flees (Ref\'s call).']);
-      if (humans.length === 1 && humansDown === 1) cues.push(['warn', 'The lone human is at 0 Stamina: they flee.']);
-      them.forEach(function (x) { var b = beast(x.cref); if (b && b.t === 'Animal' && !x.dead && x.st <= 0) cues.push(['warn', x.name + ' is at 0 Stamina: animals flee.']); });
-      if (them.length > 2 && up.length * 2 <= them.length && (kinds['Blood Creature'] || kinds.Undead)) cues.push(['', 'Half the monsters are down: monsters flee losing fights (weak ones stay with the pack).']);
-    }
-    var monsters = them.filter(function (x) { var b = beast(x.cref); return b && /Blood Creature|Undead|Unique/.test(b.t); });
-    var types = Object.keys(kinds), beasts = [];
-    them.concat(c.list.filter(function (x) { return x.kind === 'ally'; })).forEach(function (x) { var b = beast(x.cref); if (b && beasts.indexOf(b) < 0) beasts.push(b); });
-    var end = ui.encEnd || (ui.encEnd = { outcome: 'won', resolve: true });
-
-    card('sec-enc-run', el('h2', null, ['Running: ' + (e.name || 'untitled'), el('small', { text: c.round ? 'round ' + c.round : 'not started' })]), [
-      el('div', { class: 'fine', text: [e.where, e.src, e.roll].filter(Boolean).join(' · ') }),
-      e.text ? el('div', { class: 'run-text', text: e.text }) : null,
-      c.round ? null : el('div', { class: 'row center run-setup' }, [
-        el('span', { class: 'fine', text: 'Surprise:' }),
-        el('div', { class: 'seg', role: 'group', 'aria-label': 'Surprise' }, [['none', 'No one'], ['crows', 'Crows surprised'], ['foes', 'Foes surprised']].map(function (o) {
-          return el('button', { type: 'button', class: c.surprise === o[0] ? 'on' : '', 'aria-pressed': c.surprise === o[0] ? 'true' : 'false', text: o[1], onclick: function () { c.surprise = o[0]; save(); render(); } });
-        })),
-        monsters.length ? btn('Like/hate check (2d10+M)', function () { likeHateCheck(monsters); }, 'btn-small btn-ghost', 'When a like or hate is in an odd or dangerous place: T1 they approach unsuspecting, T2 they investigate it first, T3 they withdraw and set an ambush or gather allies') : null,
-        el('span', { class: 'fine', text: 'A surprised side takes no turn in round 1, and attacks against it get +1.' })]),
-      cues.length ? el('div', { class: 'run-cues' }, cues.map(function (q) { return el('div', { class: 'cue ' + q[0], text: q[1] }); })) : null,
-      el('div', { class: 'row center', style: 'margin:.4rem 0' }, [
-        el('span', { class: 'fine', text: them.length ? up.length + ' of ' + plural(them.length, 'foe') + ' standing' : 'No foes in the tracker.' }),
-        el('span', { class: 'spacer' }),
-        btn('Encounter check (loud noise, EN ' + dungeonEN() + ')', function () {
-          var s = S(), res = encounterCheck('Loud noise during ' + (e.name || 'the encounter'), dungeonEN(), s.table === 'none' ? null : s.table);
-          ui.lastEnc = res; if (res.hit && !res.immediate) s.pending = pendingFrom(res);
-          if (res.hit) toast(res.immediate ? 'More creatures arrive now: see the Session tab.' : 'Something else is coming: see the Session tab.');
-          save(); render();
-        }, 'btn-small btn-ghost', 'Encounters can happen even mid-combat')])
-    ].concat(combatUI(true), [
-      beasts.length ? more('Creature notes (likes, hates, how they fight)', types.map(function (t) { return REF.TYPE_NOTES[t] ? el('p', null, [el('b', { text: t + 's: ' }), REF.TYPE_NOTES[t]]) : null; })
-        .concat([el('div', { class: 'beast-list' }, beasts.map(beastCard))])) : null,
-      field('Ref notes', area(e, 'notes', { rows: 2, placeholder: 'Tactics, loot, how it went…' })),
-      el('div', { class: 'run-end' }, [
-        el('h4', { text: 'End the encounter' }),
-        el('div', { class: 'row center' }, [
-          field('How it ended', sel(end, 'outcome', ENC_OUTCOMES, { re: false })),
-          chk(end, 'resolve', 'Mark it resolved', { re: false }),
-          el('span', { class: 'spacer' }),
-          btn('End encounter', function () { endEncounter(e, end.outcome, end.resolve); }, 'btn-primary', 'Write the result into the encounter\'s notes and clear the combat tracker'),
-          btn('Award treasure XP', function () { ui.award = { gc: 0, greed: greedBonus(), players: activePCs().length || 1, what: e.name || '' }; setTab('party'); setTimeout(function () { $('sec-xp').scrollIntoView(); }, 0); }, 'btn-ghost', 'Open the Experience card in the Party tab for this encounter\'s treasure'),
-          btn('Stop without a result', function () { cancelRun(e); }, 'btn-ghost btn-danger')]),
-        el('p', { class: 'fine', text: 'Ending writes the outcome, the rounds, who fell, who\'s still standing, the crows\' Stamina and wounds, and the corpses to harvest into the notes, then clears the tracker.' })])
-    ]));
-  }
-  function encCard(e) {
-    var s = S(), due = !!(s.pending && s.pending.encId === e.id);
-    var creatures = e.creatures.map(function (c) {
-      return el('div', { class: 'li-row' }, [beastSelect(c.n, function (v) { c.n = v; save(); }),
-        inp(c, 'k', { type: 'number', min: 1, max: 30, class: 'tiny', 'aria-label': 'How many' }, { dflt: 1 }),
-        sel(c, 'side', [['foe', 'Foe'], ['ally', 'Ally']], { class: 'in mini', label: 'Side', re: false }),
-        el('button', { type: 'button', class: 'x', text: '×', 'aria-label': 'Remove ' + c.n, onclick: function () { e.creatures = e.creatures.filter(function (x) { return x !== c; }); save(); render(); } })]);
-    });
-    return el('details', { class: 'enc' + (e.done ? ' done' : '') + (due ? ' due' : '') + (ui.encFocus === e.id ? ' focus' : ''), id: 'enc-' + e.id, open: ui.encOpen[e.id] || null,
-      ontoggle: function () { ui.encOpen[e.id] = this.open; } }, [
-      el('summary', null, [
-        el('span', { class: 'enc-name', text: e.name || 'Untitled encounter' }),
-        runningEnc() === e ? el('span', { class: 'chip warn', text: 'running' }) : null,
-        due ? el('span', { class: 'chip accent', text: 'due this DT' }) : null,
-        e.done ? el('span', { class: 'chip ok', text: 'resolved' + (e.outcome ? ': ' + e.outcome.toLowerCase() : '') }) : null,
-        el('span', { class: 'enc-sum', text: [encSummary(e), e.where, 'session ' + e.session + (e.dt ? ', DT ' + e.dt : '')].filter(Boolean).join(' · ') })]),
-      runningEnc() === e ? el('div', { class: 'enc-body' }, [el('p', { class: 'fine' }, ['Running now: its notes and creatures are in the card at the top of this tab. ',
-        el('a', { href: '#sec-enc-run', class: 'enc-link', onclick: function (ev) { ev.preventDefault(); $('sec-enc-run').scrollIntoView({ block: 'start' }); }, text: 'Go to the fight' })])]) :
-      el('div', { class: 'enc-body' }, [
-        el('div', { class: 'li-row' }, [inp(e, 'name', { placeholder: 'Name', 'aria-label': 'Encounter name' }, { re: true }), inp(e, 'where', { placeholder: 'Where (place, hex, room)', 'aria-label': 'Where' }, { re: true })]),
-        el('div', { class: 'fine', text: e.src + ' · ' + (e.roll || 'made ' + e.made) }),
-        field('What happens', area(e, 'text', { rows: 3, placeholder: 'Set-up, signs of their approach, what they want…' })),
-        el('h4', { text: 'Creatures' }),
-        creatures.length ? el('div', { class: 'enc-cre' }, creatures) : el('p', { class: 'fine', text: 'No creatures yet.' }),
-        el('div', { class: 'row' }, [btn('Add creature', function () { e.creatures.push({ n: ui.addName || 'Blood Creature A', k: 1, side: 'foe' }); save(); render(); }, 'btn-small btn-ghost')]),
-        field('Ref notes', area(e, 'notes', { rows: 2, placeholder: 'Tactics, loot, how it went…' })),
-        el('div', { class: 'row' }, [runEncBtn(e), encCombatBtn(e, 'btn-small btn-ghost'),
-          due || e.done ? null : btn('Make it due this DT', function () {
-            s.pending = { dt: s.dt, text: encSummary(e) || e.name, adds: e.creatures.map(function (c) { return [c.n, c.k, null]; }), encId: e.id };
-            log('enc', 'Encounter due this DT: **' + (e.name || 'untitled') + '**.'); save(); render(); toast('Shown in the Dungeon Turn block.');
-          }, 'btn-small', 'Show it in the Dungeon Turn block as the encounter due this DT'),
-          btn(e.done ? 'Reopen' : 'Mark resolved', function () {
-            e.done = !e.done; if (e.done && due) s.pending = null; save(); render();
-          }, 'btn-small btn-ghost'),
-          btn('Duplicate', function () {
-            var c = clone(e); c.id = nid(); c.name = (e.name || 'Encounter') + ' (copy)'; c.done = false; delete c.outcome; c.made = today() + ' ' + nowStamp();
-            state.encounters.splice(state.encounters.indexOf(e), 0, c); ui.encOpen[c.id] = true; save(); render();
-          }, 'btn-small btn-ghost'),
-          btn('Delete', function () {
-            if (!confirm('Delete ' + (e.name || 'this encounter') + '?')) return;
-            state.encounters = state.encounters.filter(function (x) { return x !== e; }); if (due) s.pending.encId = null;
-            if (s.combat.encId === e.id) { s.combat.encId = null; s.combat.surprise = 'none'; }
-            save(); render();
-          }, 'btn-small btn-ghost btn-danger')])
-      ])
-    ]);
-  }
-
-  // ------------------------------------------------------------------ Travel tab
-  function renderTravel() {
-    var t = state.travel, calc = travelCalc();
-    card('sec-travel-day', el('h2', null, ['Overland Travel', el('small', { text: 'day ' + t.day })]), [
-      el('p', { class: 'hint', text: 'Each day: set the pace; role tests (supporters, guides, scouts, trackers); encounter check; explore the destination or a POI in DTs; rest; each human rolls a Miasma RR after resting. Hexes are 5 miles.' }),
-      el('div', { class: 'grid3' }, [
-        field('Pace', sel(t, 'pace', Object.keys(REF.PACES).map(function (k) { return [k, k + ' (' + REF.PACES[k].hex + ' hex, EN ' + REF.PACES[k].en + ')']; }))),
-        field('Slowest speed in the group', inp(t, 'speed', { type: 'number', min: 0, max: 20 }, { re: true, dflt: 5 })),
-        field('Water', sel(t, 'water', [['none', 'None'], ['against', 'Crossing major water / upstream (-1 hex)'], ['down', 'Downstream (+1 hex)']])),
-        field('Weather today', sel(t, 'weather', [['', 'Fair']].concat(Object.keys(REF.WEATHER).map(function (w) { return [w, w]; })))),
-        field('Hex adjustment (roles)', inp(t, 'hexAdj', { type: 'number', min: -5, max: 5 }, { re: true })),
-        field('Travel EN adjustment (roles)', inp(t, 'enAdj', { type: 'number', min: -5, max: 5 }, { re: true })),
-        field('Rest EN adjustment (roles)', inp(t, 'restEnAdj', { type: 'number', min: -5, max: 5 }, { re: true })),
-        el('div', { class: 'checks span2' }, [chk(t, 'road', 'On a road all day'), chk(t, 'inMiasma', 'In the Miasma'), chk(t, 'beacon', 'Only beacon-protected hexes'), chk(t, 'strong', 'Strong Miasma today')])
-      ]),
-      el('div', { class: 'stat-row', style: 'margin-top:.7rem' }, [
-        el('div', { class: 'stat big hot' }, [el('div', { class: 'lbl', text: 'Hexes today' }), el('div', { class: 'val', text: String(calc.hex) })]),
-        el('div', { class: 'stat big' }, [el('div', { class: 'lbl', text: 'Travel EN' }), el('div', { class: 'val', text: String(calc.en) })]),
-        el('div', { class: 'stat big' }, [el('div', { class: 'lbl', text: 'Rest EN' }), el('div', { class: 'val', text: String(calc.restEn) })])
-      ]),
-      el('p', { class: 'fine', text: [calc.paceNote ? t.pace + ' pace: ' + calc.paceNote : ''].concat(calc.notes).filter(Boolean).join(' · ') + (t.weather ? ' · ' + REF.WEATHER[t.weather].txt : '') }),
-      t.strong ? el('div', { class: 'banner warn', text: 'Strong Miasma: ' + REF.STRONG_MIASMA }) : null,
-      el('div', { class: 'row', style: 'margin-top:.6rem' }, [
-        btn('Travel encounter check (EN ' + calc.en + ')', function () { ui.travelEnc = encounterCheck('Travel day ' + t.day, calc.en, 'Travel'); save(); render(); }, 'btn-primary'),
-        btn('Next day', function () {
-          log('dt', '**Travel day ' + t.day + ' ends.** ' + calc.hex + ' hexes at a ' + t.pace.toLowerCase() + ' pace' + (t.weather ? ', ' + t.weather.toLowerCase() : '') + '.');
-          t.day += 1; t.hexAdj = 0; t.enAdj = 0; t.restEnAdj = 0; t.weather = ''; t.strong = false; save(); render();
-        }),
-        btn('Set up an outdoor rest', function () { S().rest.where = 'outdoors'; save(); setTab('session'); }, 'btn-ghost')
-      ]),
-      ui.travelEnc ? encounterResultBox(ui.travelEnc, function () { ui.travelEnc = null; render(); }) : null,
-      el('h3', { text: 'Lost?' }),
-      el('div', { class: 'row center' }, [chk(t, 'lost', 'The group is lost (secret)'),
-        t.lost ? btn('They leave a hex: roll secret direction', function () {
-          var r = d(6); ui.lostDir = 'd6 = ' + r + ': they actually enter the hex to the ' + REF.DIRECTIONS[r] + '.';
-          log('secret', '(Ref only) Lost: they enter the hex to the ' + REF.DIRECTIONS[r] + ' (d6 = ' + r + ').'); render();
-        }) : null]),
-      t.lost && ui.lostDir ? el('div', { class: 'result', text: ui.lostDir }) : null,
-      el('p', { class: 'fine', text: 'While lost, the Ref tracks the group secretly. Each hex they leave, roll 1d6 counting clockwise from north (1 N, 2 NE, 3 SE, 4 S, 5 SW, 6 NW). A guide can try Back on Track at the start of a day; a map, a recognizable place, or an NPC\'s directions also help.' })
-    ]);
-
-    card('sec-travel-enc', el('h2', null, ['Travel Encounters', el('small', { text: 'd100, any time in the travel day' })]), [
-      el('div', { class: 'grid3' }, [
-        field('Climate / season', sel(t, 'climate', Object.keys(REF.WEATHER_BY_CLIMATE))),
-        field('Habitat', sel(t, 'habitat', Object.keys(REF.HABITATS))),
-        field('Nearest dungeon type', sel(t, 'nearby', [['Undead', 'Undead'], ['Blood Creatures', 'Blood creatures'], ['other', 'Other (Ref\'s choice)']]))
-      ]),
-      el('div', { class: 'row', style: 'margin-top:.6rem' }, [
-        btn('Roll travel encounter', function () { var r = rollTravelEncounter(); ui.travelRoll = r; log('enc', r.summary); render(); }, 'btn-primary'),
-        btn('Bad weather', function () { var w = rollWeather(); ui.travelRoll = { roll: '—', kind: 'Bad Weather', lines: [w.text], adds: [] }; t.weather = w.name; log('', w.text); save(); render(); }),
-        btn('Wild animal', function () { var w = rollWildAnimal(t.habitat); ui.travelRoll = { roll: '—', kind: 'Wild Animal', lines: w.lines, adds: w.adds }; log('', 'Wild animal: ' + w.lines.join(' ')); render(); }),
-        btn('Travelers', function () { var w = rollTravelers(); ui.travelRoll = { roll: '—', kind: 'Traveler', lines: w.lines, adds: w.adds }; log('', 'Travelers: ' + w.lines.join(' ')); render(); }),
-        btn('Miasma-touched', function () { var w = rollMiasmaTouched(); ui.travelRoll = { roll: '—', kind: 'Miasma-Touched', lines: w.lines, adds: w.adds }; log('', 'Miasma-touched: ' + w.lines.join(' ')); render(); }),
-        btn('Merchant', function () { var w = rollMerchant(); ui.travelRoll = { roll: '—', kind: 'Merchant', lines: w.lines, adds: w.adds }; log('', 'Merchant: ' + w.lines.join(' ')); render(); })
-      ]),
-      ui.travelRoll ? el('div', { class: 'result' }, [travelResultBox(ui.travelRoll)]) : null,
-      more('The travel encounter table', [rowsTable(REF.TRAVEL_ENCOUNTERS, 'd100', ui.travelRoll && typeof ui.travelRoll.roll === 'number' ? ui.travelRoll.roll : null),
-        el('p', { class: 'fine', text: 'Check after role tests; the Ref picks the time and may add more checks. POIs are explored in DTs using the day\'s EN.' })])
-    ]);
-
-    renderMiasma('sec-miasma');
-
-    card('sec-travel-roles', 'Travel Roles', [
-      el('p', { class: 'hint', text: 'Any role may be vacant; up to 3 per role doing different tasks (guide only 1); others may assist. Resolve in order: supporters, guides, scouts, trackers.' }),
-      el('div', { class: 'tbl-wrap' }, [el('table', { class: 'tbl' }, [
-        el('thead', null, [el('tr', null, ['Role', 'Task', 'Test', 'Tier 1', 'Tier 2', 'Tier 3'].map(function (h) { return el('th', { text: h }); }))]),
-        el('tbody', null, REF.TRAVEL_ROLES.map(function (r) { return el('tr', null, r.map(function (x, i) { return el('td', { class: i === 0 ? 'n' : '', text: x }); })); }))
-      ])])
-    ]);
-  }
-  function renderMiasma(id) {
-    var t = state.travel, pcs = activePCs();
-    card(id, el('h2', null, ['Miasma', el('small', { text: 'RRs after each rest in the Miasma' })]), [
-      el('p', { class: 'hint', text: REF.MIASMA_RULES }),
-      el('div', { class: 'row center' }, [el('span', { class: 'fine', text: 'Modifier for today\'s RRs (Fight the Miasma: edge / double edge; Strong Miasma: bane)' }), segEB(t, 'miasmaMod')]),
-      pcs.length ? el('div', { class: 'list' }, pcs.map(function (p) {
-        var net = t.miasmaMod + (t.strong ? -1 : 0);
-        net = clamp(net, -2, 2);
-        return el('div', { class: 'li' }, [el('div', { class: 'li-main' }, [
-          el('div', null, [el('b', { text: p.name || 'Crow' }), ' · M ' + signed(p.M) + ' · cruelty ' + (p.cruelty || 0) + ' (RR ' + signed(p.M - (p.cruelty || 0)) + ')']),
-          p.miasma.length ? el('div', { class: 'fine', text: p.miasma.map(function (k) { var row = lookup(REF.MIASMA_EFFECTS, k); return row[2].split(':')[0] + ' / ' + row[3]; }).join(' · ') }) : null
-        ]), el('div', { class: 'li-row' }, [
-          btn('Roll RR', function () { var r = test(p.M - (p.cruelty || 0), net); miasmaOutcome(p, r.tier, '(' + testLine(r) + ')'); }, 'btn-small btn-primary'),
-          btn('T1', function () { miasmaOutcome(p, 1); }, 'btn-small', 'Player rolled tier 1'),
-          btn('T2', function () { miasmaOutcome(p, 2); }, 'btn-small', 'Player rolled tier 2'),
-          btn('T3', function () { miasmaOutcome(p, 3); }, 'btn-small', 'Player rolled tier 3'),
-          btn('Clear cruelty', function () { clearCruelty(p); }, 'btn-small btn-ghost', 'Rested without Miasma, or a T3 removed it')
-        ])]);
-      })) : el('p', { class: 'hint', text: 'Add crows in the Party tab to roll their Miasma RRs here.' }),
-      more('Miasma effects table (1d10 + cruelty)', [rowsTable(REF.MIASMA_EFFECTS, '1d10+cruelty', null, function (r) { return r[2] + ' + ' + r[3]; })])
-    ]);
+  function endCycle() {
+    var v = state.village, before = v.prosperity, change = 0, notes = [];
+    if (v.upgrades > 0) { change += v.upgrades; notes.push(v.upgrades + ' founded/upgraded'); }
+    if (v.spent10k) { change += 1; notes.push('10,000+ gc spent at merchants'); }
+    if (!change) { change = -1; notes.push('nothing raised it'); }
+    v.prosperity = clamp(before + change, -10, 10);
+    var opened = [];
+    v.inst.forEach(function (i) { if (i.pending) { i.level = Math.min(maxLevel(i.type), i.level + i.pending); i.pending = 0; opened.push(i.type + (i.isNew ? ' opens' : ' reaches level ' + i.level)); } i.isNew = false; i.closed = false; });
+    var r = d(10), total = r + v.prosperity, ev = lookup(REF.VILLAGE_EVENTS, total)[2], who = [];
+    if (/merchant/i.test(ev)) { var m = randomInst('merchant'); if (m) who.push('merchant: ' + m); }
+    if (/artisan/i.test(ev)) { var a = randomInst('artisan'); if (a) who.push('artisan: ' + a); }
+    if (/institution/i.test(ev) && !/institution the crows/.test(ev)) { var ii = randomInst(''); if (ii) who.push('institution: ' + ii); }
+    if (/crow's quarters/.test(ev) && activePCs().length) who.push('crow: ' + (pick(activePCs()).name || 'a crow'));
+    v.saleMod = 0;
+    if (/Sale percentage -5%/.test(ev)) v.saleMod = -5;
+    if (/Sale percentage \+5%/.test(ev)) v.saleMod = 5;
+    v.event = 'Cycle ' + (v.cycle + 1) + ' event (d10 ' + r + ' + Prosperity ' + v.prosperity + ' = ' + total + '): ' + ev + (who.length ? ' (' + who.join('; ') + ')' : '');
+    log('dt', '**End of village cycle ' + v.cycle + '.** Prosperity ' + before + ' → ' + v.prosperity + ' (' + notes.join(', ') + ').' + (opened.length ? ' ' + opened.join('; ') + '.' : '') + ' Merchants restock. ' + v.event);
+    v.cycle += 1; v.day = 1; v.upgrades = 0; v.spent10k = false;
+    save(); render();
   }
 
   // ------------------------------------------------------------------ Village tab
@@ -4805,6 +4946,178 @@ CROWS.NAME_IDEAS = {
     ]);
   }
 
+  A.add({ instDef: instDef, maxLevel: maxLevel, randomInst: randomInst, endCycle: endCycle, renderVillage: renderVillage, instRow: instRow });
+})();
+
+</script>
+<script>
+/*
+ * Ref Screen: the party: crows imported from files or linked to players’ sheets (sheetOp sends changes to them), inviting
+ * players, Party status, XP awards and claims, hirelings, and the ledger. See ref-core.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsRefApp, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var activePCs = f('activePCs'), area = f('area'), beast = f('beast'), btn = f('btn'), card = f('card'), clamp = f('clamp'), damage = f('damage'),
+      field = f('field'), greedBonus = f('greedBonus'), inp = f('inp'), log = f('log'), lookup = f('lookup'), more = f('more'), nextES = f('nextES'),
+      nid = f('nid'), pullVitals = f('pullVitals'), render = f('render'), S = f('S'), save = f('save'), sel = f('sel'), today = f('today');
+  var $ = A.$, charBonusCount = A.charBonusCount, clone = A.clone, el = A.el, esBonusCount = A.esBonusCount, fmt = A.fmt, inv = A.inv, live = A.live,
+      plural = A.plural, toast = A.toast, ui = A.ui;
+  var state = A.state; A.share('state', function (v) { state = v; });
+  var tab = A.tab; A.share('tab', function (v) { tab = v; });
+
+  // ------------------------------------------------------------------ import a character file from the character generator
+  function importCharacter(s) {
+    var pc = pcFromSave(s);
+    var existing = state.party.filter(function (p) { return p.name && p.name === pc.name; })[0];
+    if (existing) {
+      pc.id = existing.id; pc.miasma = existing.miasma || []; pc.ad = existing.ad || 0;
+      if (existing.link) { pc.link = existing.link; pc.owner = existing.owner; }
+      state.party[state.party.indexOf(existing)] = pc;
+      return pc.name + ' (updated)';
+    }
+    state.party.push(pc);
+    return pc.name || 'a crow';
+  }
+  /* A party entry built from a Character Generator save. */
+  function pcFromSave(s) {
+    if (!s || s.v !== 1 || typeof s.bg !== 'number' || !REF.BACKGROUNDS[s.bg]) throw new Error('not a Crows character file');
+    var bg = REF.BACKGROUNDS[s.bg], two = bg[1].indexOf(s.twoChar) >= 0 ? s.twoChar : bg[1][0];
+    var others = REF.CHARS.filter(function (c) { return c !== two; });
+    var high = others.indexOf(s.highChar) >= 0 ? s.highChar : others[0], low = others[0] === high ? others[1] : others[0];
+    var v = {}; v[two] = 2;
+    if (s.pattern === 'm12') { v[high] = 2; v[low] = -1; } else { v[high] = 1; v[low] = 0; }
+    var extra = 0;
+    (s.charBonus || []).forEach(function (c) { if (!c) return; if (REF.CHARS.every(function (k) { return v[k] >= 4; })) { extra += 2; return; } if (v[c] < 4) v[c]++; });
+    var stMax = bg[2] + extra;
+    (s.esBonus || []).forEach(function (o) { if (o === 'stamina') stMax += 2; else if (o === 'mix') stMax += 1; });
+    var play = s.play || {};
+    var pc = { id: nid(), name: s.name || '', player: s.player || '', bg: bg[0], feature: s.feature || '', A: v.Agility, M: v.Mind, S: v.Strength,
+      stMax: stMax, st: typeof play.stamina === 'number' ? clamp(play.stamina, 0, stMax) : stMax, ad: 0,
+      wounds: play.wounds ? Object.keys(play.wounds).length : 0, cruelty: play.cruelty | 0, txp: s.txp | 0, pending: play.pendingXP | 0,
+      status: 'active', conn: s.connName || '', rel: s.connRel || '', benefit: s.connBenefit || '', miasma: [], notes: s.notes || '',
+      conds: play.conds && typeof play.conds === 'object' && !Array.isArray(play.conds) ? clone(play.conds) : {},
+      claims: (Array.isArray(play.xpClaims) ? clone(play.xpClaims) : []).filter(function (c) {   // treasure the player asks the Ref to award XP for
+        return c && (play.claimsAnswered || []).indexOf(c.id) < 0;
+      }) };
+    return pc;
+  }
+
+  // ------------------------------------------------------------------ crows linked to a player's account
+  /*
+   * A player can share a character with a link (from their character list). Added here, the crow stays tied
+   * to the player's sheet: Party status shows its live vitals, "Open sheet" shows the whole thing, where the Ref
+   * can change the vitals, equipment, and notes, and the party entry refreshes from the sheet about a second
+   * after the player changes it. Combat, rests, Miasma RRs, and XP awards here reach the sheet too (sheetOp).
+   * Needs the Ref to be logged in on the hosted site.
+   */
+  function cloudOn() { return !!(window.CrowsCloud && window.CrowsCloud.active); }
+  function linkToken(text) { var m = /(?:share=|addlink=)?([0-9a-f]{64})/.exec(String(text || '').trim()); return m ? m[1] : null; }
+  /* Add or refresh a linked crow from the server's copy. Ref-side bookkeeping (status, AD, Miasma, Ref notes) is kept. */
+  function linkPC(item) {
+    var pc = pcFromSave(item.data), existing = state.party.filter(function (p) { return p.link === item.id; })[0];
+    pc.link = item.id; pc.owner = item.owner || '';
+    if (existing) {
+      ['id', 'status', 'ad', 'miasma', 'notes', 'owed'].forEach(function (k) { if (k in existing) pc[k] = existing[k]; });
+      (pc.owed || []).forEach(function (o) { applyOp(pc, o); });
+      // A crow already in the combat tracker picks up the sheet's Stamina and wounds.
+      if (S() && S().combat) S().combat.list.forEach(function (c) {
+        if (c.kind !== 'pc' || c.pcId !== pc.id) return;
+        c.st = Math.min(pc.st, c.stMax); c.wounds = pc.wounds; c.conds = clone(pc.conds || {});
+        if (!c.conds.Grabbed) delete c.grabbedBy;
+      });
+      state.party[state.party.indexOf(existing)] = pc;
+      if (S() && S().combat) S().combat.list.forEach(function (c) { if (c.kind === 'pc' && c.pcId === pc.id) pullVitals(c); });
+    } else state.party.push(pc);
+    watchLinked(item);
+    return pc;
+  }
+  /* Refresh the party entry soon after the player's sheet changes (not while the Ref is typing). */
+  function watchLinked(item) {
+    var C = window.CrowsCloud, key = 'link-' + item.id;
+    if (!C || !C.watch) return;
+    C.watch(key, item.watch, item.version, function () {
+      var p = state.party.filter(function (x) { return x.link === item.id; })[0];
+      if (!p) { C.watch(key, null); return; }
+      if (C.typing) return;
+      return refreshLinked(p, true);
+    });
+  }
+  function addFromLink(text) {
+    var tok = linkToken(text);
+    if (!tok) { toast('That doesn\'t look like a character link. Ask the player to copy it again from their character list.'); return Promise.resolve(); }
+    return window.CrowsCloud.api('POST', 'link.redeem', '', { token: tok }).then(function (j) {
+      var pc = linkPC(j.item);
+      log('', 'Added ' + (pc.name || 'a crow') + ' (' + pc.owner + '\u2019s character) to the party.');
+      save(); render(); toast('Added ' + (pc.name || 'the crow') + '.');
+    }, function (e) { toast(e.message); });
+  }
+  function refreshLinked(p, quiet) {
+    return window.CrowsCloud.api('GET', 'link.get', 'id=' + p.link).then(function (j) {
+      linkPC(j.item); save(); render(); if (!quiet) toast('Updated ' + (j.item.name || 'the crow') + ' from the sheet.');
+    }, function (e) {
+      if (e.status === 404) window.CrowsCloud.watch('link-' + p.link, null);
+      if (!quiet || e.status === 404) toast((p.name || 'A crow') + ': ' + e.message);
+    });
+  }
+  function unlinkPC(p, quietly) {
+    var id = p.link;
+    if (window.CrowsCloud) window.CrowsCloud.watch('link-' + id, null);
+    delete p.link; delete p.owner; save(); render();
+    if (cloudOn()) window.CrowsCloud.api('POST', 'link.remove', '', { id: id }).then(function () { if (!quietly) toast('Unlinked. The crow stays in the party as a copy.'); }, function () { /* already gone */ });
+  }
+  /*
+   * The Ref changing a crow's sheet numbers (XP, Stamina, wounds, cruelty, the end of a DT or a rest; see CrowsPlay.refChange): the party
+   * entry changes at once, and a linked crow's change goes onto the player's sheet through its Party status frame.
+   * If that frame isn't loaded yet, the change waits in p.owed and is delivered as soon as the frame reports in;
+   * until then it's replayed over each refresh from the sheet, so it doesn't flicker away.
+   */
+  function applyOp(p, o) {
+    if (o.rest) {   // the sheet does the whole rest (ration, uses, recharges); this is just the party entry's numbers
+      p.st = p.stMax; p.wounds = Math.max(0, (p.wounds || 0) - 1);
+      if (o.rest.xp) { p.txp = (p.txp || 0) + (p.pending || 0); p.pending = 0; }
+    }
+    if (o.claims && p.claims) p.claims = p.claims.filter(function (c) { return o.claims.indexOf(c.id) < 0; });
+    if (o.xp) p.pending = (p.pending || 0) + o.xp;
+    if (o.apply) { p.txp = (p.txp || 0) + (p.pending || 0); p.pending = 0; }
+    if (o.full) p.st = p.stMax;
+    if (o.st) p.st = clamp((p.st || 0) + o.st, 0, p.stMax);
+    if (o.wounds) p.wounds = clamp((p.wounds || 0) + o.wounds, 0, 10);
+    if (o.cruelty) p.cruelty = Math.max(0, (p.cruelty || 0) + o.cruelty);
+    if (typeof o.setCruelty === 'number') p.cruelty = o.setCruelty;
+    if (o.cond) { p.conds = p.conds || {}; Object.keys(o.cond).forEach(function (k) { if (o.cond[k]) p.conds[k] = true; else delete p.conds[k]; }); }
+  }
+  function sheetWin(p) {
+    var f = p.link && statusFrames[p.link];
+    // Only once the player's character is in the frame (before that it holds this browser's own character).
+    try { var w = f && f.frame.contentWindow; return w && w.CrowsPlay && w.CrowsPlay.refChange && w.CrowsRefView && w.CrowsRefView.loaded ? w : null; } catch (e) { return null; }
+  }
+  function sheetOp(p, o) {
+    applyOp(p, o);
+    if (!p.link || !cloudOn()) return;
+    (p.owed = p.owed || []).push(o);
+    flushOps(p);
+  }
+  function flushOps(p) {
+    var w = sheetWin(p);
+    if (!w || !p.owed || !p.owed.length) return;
+    p.owed.forEach(function (o) { w.CrowsPlay.refChange(o); });
+    delete p.owed; save();
+  }
+  function openSheet(p) { window.open('play?link=' + encodeURIComponent(p.link), '_blank', 'noopener'); }
+  /* Play a linked crow yourself, as if its player had handed it to you (they're told, and can take it back). */
+  function takeControl(p) {
+    if (!confirm('Take control of ' + (p.name || 'this crow') + '? You can open, edit, and play the whole sheet until ' + (p.owner || 'the player') +
+      ' takes it back. They\u2019re told. Hand it back from Handed to you in My characters.')) return;
+    var w = window.open('', '_blank');   // opened now, while the click still counts, so it isn't blocked as a pop-up
+    window.CrowsCloud.api('POST', 'control.claim', '', { id: p.link }).then(function (j) {
+      if (w) w.location.href = new URL('play?id=' + j.characterId, location.href).href; else toast('You have control of ' + (p.name || 'the crow') + '. Open it from My characters.');
+    }, function (e) { if (w) w.close(); toast(e.message); });
+  }
+  function takeBtn(p) { return btn('Take control', function () { takeControl(p); }, 'btn-small btn-ghost', 'Play this crow yourself, say for a session its player will miss'); }
+  function newPC() { return { id: nid(), name: '', player: '', bg: '', feature: '', A: 0, M: 0, S: 0, stMax: 7, st: 7, ad: 0, wounds: 0, cruelty: 0, txp: 0, pending: 0, status: 'active', conn: '', rel: '', benefit: '', miasma: [], notes: '' }; }
+
   // ------------------------------------------------------------------ Party tab
   // ------------------------------------------------------------------ inviting players
   /*
@@ -4813,7 +5126,6 @@ CROWS.NAME_IDEAS = {
    * the server writes for each new request). Accepting links the crow, just as a character link would.
    * The Ref can also list the campaign in Find a campaign, with a short note, so players can ask without a link.
    */
-  var inv = { id: null, loading: false, hasLink: false, link: '', listed: false, note: '', draft: null, requests: [], latest: 0, at: 0 };
   function loadInvites() {
     var id = window.CrowsCloud && window.CrowsCloud.recordId;
     if (!cloudOn() || !id || inv.loading) return Promise.resolve();
@@ -5012,6 +5324,7 @@ CROWS.NAME_IDEAS = {
     var total = Math.round(aw.gc * (1 + aw.greed / 100)), each = aw.players ? Math.floor(total / aw.players) : 0;
     card('sec-xp', el('h2', null, ['Experience', el('small', { text: 'XP = treasure value / number of players' })]), [
       el('p', { class: 'hint', text: 'XP comes from treasure and equipment recovered outside a village (not bought, crafted by the group, taken from an innocent human, or originally an ally\'s). Unique items give the XP on their card. XP can be spent, and bonuses gained, only after finishing a rest.' }),
+      claimsBox(),
       el('div', { class: 'grid3' }, [
         field('Treasure value (gc) or card XP', inp(aw, 'gc', { type: 'number', min: 0, max: 9999999 }, { re: true })),
         field('Greed bonus', sel(aw, 'greed', [[0, 'none'], [10, '+10% (DT 3)'], [20, '+20% (DT 2)'], [30, '+30% (DT 1)']], { num: true })),
@@ -5021,7 +5334,9 @@ CROWS.NAME_IDEAS = {
       el('div', { class: 'row center', style: 'margin-top:.6rem' }, [el('span', null, ['Total ', el('b', { text: fmt(total) + ' gc' }), ' → ', el('b', { text: fmt(each) + ' XP' }), ' per crow']),
         btn('Award as pending XP', function () {
           if (!each) return;
-          activePCs().forEach(function (p) { sheetOp(p, { xp: each, desc: aw.what || 'Treasure', gc: total, n: aw.players }); });
+          var answered = aw.claims || [];   // the players' claims this award answers
+          activePCs().forEach(function (p) { sheetOp(p, claimOp(p, answered, { xp: each, desc: aw.what || 'Treasure', gc: total, n: aw.players })); });
+          state.party.forEach(function (p) { if (activePCs().indexOf(p) < 0 && claimOp(p, answered, {}).claims) sheetOp(p, claimOp(p, answered, {})); });
           state.xpLog.push({ date: today(), session: S().n, what: aw.what, gc: total, each: each });
           log('', 'XP: ' + (aw.what || 'treasure') + ' worth ' + fmt(total) + ' gc → **' + fmt(each) + ' XP** each (applies after the next rest).');
           ui.award = null; save(); render();
@@ -5065,6 +5380,35 @@ CROWS.NAME_IDEAS = {
    * Miasma, notes, and a linked crow's sheet actions) is under "More", which stays open across renders.
    */
   var PC_STATUSES = [['active', 'Active'], ['away', 'Sitting out'], ['dead', 'Dead'], ['retired', 'Retired'], ['lost', 'Lost to the Miasma']];
+  /*
+   * Treasure the players logged on their sheets while in this campaign (Play > Experience): XP is the Ref's to award.
+   * "Use" fills in the award form (with every claim for the same treasure); the award then answers them. "Dismiss" answers without XP.
+   */
+  function allClaims() {
+    var out = [];
+    state.party.forEach(function (p) { (p.claims || []).forEach(function (c) { out.push({ p: p, c: c }); }); });
+    return out;
+  }
+  function claimOp(p, answered, op) {
+    var ids = answered.filter(function (a) { return a.pc === p.id; }).map(function (a) { return a.id; });
+    if (ids.length) op.claims = ids;
+    return op;
+  }
+  function claimsBox() {
+    var list = allClaims();
+    if (!list.length) return null;
+    return el('div', { class: 'pending' }, [el('b', { text: 'XP claims from players' }), el('ul', { class: 'claims' }, list.map(function (x) {
+      var same = list.filter(function (y) { return y.c.desc.toLowerCase() === x.c.desc.toLowerCase() && y.c.gc === x.c.gc; });
+      return el('li', null, [(x.p.name || 'A crow') + (x.p.owner ? ' (' + x.p.owner + ')' : '') + ': ' + x.c.desc + ', ' + fmt(x.c.gc) + ' gc split ' + x.c.n + ' ways' +
+        (same.length > 1 ? ' (claimed by ' + same.length + ' crows)' : '') + ' ',
+        btn('Use', function () {
+          ui.award = { gc: x.c.gc, greed: ui.award ? ui.award.greed : greedBonus(), players: x.c.n || activePCs().length || 1, what: x.c.desc,
+            claims: same.map(function (y) { return { pc: y.p.id, id: y.c.id }; }) };
+          render();
+        }, 'btn-small', 'Fill in the award below with this treasure'),
+        btn('Dismiss', function () { sheetOp(x.p, { claims: [x.c.id] }); log('', 'Dismissed ' + (x.p.name || 'a crow') + '\u2019s XP claim for ' + x.c.desc + '.'); save(); render(); }, 'btn-small btn-ghost', 'Answer the claim without XP')]);
+    }))]);
+  }
   function pcHead() {
     return el('div', { class: 'pc-head', 'aria-hidden': 'true' }, ['Crow', 'A', 'M', 'S', 'Stamina', 'AD', 'Wounds', 'Cruelty', 'Pending XP', ''].map(function (t) { return el('span', { text: t }); }));
   }
@@ -5114,6 +5458,35 @@ CROWS.NAME_IDEAS = {
       more
     ]);
   }
+
+  A.add({ importCharacter: importCharacter, pcFromSave: pcFromSave, cloudOn: cloudOn, linkToken: linkToken, linkPC: linkPC, watchLinked: watchLinked,
+      addFromLink: addFromLink, refreshLinked: refreshLinked, unlinkPC: unlinkPC, applyOp: applyOp, sheetWin: sheetWin, sheetOp: sheetOp,
+      flushOps: flushOps, openSheet: openSheet, takeControl: takeControl, takeBtn: takeBtn, newPC: newPC, loadInvites: loadInvites,
+      answerRequest: answerRequest, setListing: setListing, listBox: listBox, renderInvite: renderInvite, statusPCs: statusPCs,
+      statusHead: statusHead, localTile: localTile, renderStatus: renderStatus, renderParty: renderParty, allClaims: allClaims, claimOp: claimOp,
+      claimsBox: claimsBox, pcHead: pcHead, pcCard: pcCard, statusFrames: statusFrames, PC_STATUSES: PC_STATUSES });
+})();
+
+</script>
+<script>
+/*
+ * Ref Screen: the World, Bestiary, Tables, and Rules tabs. See ref-core.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsRefApp, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var addCombatant = f('addCombatant'), addsText = f('addsText'), addToCombatBtn = f('addToCombatBtn'), area = f('area'), btn = f('btn'),
+      card = f('card'), chk = f('chk'), clamp = f('clamp'), download = f('download'), field = f('field'), inp = f('inp'), log = f('log'),
+      logItem = f('logItem'), logText = f('logText'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
+      rollDungeonTable = f('rollDungeonTable'), rollInText = f('rollInText'), rollMerchant = f('rollMerchant'),
+      rollMiasmaTouched = f('rollMiasmaTouched'), rollTravelEncounter = f('rollTravelEncounter'), rollTravelers = f('rollTravelers'),
+      rollWeather = f('rollWeather'), rollWildAnimal = f('rollWildAnimal'), rowsTable = f('rowsTable'), S = f('S'), save = f('save'), sel = f('sel'),
+      setTab = f('setTab');
+  var $ = A.$, d = A.d, d100 = A.d100, el = A.el, fmt = A.fmt, pick = A.pick, plural = A.plural, rollDice = A.rollDice, Rules = A.Rules,
+      signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
+  var state = A.state; A.share('state', function (v) { state = v; });
+  var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
   // ------------------------------------------------------------------ World tab
   function renderWorld() {
@@ -5326,6 +5699,28 @@ CROWS.NAME_IDEAS = {
     $('rules-count').textContent = q ? (hits ? plural(hits, 'match') + ' (whole sections shown when a heading matches)' : 'No matches.') : '';
   }
 
+  A.add({ renderWorld: renderWorld, randomNPC: randomNPC, renderBestiary: renderBestiary, beastCard: beastCard, renderTables: renderTables,
+      parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
+})();
+
+</script>
+<script>
+/*
+ * Ref Screen: saving and loading campaign files, and start-up. Loaded last. See ref-core.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsRefApp, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var addFromLink = f('addFromLink'), endDT = f('endDT'), freshState = f('freshState'), importCharacter = f('importCharacter'),
+      isCampaign = f('isCampaign'), linkToken = f('linkToken'), liveChanged = f('liveChanged'), load = f('load'), loadInvites = f('loadInvites'),
+      log = f('log'), pauseTimer = f('pauseTimer'), refreshLinked = f('refreshLinked'), render = f('render'), repairObjects = f('repairObjects'),
+      rollTravelEncounter = f('rollTravelEncounter'), S = f('S'), save = f('save'), setTab = f('setTab'), startNew = f('startNew'),
+      startTimer = f('startTimer'), test = f('test'), tick = f('tick'), withDefaults = f('withDefaults');
+  var $ = A.$, clone = A.clone, el = A.el, TAB_KEY = A.TAB_KEY, TABS = A.TABS, toast = A.toast, ui = A.ui;
+  var state = A.state; A.share('state', function (v) { state = v; });
+  var tab = A.tab; A.share('tab', function (v) { tab = v; });
+
   // ------------------------------------------------------------------ files
   function download(text, name, type) {
     var blob = new Blob([text], { type: type }), a = el('a', { href: URL.createObjectURL(blob), download: name });
@@ -5336,9 +5731,9 @@ CROWS.NAME_IDEAS = {
 
   // ------------------------------------------------------------------ init
   function init() {
-    state = load() || freshState();
-    try { tab = localStorage.getItem(TAB_KEY) || 'session'; } catch (e) { tab = 'session'; }
-    if (!TABS.some(function (t) { return t[0] === tab; })) tab = 'session';
+    A.set('state', load() || freshState());
+    try { A.set('tab', localStorage.getItem(TAB_KEY) || 'session'); } catch (e) { A.set('tab', 'session'); }
+    if (!TABS.some(function (t) { return t[0] === tab; })) A.set('tab', 'session');
     document.body.setAttribute('data-tab', tab);
     // Rearrangeable pages (src/layout.js): each tab is a page of its cards plus the sidebar (timer, dice, log).
     if (window.CrowsLayout) {
@@ -5358,7 +5753,7 @@ CROWS.NAME_IDEAS = {
     $('btn-save').addEventListener('click', function () { download(JSON.stringify(state, null, 1), fileBase() + '_Crows_Campaign.json', 'application/json'); toast('Campaign saved to a file.'); });
     $('btn-new').addEventListener('click', function () {
       if (!confirm('Start a new campaign? Save the current one to a file first if you want to keep it.')) return;
-      startNew(); state = freshState(); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render();
+      startNew(); A.set('state', freshState()); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render();
     });
     $('file-load').addEventListener('change', function () {
       var f = this.files && this.files[0], input = this;
@@ -5369,7 +5764,7 @@ CROWS.NAME_IDEAS = {
           var s = JSON.parse(rd.result);
           if (s && s.v === 1 && typeof s.bg === 'number') throw new Error('that is a character file: import it in the Party tab');
           if (!s || s.v !== 1 || !s.session) throw new Error('not a Crows campaign file');
-          startNew(); state = withDefaults(freshState(), s); ui.lastEnc = null; ui.dice = null; save(); render(); toast('Loaded ' + (state.name || state.village.name || 'campaign') + '.');
+          startNew(); A.set('state', withDefaults(freshState(), s)); ui.lastEnc = null; ui.dice = null; save(); render(); toast('Loaded ' + (state.name || state.village.name || 'campaign') + '.');
         } catch (e) { toast('Could not load that file: ' + e.message); }
         input.value = '';
       };
@@ -5385,8 +5780,8 @@ CROWS.NAME_IDEAS = {
       kind: 'campaigns',
       getData: function () { return state; },
       valid: isCampaign,
-      apply: function (data) { state = repairObjects(withDefaults(freshState(), clone(data))); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render(); },
-      fresh: function () { state = freshState(); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render(); },
+      apply: function (data) { A.set('state', repairObjects(withDefaults(freshState(), clone(data)))); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render(); },
+      fresh: function () { A.set('state', freshState()); ui.lastEnc = null; ui.dice = null; ui.tables = {}; save(); render(); },
       name: function (c) { return c.name || (c.village && c.village.name) || 'Untitled campaign'; },
       onReady: function () {
         loadInvites();   // join requests (and the badge) show whichever tab is open
@@ -5408,6 +5803,9 @@ CROWS.NAME_IDEAS = {
   }
 
   window.CrowsRef = { get state() { return state; }, rollTravelEncounter: rollTravelEncounter, endDT: endDT, test: test, importCharacter: function (s) { var r = importCharacter(s); save(); render(); return r; } };
+
+  A.add({ download: download, fileBase: fileBase, init: init });
+
   init();
 })();
 

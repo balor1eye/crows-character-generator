@@ -1,0 +1,39 @@
+/* The Nest: colours, fonts, and the light/dark themes, shared by the Character Generator, the Ref Screen, and the accounts site. */
+:root {
+  --paper: #f4efe6;
+  --card: #fffdf8;
+  --ink: #1f1d1e;
+  --muted: #6b645c;
+  --line: #d6cfc4;
+  --accent: #8c1c13;
+  --accent-ink: #ffffff;
+  --soft: #ece5d9;
+  --ok: #2f6b3a;
+  --warn: #9a5b00;
+  --bad: #a3231a;
+  --slot: #f7f3ec;
+  --slot-hover: #efe6d6;
+  --sel: #d9a441;
+  --radius: 8px;
+  --shadow: 0 1px 2px rgba(0,0,0,.06), 0 2px 8px rgba(0,0,0,.05);
+  --font: system-ui, -apple-system, "Segoe UI", Roboto, "Helvetica Neue", Arial, sans-serif;
+  --serif: Georgia, "Times New Roman", Times, serif;
+}
+/* Dark: follows the device unless the theme toggle (theme.js) sets data-theme on <html>. */
+:root { color-scheme: light dark; }
+:root[data-theme="light"] { color-scheme: light; }
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --paper: #161415; --card: #211e1f; --ink: #ece6dc; --muted: #a79f94; --line: #3a3536;
+    --accent: #c2412f; --soft: #2c2829; --slot: #1b191a; --slot-hover: #2b2627;
+    --ok: #6fbf7c; --warn: #e0a84a; --bad: #ff7b6e; --sel: #d9a441;
+    --shadow: 0 1px 2px rgba(0,0,0,.4);
+  }
+}
+:root[data-theme="dark"] {
+  color-scheme: dark;
+  --paper: #161415; --card: #211e1f; --ink: #ece6dc; --muted: #a79f94; --line: #3a3536;
+  --accent: #c2412f; --soft: #2c2829; --slot: #1b191a; --slot-hover: #2b2627;
+  --ok: #6fbf7c; --warn: #e0a84a; --bad: #ff7b6e; --sel: #d9a441;
+  --shadow: 0 1px 2px rgba(0,0,0,.4);
+}

@@ -60,11 +60,15 @@ What it does:
 - **Dungeon turns & rest**: the Ref ends each DT from the Ref Screen; on a linked crow's sheet that rolls
   usage dice of lights in hand and ends blessed/vulnerable/weakened. **Rest** eats a ration (or gives a starvation wound), restores Stamina, heals wounds
   (hearty ration, Tend Wounds, Caretaker), restores expertise uses outside the Miasma, recharges
-  spellbooks, handles repair armor and lore book study, feeds pets, and applies pending XP.
+  spellbooks, handles repair armor and lore book study, feeds pets, and applies pending XP. When the Ref finishes the
+  party's rest in the Ref Screen, a linked crow's sheet does all of that itself; the Rest card then says the crow rested
+  with the party and only asks for the rest activity and any extra healing (a crow that already rested from its own
+  sheet that dungeon turn isn't rested twice).
 - **Expertise uses**, **carried items** (usage dice, refuelling, ammo, healing potions, using up
   consumables), **magic item slots**, **pet Stamina**, and a **session log**.
 - **Experience**: log recovered treasure (XP = gc / players), which applies after the next rest, and
-  see the next bonus thresholds. New bonuses and trait purchases are chosen in Build > Advancement.
+  see the next bonus thresholds. New bonuses and trait purchases are chosen in Build > Advancement. In a campaign the
+  Ref awards XP: logging treasure sends the Ref a claim instead, which they use for the award (or dismiss) on the Party tab.
 
 **Download PDF** builds a fillable, editable PDF:
 
@@ -127,14 +131,23 @@ sheet to change equipment and notes too, and both see each other's changes live.
 ```
 dist/Crows_Character_Generator.html   the finished single-file app (this is what you share)
 dist/Crows_Ref_Screen.html            the Ref Screen (built from ref/src by ref/build/build.py)
-src/index.html, app.css, app.js       the app (dev version loads the files below separately)
+src/index.html, app.css              the app's page (the dev version loads the files below separately)
+src/state.js                          the character: helpers, traits, advancement, derived numbers, new/random/save/load
+src/inventory.js                      the inventory slot rules, starting gear, auto-arrange
+src/build-view.js                     the Build page: each step's card, the inventory slots, the Crow summary, its controls
+src/pdf.js                            the fillable PDF
+src/app.js                            window.CrowsApp (for Play mode), account saving, start-up
+src/shared/                           shared by both apps (and dom.js, tokens.css by the accounts site): page helpers
+                                      (dom.js), dice and tests (dice.js), advancement and damage rules (rules.js), colours (tokens.css)
 src/play.js                           Play mode: vitals, dice, rests, usage dice, XP tracking
 src/cloud.js                          account autosave, live sync, and merging for both apps (inactive without the accounts server)
 src/refview.js                        the Ref's limited view of a player's shared character
 src/combat.js                         Play mode's live Combat card (targets, attacks sent to the Ref Screen)
 src/layout.js                         rearranging the blocks on a page (both apps), saved to the account
 server/                               the accounts site: PHP API, portal pages, deploy script
-ref/test/                             browser test of a full four-player combat encounter (see ref/test/README.md)
+ref/src/                              the Ref Screen: ref-core.js (state, timer, tab bar, sidebar), one file per area (encounters,
+                                      travel, session, combat, village, party, reference), and ref.js (files, start-up)
+ref/test/                             browser tests: combat, layout, and live play between the two apps (see ref/test/README.md)
 src/game-data.js                      backgrounds, expertises, item cards, tables
 src/traits-data.js                    all 23 trait trees + their connection lines (extracted from the book)
 src/template-data.js                  generated: base64 PDF template + field positions

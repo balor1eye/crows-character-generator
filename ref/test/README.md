@@ -107,5 +107,18 @@ that a creature given the crow as its target hits it (and Undo takes that back),
 python3 ref/test/run_live_combat_test.py            # after server/deploy.sh; --headed shows both browsers
 ```
 
+## Rests and XP claims with a player (`run_live_rest_test.py`)
+
+Also on the test instance only, set up the same way. The player's crow starts hurt with an expertise use spent. The
+Ref finishing a rest must do the whole rest on the player's sheet (a ration eaten, Stamina full, a wound healed, the
+use back, the dungeon turn recorded), and the Rest card must say the crow rested with the party. After the player rests
+from their own sheet, the Ref's next rest that dungeon turn must skip the crow (no second ration). In the campaign, the
+player's treasure becomes an XP claim: it must show on the Ref's Experience card (with a badge on the Party tab), and
+using it for the award must give the player the pending XP and take the claim off both lists.
+
+```bash
+python3 ref/test/run_live_rest_test.py              # after server/deploy.sh; --headed shows both browsers
+```
+
 Scripts sent over WebDriver run with their own globals, so a test that fixes the dice has to replace
 `window.Math.random` (the page's), not `Math.random`.

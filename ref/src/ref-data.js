@@ -15,11 +15,6 @@ REF.CONDITIONS = [
   ['Vulnerable', 'Take an extra 1d6 damage each time you take damage. Ends at the end of the dungeon turn.'],
   ['Weakened', 'Bane on all tests. Ends at the end of the dungeon turn.']
 ];
-REF.END_OF_DT_CONDITIONS = ['Blessed', 'Vulnerable', 'Weakened'];
-
-/* Expertise & Stamina bonus thresholds (TXP) and characteristic bonus thresholds. */
-REF.ES_ADV = [100, 500, 1250, 2250, 3500, 5000, 10000, 20000, 30000];
-REF.CHAR_ADV = [5000, 15000, 30000];
 
 /* Backgrounds in character-app order (index = saved "bg"): name, characteristic(s) at 2, starting Stamina. */
 REF.BACKGROUNDS = [

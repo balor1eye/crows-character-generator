@@ -20,7 +20,7 @@ cp "$ROOT"/server/app/*.php "$ROOT"/server/app/schema.sql "$OUT/$APP/"
 rm -f "$OUT/$APP/config.php"
 cp "$ROOT/dist/Crows_Ref_Screen.html" "$OUT/$APP/"
 cp -r "$ROOT/server/public/." "$OUT/public_html/$WEB/"
-cp "$ROOT/src/theme.js" "$OUT/public_html/$WEB/"   # shared with the apps, which inline it
+cp "$ROOT/src/theme.js" "$ROOT/src/shared/dom.js" "$ROOT/src/shared/tokens.css" "$OUT/public_html/$WEB/"   # shared with the apps, which inline them
 cp "$ROOT/dist/Crows_Character_Generator.html" "$OUT/public_html/$WEB/"
 [ "$APP" = crows-app ] && rm "$OUT/$APP/seed_test.php"   # test-only tool
 python3 "$ROOT/server/csp.py" "$OUT/public_html/$WEB" "$OUT/$APP"

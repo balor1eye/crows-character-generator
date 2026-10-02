@@ -12,26 +12,10 @@
   var PENDING_SHARE = 'crows-pending-share';
 
   // ---------------------------------------------------------------- helpers
-  function $(id) { return document.getElementById(id); }
-  function el(tag, attrs, kids) {
-    var n = document.createElement(tag);
-    if (attrs) Object.keys(attrs).forEach(function (k) {
-      var v = attrs[k];
-      if (v === null || v === undefined || v === false) return;
-      if (k === 'class') n.className = v;
-      else if (k === 'text') n.textContent = v;
-      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), v);
-      else n.setAttribute(k, v === true ? '' : v);
-    });
-    (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
-    return n;
-  }
-  function btn(text, on, cls, title) { return el('button', { type: 'button', class: 'btn ' + (cls || ''), text: text, onclick: on, title: title || null }); }
+  var Dom = window.CrowsDom, $ = Dom.$, el = Dom.el;   // dom.js (src/shared/dom.js)
+  function btn(text, on, cls, title) { return Dom.btn(text, on, cls, title); }
   function a(text, href, cls) { return el('a', { class: cls === undefined ? 'btn' : cls, href: href, text: text }); }
-  function toast(msg) {
-    var t = $('toast'); t.textContent = msg; t.classList.add('show');
-    clearTimeout(toast.t); toast.t = setTimeout(function () { t.classList.remove('show'); }, 3200);
-  }
+  function toast(msg) { Dom.toast(msg, 3200); }
   function when(iso) {
     var d = new Date(iso), s = (Date.now() - d.getTime()) / 1000;
     if (isNaN(s)) return '';

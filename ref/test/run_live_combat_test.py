@@ -78,7 +78,9 @@ def main():
         pwait("return !!window.CrowsCloud.recordId", "the new crow to be saved")
         char = p("return window.CrowsCloud.recordId")
         crow = p("return window.CrowsApp.state.name")
-        p("""var st = window.CrowsApp.state; st.inv = [{ id: 9001, key: 'Sword', qty: 1, area: 'hand', idx: 0 }, { id: 9002, key: 'Light Armor', qty: 1, area: 'pack', idx: 0 }];
+        # Fixed characteristics (Acolyte of the Healer: Mind 2, Agility 1, Strength 0), so the crow's damage, and so which
+        # creatures are still standing for the later steps, doesn't depend on the random crow.
+        p("""var st = window.CrowsApp.state; st.bg = 1; st.twoChar = 'Mind'; st.pattern = '10'; st.highChar = 'Agility'; st.charBonus = []; st.inv = [{ id: 9001, key: 'Sword', qty: 1, area: 'hand', idx: 0 }, { id: 9002, key: 'Light Armor', qty: 1, area: 'pack', idx: 0 }];
              window.CrowsApp.core.save(); window.CrowsApp.core.render();""")
         assert p("return window.CrowsPlay.vitals().ad") == 9
         ok("the crow carries a sword (Parry 4) and wears light armor (AD 5)")

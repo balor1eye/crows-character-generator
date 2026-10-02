@@ -5,6 +5,7 @@
 <meta name="viewport" content="width=device-width, initial-scale=1">
 <title>The Nest · Character Generator</title>
 <style>
+/* The Nest: colours, fonts, and the light/dark themes, shared by the Character Generator, the Ref Screen, and the accounts site. */
 :root {
   --paper: #f4efe6;
   --card: #fffdf8;
@@ -43,6 +44,9 @@
   --ok: #6fbf7c; --warn: #e0a84a; --bad: #ff7b6e; --sel: #d9a441;
   --shadow: 0 1px 2px rgba(0,0,0,.4);
 }
+
+</style>
+<style>
 * { box-sizing: border-box; }
 html { -webkit-text-size-adjust: 100%; }
 body { margin: 0; background: var(--paper); color: var(--ink); font: 15px/1.45 var(--font); }
@@ -1087,6 +1091,185 @@ CROWS.NAME_IDEAS = {
   last: ['Ashdown', 'Blackmoor', 'Crowley', 'Dunmere', 'Fairweather', 'Grimsby', 'Hollowell', 'Ironside', 'Kettle', 'Larkspur', 'Mudd', 'Nettles', 'Oakes', 'Pike', 'Quarry', 'Ravensworth', 'Stitch', 'Thorne', 'Underhill', 'Vane', 'Whitlock', 'Yarrow', 'Barrow', 'Candlewick'],
   feature: ['a jagged scar across one cheek', 'always smells faintly of pipe smoke', 'a booming, theatrical voice', 'mismatched eyes (one green, one grey)', 'hums tuneless songs when nervous', 'a crow tattoo on the back of one hand', 'missing two fingers on the left hand', 'wears a battered wide-brimmed hat', 'laughs at the worst possible moments', 'counts coins obsessively', 'speaks in a hoarse whisper', 'collects teeth from fallen monsters', 'wildly superstitious about the number three', 'bright copper hair braided with bones', 'never takes off a moth-eaten red scarf', 'a nervous stutter that vanishes in a fight']
 };
+
+</script>
+<script>
+/*
+ * The Nest: small page helpers shared by the Character Generator, the Ref Screen, and the accounts site (window.CrowsDom).
+ * The apps inline this file when they're built; the accounts site serves it next to portal.js (server/stage.sh).
+ */
+(function () {
+  'use strict';
+
+  function $(id) { return document.getElementById(id); }
+  /*
+   * el('div', { class, text, html, value, checked, on<event>: fn, any attribute }, [children]). Attributes that are null,
+   * undefined, or false are left out; true sets an empty attribute. value and checked are set as properties after the
+   * children, so a <select> picks its option. Children can be nodes, strings, or numbers; null, undefined, and false are skipped.
+   */
+  function el(tag, attrs, kids) {
+    var n = document.createElement(tag), val, chk;
+    if (attrs) Object.keys(attrs).forEach(function (k) {
+      var v = attrs[k];
+      if (v === null || v === undefined || v === false) return;
+      if (k === 'class') n.className = v;
+      else if (k === 'text') n.textContent = v;
+      else if (k === 'html') n.innerHTML = v;
+      else if (k === 'value') val = v;
+      else if (k === 'checked') chk = v;
+      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), v);
+      else n.setAttribute(k, v === true ? '' : v);
+    });
+    (kids || []).forEach(function (c) {
+      if (c == null || c === false) return;
+      n.appendChild(typeof c === 'string' || typeof c === 'number' ? document.createTextNode(String(c)) : c);
+    });
+    if (val !== undefined) n.value = val;
+    if (chk !== undefined) n.checked = !!chk;
+    return n;
+  }
+  /* A button with the .btn style. extra: a tooltip (string) or more attributes (object). */
+  function btn(text, onclick, cls, extra) {
+    var a = { type: 'button', class: 'btn' + (cls ? ' ' + cls : ''), text: text, onclick: onclick };
+    if (typeof extra === 'string') a.title = extra || null;
+    else if (extra) Object.keys(extra).forEach(function (k) { a[k] = extra[k]; });
+    return el('button', a);
+  }
+  /* A short message in the page's #toast box. */
+  function toast(msg, ms) {
+    var t = $('toast');
+    if (!t) return;
+    t.textContent = msg; t.classList.add('show');
+    clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, ms || 2800);
+  }
+  function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
+  function signed(n) { return (n > 0 ? '+' : '') + n; }
+  function clone(o) { return JSON.parse(JSON.stringify(o)); }
+  /* "1 wound", "3 wounds", "2 enemies", "2 bushes". */
+  function plural(n, w) { return n + ' ' + (n === 1 ? w : /[^aeiou]y$/.test(w) ? w.slice(0, -1) + 'ies' : /(ch|sh|s|x)$/.test(w) ? w + 'es' : w + 's'); }
+
+  window.CrowsDom = { $: $, el: el, btn: btn, toast: toast, fmt: fmt, signed: signed, clone: clone, plural: plural };
+})();
+
+</script>
+<script>
+/*
+ * The Nest: dice and tests, shared by the Character Generator's Play mode and the Ref Screen (window.CrowsDice),
+ * so a player's roll and the Ref's follow the same rules.
+ */
+(function () {
+  'use strict';
+
+  function d(n) { return 1 + Math.floor(Math.random() * n); }
+  function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
+  function int(v, dflt) { var n = parseInt(v, 10); return isNaN(n) ? dflt : n; }
+
+  /* Roll "NdM", "NdM+K", "NdM x K" or a plain number: { total, detail }. */
+  function rollDice(expr) {
+    if (typeof expr === 'number') return { total: expr, detail: String(expr) };
+    var m = /^\s*(\d*)d(\d+)\s*(?:([+-])\s*(\d+))?\s*(?:[x*]\s*([\d,]+))?\s*$/i.exec(expr);
+    if (!m) { var k = int(expr, 0); return { total: k, detail: String(k) }; }
+    var n = Math.max(1, Math.min(100, int(m[1] || '1', 1))), s = int(m[2], 6), rolls = [], sum = 0;
+    for (var i = 0; i < n; i++) { var r = d(s); rolls.push(r); sum += r; }
+    if (m[3]) sum += (m[3] === '-' ? -1 : 1) * int(m[4], 0);
+    if (m[5]) sum *= int(m[5].replace(/,/g, ''), 1);
+    return { total: sum, detail: expr.replace(/\s+/g, '') + ' [' + rolls.join(', ') + ']' };
+  }
+  /* d100 from two d10s (00 = 100). */
+  function d100() { var a = d(10), b = d(10), v = (a % 10) * 10 + (b % 10); if (v === 0) v = 100; return { total: v, detail: 'd100 [' + (a % 10) + ', ' + (b % 10) + ']' }; }
+
+  /* Edges and banes cancel; at most two of either count. Returns -2..2. */
+  function netEdges(edges, banes) { return Math.min(2, edges) - Math.min(2, banes); }
+  function ebWord(net) { return net === 2 ? 'double edge' : net === 1 ? 'edge' : net === -1 ? 'bane' : net === -2 ? 'double bane' : ''; }
+  /* 11 or lower: tier 1; 12-16: tier 2; 17+: tier 3. */
+  function tierOf(total) { return total >= 17 ? 3 : total >= 12 ? 2 : 1; }
+  /*
+   * A test: 2d10 + mod, with net edges (-2..2): an edge is +2 and a bane -2; a double edge or bane moves the tier one step.
+   * A natural critMin+ (19) is a crit (tier 3), a natural 2-3 a doom (tier 1). o: { critMin, dice: [a, b] to use, doom: true forces one }.
+   * Returns { dice, nat, mod, bonus (the edge's +2 or bane's -2), net, total, tier, crit, doom }.
+   */
+  function test(mod, net, o) {
+    o = o || {};
+    var a = o.dice ? o.dice[0] : d(10), b = o.dice ? o.dice[1] : d(10), nat = a + b;
+    var bonus = net === 1 ? 2 : net === -1 ? -2 : 0, total = nat + mod + bonus, tier = tierOf(total);
+    if (net === 2) tier = Math.min(3, tier + 1);
+    if (net === -2) tier = Math.max(1, tier - 1);
+    var crit = nat >= (o.critMin || 19), doom = nat <= 3 || !!o.doom;
+    if (crit) tier = 3;
+    if (doom) tier = 1;
+    return { dice: [a, b], nat: nat, mod: mod, bonus: bonus, net: net, total: total, tier: tier, crit: crit, doom: doom };
+  }
+
+  window.CrowsDice = { d: d, pick: pick, rollDice: rollDice, d100: d100, netEdges: netEdges, ebWord: ebWord, tierOf: tierOf, test: test };
+})();
+
+</script>
+<script>
+/*
+ * The Nest: rules shared by the Character Generator (Build and Play) and the Ref Screen (window.CrowsRules), so a
+ * crow's sheet and the Ref's party entry for it count advancement and deal damage the same way.
+ * Needs CROWS (src/game-data.js) and CrowsDice (src/shared/dice.js).
+ */
+(function () {
+  'use strict';
+
+  // ------------------------------------------------------------------ advancement
+  /* Expertise & Stamina bonuses earned at this total XP (the table, then one every 30,000 from 60,000). */
+  function esBonusCount(txp) {
+    var n = 0;
+    CROWS.ES_ADV.forEach(function (r) { if (txp >= r[0]) n++; });
+    if (txp >= 60000) n += Math.floor((txp - 30000) / 30000);
+    return n;
+  }
+  /* The most uses each expertise can have at this total XP. */
+  function maxUses(txp) {
+    var m = 2;
+    CROWS.ES_ADV.forEach(function (r) { if (txp >= r[0]) m = r[1]; });
+    return m;
+  }
+  /* Characteristic bonuses earned at this total XP. */
+  function charBonusCount(txp) {
+    var n = 0;
+    CROWS.CHAR_ADV.forEach(function (t) { if (txp >= t) n++; });
+    if (txp >= 60000) n += Math.floor((txp - 30000) / 30000);
+    return n;
+  }
+  /* The total XP of the next Expertise & Stamina bonus (es) and characteristic bonus (ch). */
+  function nextBonusAt(txp) {
+    var es = null, ch = null;
+    CROWS.ES_ADV.forEach(function (r) { if (es === null && r[0] > txp) es = r[0]; });
+    if (es === null) es = 30000 * (Math.floor(txp / 30000) + 1);
+    CROWS.CHAR_ADV.forEach(function (t) { if (ch === null && t > txp) ch = t; });
+    if (ch === null) ch = 30000 * (Math.floor(txp / 30000) + 1);
+    return { es: es, ch: ch };
+  }
+
+  // ------------------------------------------------------------------ conditions and damage
+  /* Conditions that end at the end of a dungeon turn (and halfway through a rest). */
+  var DT_CONDITIONS = ['Blessed', 'Vulnerable', 'Weakened'];
+
+  /*
+   * Damage, the way the rules deal it: vulnerable adds 1d6, then worn armor, shields, and parry weapons absorb it in
+   * order (unless it's piercing), then Stamina, then wounds, one per point left, as far as there's room.
+   * o: { amount, vulnerable, vul (a 1d6 already rolled, so a replay deals the same), piercing, ad: [AD left on each
+   * absorber, in order], stamina, woundRoom }.
+   * Returns { total, vul (the roll, or 0), absorbed: [per absorber], stamina: Stamina lost, wounds: wounds taken }.
+   */
+  function damage(o) {
+    var vul = o.vulnerable ? (typeof o.vul === 'number' ? o.vul : CrowsDice.d(6)) : 0, total = (o.amount || 0) + vul, left = total;
+    var absorbed = (o.ad || []).map(function (ad) {
+      var a = o.piercing ? 0 : Math.max(0, Math.min(left, ad || 0));
+      left -= a;
+      return a;
+    });
+    var st = Math.max(0, Math.min(left, o.stamina || 0)); left -= st;
+    var w = Math.max(0, Math.min(left, o.woundRoom || 0));
+    return { total: total, vul: vul, absorbed: absorbed, stamina: st, wounds: w };
+  }
+
+  window.CrowsRules = { esBonusCount: esBonusCount, maxUses: maxUses, charBonusCount: charBonusCount, nextBonusAt: nextBonusAt,
+    DT_CONDITIONS: DT_CONDITIONS, damage: damage };
+})();
 
 </script>
 <script>
@@ -6913,7 +7096,7 @@ var CROWS_TRAIT_TREES = [
  * URL parameters: ?id=<n> opens that saved record, ?new=1 starts a new one; with neither, the record
  * last open in this browser is reopened (or the current local state is saved as a new one).
  * ?link=<n> is the Ref's view of a character a player shared: only the Play mode vitals (Stamina, wounds,
- * conditions, cruelty, coins, and their log), equipment, notes, and XP are sent back, and the server applies just those.
+ * conditions, cruelty, coins, and their log), equipment, notes, rests and dungeon turns, and XP are sent back, and the server applies just those.
  * ?id=<n> can also be someone else's character that its player handed to this user (control.give): it's opened
  * and saved like one of their own until the player takes it back, which shows a notice instead of saving a copy.
  *
@@ -6945,7 +7128,10 @@ var CROWS_TRAIT_TREES = [
     { name: 'stamina', path: ['play', 'stamina'], label: 'Stamina' }, { name: 'cruelty', path: ['play', 'cruelty'], label: 'cruelty' },
     { name: 'wounds', path: ['play', 'wounds'], label: 'wounds' }, { name: 'log', path: ['play', 'log'], label: 'log', union: true },
     { name: 'txp', path: ['txp'], label: 'total XP' }, { name: 'pendingXP', path: ['play', 'pendingXP'], label: 'pending XP' },
-    { name: 'xpLog', path: ['play', 'xpLog'], label: 'XP history', union: true, max: 100 }];
+    { name: 'xpLog', path: ['play', 'xpLog'], label: 'XP history', union: true, max: 100 },
+    { name: 'dt', path: ['play', 'dt'], label: 'dungeon turn' }, { name: 'spent', path: ['play', 'spent'], label: 'expertise uses' },
+    { name: 'temp', path: ['play', 'temp'], label: 'lore book uses' }, { name: 'petStam', path: ['play', 'petStam'], label: 'pet Stamina' },
+    { name: 'lastRest', path: ['play', 'lastRest'], label: 'rest' }, { name: 'claimsAnswered', path: ['play', 'claimsAnswered'], label: 'XP claims answered' }];
 
   var cfg = null;              // attach() options
   var user = null, csrf = null;
@@ -7732,18 +7918,7 @@ var CROWS_TRAIT_TREES = [
   var page = null, layouts = {}, owner = null, editing = false, cols = [];
   var drag = null, saveTimer = null, pending = {};
 
-  function $(id) { return document.getElementById(id); }
-  function el(tag, attrs, kids) {
-    var n = document.createElement(tag);
-    Object.keys(attrs || {}).forEach(function (k) {
-      var v = attrs[k];
-      if (v === null || v === undefined || v === false) return;
-      if (k === 'text') n.textContent = v; else if (k === 'class') n.className = v;
-      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), v); else n.setAttribute(k, v === true ? '' : v);
-    });
-    (kids || []).forEach(function (c) { if (c) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
-    return n;
-  }
+  var $ = window.CrowsDom.$, el = window.CrowsDom.el;   // src/shared/dom.js
   function preset(id) { return PRESETS.filter(function (p) { return p[0] === id; })[0] || PRESETS[0]; }
   function template(id) {
     return preset(id)[2].map(function (w) { return w === 'N' ? cfg.narrow : 'minmax(0, 1fr)'; }).join(' ');
@@ -8153,47 +8328,41 @@ var CROWS_TRAIT_TREES = [
 </script>
 <script>
 /*
- * Crows Playtest 2 Character Generator — application logic.
- * Plain browser JavaScript (no build step, no network). Depends on:
- *   PDFLib (pdf-lib), CROWS (game-data.js), CROWS_TRAIT_TREES (traits-data.js),
- *   CROWS_TEMPLATE_B64 / CROWS_FIELDS (template-data.js).
+ * Crows Playtest 2 Character Generator: the character, loaded first. Plain browser JavaScript (no build step, no network).
+ * Depends on PDFLib (pdf-lib), CROWS (game-data.js), CROWS_TRAIT_TREES (traits-data.js), CROWS_TEMPLATE_B64 / CROWS_FIELDS
+ * (template-data.js), and src/shared/.
+ *
+ * The generator is split into state.js (helpers, traits, advancement, derived numbers, and the character’s lifecycle: new,
+ * random, save, load), inventory.js (the slot rules), build-view.js (the Build page and its controls), pdf.js (the PDF), and
+ * app.js (window.CrowsApp, account saving, start-up), loaded in that order. They share window.CrowsGen (A below).
+ * Play mode (play.js, combat.js) uses window.CrowsApp.core.
  */
 (function () {
   'use strict';
+  // Shared by this app's files: their functions and constants (add), calls to another file's functions (fwd), and
+  // the variables more than one file reassigns, kept in step in every file (share, set).
+  var watch = {};
+  var A = window.CrowsGen = {
+    fwd: function (name) { return function () { return A[name].apply(this, arguments); }; },
+    add: function (o) { Object.keys(o).forEach(function (k) { A[k] = o[k]; }); },
+    share: function (name, fn) { (watch[name] = watch[name] || []).push(fn); },
+    set: function (name, v) { A[name] = v; (watch[name] || []).forEach(function (fn) { fn(v); }); return v; }
+  }, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var areaSize = f('areaSize'), autoArrange = f('autoArrange'), spanOf = f('spanOf'), startingCards = f('startingCards');
+  var state = A.state; A.share('state', function (v) { state = v; });
 
   var STORAGE_KEY = 'crows-pt2-character';
   var AREAS = { hand: 2, belt: 4, pack: 10 };
-  var state;
-  var selectedId = null;
+  // state (the character) is shared: A.set('state', ...)
   var uid = 1;
 
   // ------------------------------------------------------------------ helpers
-  function $(id) { return document.getElementById(id); }
-  function el(tag, attrs, kids) {
-    var n = document.createElement(tag);
-    if (attrs) Object.keys(attrs).forEach(function (k) {
-      var v = attrs[k];
-      if (v === null || v === undefined || v === false) return;
-      if (k === 'class') n.className = v;
-      else if (k === 'text') n.textContent = v;
-      else if (k === 'html') n.innerHTML = v;
-      else if (k.slice(0, 2) === 'on') n.addEventListener(k.slice(2), v);
-      else n.setAttribute(k, v === true ? '' : v);
-    });
-    (kids || []).forEach(function (c) { if (c != null) n.appendChild(typeof c === 'string' ? document.createTextNode(c) : c); });
-    return n;
-  }
-  function d(n) { return 1 + Math.floor(Math.random() * n); }
-  function pick(a) { return a[Math.floor(Math.random() * a.length)]; }
-  function fmt(n) { return String(n).replace(/\B(?=(\d{3})+(?!\d))/g, ','); }
-  function signed(n) { return (n > 0 ? '+' : '') + n; }
+  var Dom = window.CrowsDom, Dice = window.CrowsDice, Rules = window.CrowsRules;   // src/shared/
+  var $ = Dom.$, el = Dom.el, fmt = Dom.fmt, signed = Dom.signed, clone = Dom.clone, d = Dice.d, pick = Dice.pick;
   function norm(s) { return String(s).toLowerCase().replace(/[^a-z0-9]/g, ''); }
-  function clone(o) { return JSON.parse(JSON.stringify(o)); }
   var DIE = ['', '⚀', '⚁', '⚂', '⚃', '⚄', '⚅'];
-  function toast(msg, ms) {
-    var t = $('toast'); t.textContent = msg; t.classList.add('show');
-    clearTimeout(toast._t); toast._t = setTimeout(function () { t.classList.remove('show'); }, ms || 2600);
-  }
+  function toast(msg, ms) { Dom.toast(msg, ms || 2600); }
   function bg() { return CROWS.BACKGROUNDS[state.bg]; }
   function item(key) { return CROWS.ITEMS[key] || { cat: 'misc', st: 1, sl: 1, gc: 0, txt: '' }; }
 
@@ -8248,23 +8417,7 @@ var CROWS_TRAIT_TREES = [
   }
 
   // ------------------------------------------------------------------ advancement math
-  function esBonusCount(txp) {
-    var n = 0;
-    CROWS.ES_ADV.forEach(function (r) { if (txp >= r[0]) n++; });
-    if (txp >= 60000) n += Math.floor((txp - 30000) / 30000);
-    return n;
-  }
-  function maxUses(txp) {
-    var m = 2;
-    CROWS.ES_ADV.forEach(function (r) { if (txp >= r[0]) m = r[1]; });
-    return m;
-  }
-  function charBonusCount(txp) {
-    var n = 0;
-    CROWS.CHAR_ADV.forEach(function (t) { if (txp >= t) n++; });
-    if (txp >= 60000) n += Math.floor((txp - 30000) / 30000);
-    return n;
-  }
+  var esBonusCount = Rules.esBonusCount, maxUses = Rules.maxUses, charBonusCount = Rules.charBonusCount;
   function syncBonusArrays() {
     var n = esBonusCount(state.txp);
     while (state.esBonus.length < n) state.esBonus.push('uses');
@@ -8338,8 +8491,167 @@ var CROWS_TRAIT_TREES = [
     return { total: total, text: parts.length ? parts.join(' + ') : '0', worn: worn, shield: shield };
   }
 
+  // ------------------------------------------------------------------ state lifecycle
+  function freshState(bgIndex) {
+    var b = CROWS.BACKGROUNDS[bgIndex];
+    var others = CROWS.CHARS.filter(function (c) { return c !== b.two[0]; });
+    return {
+      v: 1, bg: bgIndex, twoChar: b.two[0], pattern: '10', highChar: others[0],
+      name: '', player: '', feature: '', village: '', institution: '', prosperity: 0,
+      coins: 0, coinDice: null, bgDice: null,
+      txp: 0, esBonus: [], esAlloc: {}, charBonus: [], traits: [],
+      inv: [], connName: '', connRel: '', connBenefit: '', notes: '', pets: (b.pets || []).slice(),
+      play: freshPlay()
+    };
+  }
+  // Live, at-the-table state (Play mode). stamina null = at maximum; wounds maps backpack slot index -> 'w' or 's' (starvation).
+  // dt = the last dungeon turn the Ref ended; lastRest = { dt, by: 'self' | 'ref', t, extras } (see play.js doRest);
+  // xpClaims = treasure the player asked their Ref to award XP for, while the crow is in a campaign; claimsAnswered = the ids
+  // the Ref answered (the Ref only adds to this list, and only the player's sheet changes xpClaims, so the two never clash).
+  function freshPlay() {
+    return { stamina: null, cruelty: 0, conds: {}, spent: {}, temp: {}, wounds: {}, dt: 0, miasma: false,
+      pendingXP: 0, xpLog: [], log: [], magic: {}, magicMulti: {}, petStam: {}, got: [], xpClaims: [], claimsAnswered: [], lastRest: null };
+  }
+  function normalizePlay(p) {
+    var base = freshPlay();
+    if (!p || typeof p !== 'object') return base;
+    Object.keys(base).forEach(function (k) {
+      if (base[k] === null) return;
+      if (!(k in p) || typeof p[k] !== typeof base[k] || Array.isArray(p[k]) !== Array.isArray(base[k]) || p[k] === null) p[k] = base[k];
+    });
+    if (p.stamina !== null && typeof p.stamina !== 'number') p.stamina = null;
+    p.xpClaims = p.xpClaims.filter(function (c) { return c && p.claimsAnswered.indexOf(c.id) < 0; });
+    return p;
+  }
+  // Per-card live values kept across saves: ud = usage dice left, dmg = AD lost, ammo = shots left,
+  // thrown = 1 while a thrown weapon is out of hand (Play mode: Recover clears it).
+  var CARD_LIVE = ['ud', 'dmg', 'ammo', 'thrown'];
+  function liveProps(src, dst) {
+    CARD_LIVE.forEach(function (k) { if (typeof src[k] === 'number' && isFinite(src[k])) dst[k] = Math.max(0, Math.floor(src[k])); });
+    return dst;
+  }
+  function rollCoins() {
+    var r = [d(6), d(6), d(6)];
+    state.coinDice = r;
+    state.coins = r[0] + r[1] + r[2] + (bg().gc || 0);
+  }
+  function resetGear() {
+    state.inv = startingCards();
+    state.pets = (bg().pets || []).slice();
+    autoArrange();
+  }
+  function setBackground(i, keepChars) {
+    state.bg = i;
+    var b = bg();
+    if (b.two.indexOf(state.twoChar) < 0 || !keepChars) state.twoChar = b.two[0];
+    var others = CROWS.CHARS.filter(function (c) { return c !== state.twoChar; });
+    if (others.indexOf(state.highChar) < 0) state.highChar = others[0];
+    pruneTraits();
+    resetGear();
+    rollCoins();
+  }
+  function randomName() { return pick(CROWS.NAME_IDEAS.first) + ' ' + pick(CROWS.NAME_IDEAS.last); }
+  function randomCrow() {
+    var r1 = d(6), r2 = d(6);
+    var idx = CROWS.BACKGROUNDS.findIndex(function (b) { return b.d[0] === r1 && b.d[1] === r2; });
+    var keep = { player: state ? state.player : '', village: state ? state.village : '', institution: state ? state.institution : '', prosperity: state ? state.prosperity : 0 };
+    A.set('state', freshState(idx));
+    state.bgDice = [r1, r2];
+    var b = bg();
+    state.twoChar = pick(b.two);
+    var others = CROWS.CHARS.filter(function (c) { return c !== state.twoChar; });
+    state.pattern = Math.random() < 0.5 ? '10' : 'm12';
+    state.highChar = pick(others);
+    state.name = randomName();
+    state.feature = pick(CROWS.NAME_IDEAS.feature);
+    state.connBenefit = pick(CROWS.CONNECTION_BENEFITS)[0];
+    state.player = keep.player; state.village = keep.village; state.institution = keep.institution; state.prosperity = keep.prosperity || 0;
+    resetGear();
+    rollCoins();
+  }
+  var refView = !!(window.CrowsCloud && window.CrowsCloud.linked);   // a Ref looking at a player's shared character
+  function save() {
+    // In the Ref view this is someone else's character: don't overwrite the Ref's own copy in this browser.
+    if (!refView) try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
+    if (window.CrowsCloud) window.CrowsCloud.changed();
+  }
+  function startNew() { if (window.CrowsCloud) window.CrowsCloud.startNew(); }
+  /* The character as written to a save file (and to the player's account). */
+  function exportState() {
+    var data = clone(state);
+    data.inv = data.inv.map(function (c) { return liveProps(c, { key: c.key, qty: c.qty, area: c.area, idx: c.idx }); });
+    return data;
+  }
+  function load() {
+    try {
+      var raw = localStorage.getItem(STORAGE_KEY);
+      if (raw) { var s = JSON.parse(raw); if (validState(s)) return s; }
+    } catch (e) { /* ignore */ }
+    return null;
+  }
+  function validState(s) {
+    return s && typeof s === 'object' && s.v === 1 && typeof s.bg === 'number' && CROWS.BACKGROUNDS[s.bg] && Array.isArray(s.inv);
+  }
+  function dice(v, n) {
+    return Array.isArray(v) && v.length === n && v.every(function (x) { return x === (x | 0) && x >= 1 && x <= 6; }) ? v.slice() : null;
+  }
+  function adopt(s) {
+    var base = freshState(s.bg);
+    Object.keys(base).forEach(function (k) { if (!(k in s)) s[k] = base[k]; });
+    s.inv = s.inv.filter(function (c) { return c && typeof c.key === 'string' && c.key && c.key.length <= 80; }).map(function (c) {
+      return liveProps(c, { id: nextUid(), key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 });
+    });
+    s.play = normalizePlay(s.play);
+    // Older server copies turned an empty {} into []; named keys on an array would be dropped when saved.
+    if (!s.esAlloc || typeof s.esAlloc !== 'object' || Array.isArray(s.esAlloc)) s.esAlloc = {};
+    s.prosperity = typeof s.prosperity === 'number' && isFinite(s.prosperity) ? Math.max(-10, Math.min(10, Math.round(s.prosperity))) : 0;
+    // Dice shown as markup: only real d6 rolls (a file or a shared sheet could hold anything here).
+    s.bgDice = dice(s.bgDice, 2);
+    s.coinDice = dice(s.coinDice, 3);
+    A.set('state', s);
+    syncBonusArrays();
+    pruneTraits();
+    // Drop any overlapping placements from hand-edited files.
+    var seen = { hand: {}, belt: {}, pack: {} };
+    state.inv.forEach(function (c) {
+      if (c.area === 'none') return;
+      var s2 = spanOf(c, c.area), ok = c.idx + s2 <= areaSize(c.area);
+      for (var k = 0; ok && k < s2; k++) if (seen[c.area][c.idx + k]) ok = false;
+      if (!ok) { c.area = 'none'; return; }
+      for (k = 0; k < s2; k++) seen[c.area][c.idx + k] = true;
+    });
+  }
+
+  function nextUid() { return uid++; }   // ids for inventory cards
+
+  A.add({ norm: norm, toast: toast, bg: bg, item: item, findTrait: findTrait, traitId: traitId, startingTraitId: startingTraitId,
+      ownedTraitIds: ownedTraitIds, connected: connected, canLearn: canLearn, pruneTraits: pruneTraits, traitXP: traitXP,
+      syncBonusArrays: syncBonusArrays, usePool: usePool, allocTotal: allocTotal, characteristics: characteristics, expertiseUses: expertiseUses,
+      staminaMax: staminaMax, curStamina: curStamina, adMax: adMax, adNow: adNow, woundCount: woundCount, armorInfo: armorInfo,
+      freshState: freshState, freshPlay: freshPlay, normalizePlay: normalizePlay, liveProps: liveProps, rollCoins: rollCoins, resetGear: resetGear,
+      setBackground: setBackground, randomName: randomName, randomCrow: randomCrow, save: save, startNew: startNew, exportState: exportState,
+      load: load, validState: validState, dice: dice, adopt: adopt, nextUid: nextUid, STORAGE_KEY: STORAGE_KEY, AREAS: AREAS, Dom: Dom, Dice: Dice,
+      Rules: Rules, $: $, el: el, fmt: fmt, signed: signed, clone: clone, d: d, pick: pick, DIE: DIE, TREE_BY_NAME: TREE_BY_NAME,
+      esBonusCount: esBonusCount, maxUses: maxUses, charBonusCount: charBonusCount, CARD_LIVE: CARD_LIVE, refView: refView });
+})();
+
+</script>
+<script>
+/*
+ * Character Generator: the inventory model: hand, belt, and backpack slots, multi-slot and two-handed items, stacks, starting
+ * gear, auto-arrange, and moving cards. See state.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsGen, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var bg = f('bg'), characteristics = f('characteristics'), item = f('item'), liveProps = f('liveProps'), nextUid = f('nextUid'),
+      ownedTraitIds = f('ownedTraitIds');
+  var AREAS = A.AREAS;
+  var state = A.state; A.share('state', function (v) { state = v; });
+
   // ------------------------------------------------------------------ inventory model
-  function newCard(key, qty) { return { id: uid++, key: key, qty: qty, area: 'none', idx: 0 }; }
+  function newCard(key, qty) { return { id: nextUid(), key: key, qty: qty, area: 'none', idx: 0 }; }
   function spanOf(card, area) {
     var it = item(card.key);
     if (area === 'hand' && it.hands === 2) return 2;
@@ -8546,134 +8858,35 @@ var CROWS_TRAIT_TREES = [
     return all;
   }
 
-  // ------------------------------------------------------------------ state lifecycle
-  function freshState(bgIndex) {
-    var b = CROWS.BACKGROUNDS[bgIndex];
-    var others = CROWS.CHARS.filter(function (c) { return c !== b.two[0]; });
-    return {
-      v: 1, bg: bgIndex, twoChar: b.two[0], pattern: '10', highChar: others[0],
-      name: '', player: '', feature: '', village: '', institution: '', prosperity: 0,
-      coins: 0, coinDice: null, bgDice: null,
-      txp: 0, esBonus: [], esAlloc: {}, charBonus: [], traits: [],
-      inv: [], connName: '', connRel: '', connBenefit: '', notes: '', pets: (b.pets || []).slice(),
-      play: freshPlay()
-    };
-  }
-  // Live, at-the-table state (Play mode). stamina null = at maximum; wounds maps backpack slot index -> 'w' or 's' (starvation).
-  function freshPlay() {
-    return { stamina: null, cruelty: 0, conds: {}, spent: {}, temp: {}, wounds: {}, dt: 0, miasma: false,
-      pendingXP: 0, xpLog: [], log: [], magic: {}, magicMulti: {}, petStam: {}, got: [] };
-  }
-  function normalizePlay(p) {
-    var base = freshPlay();
-    if (!p || typeof p !== 'object') return base;
-    Object.keys(base).forEach(function (k) {
-      if (base[k] === null) return;
-      if (!(k in p) || typeof p[k] !== typeof base[k] || Array.isArray(p[k]) !== Array.isArray(base[k]) || p[k] === null) p[k] = base[k];
-    });
-    if (p.stamina !== null && typeof p.stamina !== 'number') p.stamina = null;
-    return p;
-  }
-  // Per-card live values kept across saves: ud = usage dice left, dmg = AD lost, ammo = shots left,
-  // thrown = 1 while a thrown weapon is out of hand (Play mode: Recover clears it).
-  var CARD_LIVE = ['ud', 'dmg', 'ammo', 'thrown'];
-  function liveProps(src, dst) {
-    CARD_LIVE.forEach(function (k) { if (typeof src[k] === 'number' && isFinite(src[k])) dst[k] = Math.max(0, Math.floor(src[k])); });
-    return dst;
-  }
-  function rollCoins() {
-    var r = [d(6), d(6), d(6)];
-    state.coinDice = r;
-    state.coins = r[0] + r[1] + r[2] + (bg().gc || 0);
-  }
-  function resetGear() {
-    state.inv = startingCards();
-    state.pets = (bg().pets || []).slice();
-    autoArrange();
-  }
-  function setBackground(i, keepChars) {
-    state.bg = i;
-    var b = bg();
-    if (b.two.indexOf(state.twoChar) < 0 || !keepChars) state.twoChar = b.two[0];
-    var others = CROWS.CHARS.filter(function (c) { return c !== state.twoChar; });
-    if (others.indexOf(state.highChar) < 0) state.highChar = others[0];
-    pruneTraits();
-    resetGear();
-    rollCoins();
-  }
-  function randomName() { return pick(CROWS.NAME_IDEAS.first) + ' ' + pick(CROWS.NAME_IDEAS.last); }
-  function randomCrow() {
-    var r1 = d(6), r2 = d(6);
-    var idx = CROWS.BACKGROUNDS.findIndex(function (b) { return b.d[0] === r1 && b.d[1] === r2; });
-    var keep = { player: state ? state.player : '', village: state ? state.village : '', institution: state ? state.institution : '', prosperity: state ? state.prosperity : 0 };
-    state = freshState(idx);
-    state.bgDice = [r1, r2];
-    var b = bg();
-    state.twoChar = pick(b.two);
-    var others = CROWS.CHARS.filter(function (c) { return c !== state.twoChar; });
-    state.pattern = Math.random() < 0.5 ? '10' : 'm12';
-    state.highChar = pick(others);
-    state.name = randomName();
-    state.feature = pick(CROWS.NAME_IDEAS.feature);
-    state.connBenefit = pick(CROWS.CONNECTION_BENEFITS)[0];
-    state.player = keep.player; state.village = keep.village; state.institution = keep.institution; state.prosperity = keep.prosperity || 0;
-    resetGear();
-    rollCoins();
-  }
-  var refView = !!(window.CrowsCloud && window.CrowsCloud.linked);   // a Ref looking at a player's shared character
-  var lastRemote = 0;   // when a change made elsewhere was last brought in
-  function save() {
-    // In the Ref view this is someone else's character: don't overwrite the Ref's own copy in this browser.
-    if (!refView) try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
-    if (window.CrowsCloud) window.CrowsCloud.changed();
-  }
-  function startNew() { if (window.CrowsCloud) window.CrowsCloud.startNew(); }
-  /* The character as written to a save file (and to the player's account). */
-  function exportState() {
-    var data = clone(state);
-    data.inv = data.inv.map(function (c) { return liveProps(c, { key: c.key, qty: c.qty, area: c.area, idx: c.idx }); });
-    return data;
-  }
-  function load() {
-    try {
-      var raw = localStorage.getItem(STORAGE_KEY);
-      if (raw) { var s = JSON.parse(raw); if (validState(s)) return s; }
-    } catch (e) { /* ignore */ }
-    return null;
-  }
-  function validState(s) {
-    return s && typeof s === 'object' && s.v === 1 && typeof s.bg === 'number' && CROWS.BACKGROUNDS[s.bg] && Array.isArray(s.inv);
-  }
-  function dice(v, n) {
-    return Array.isArray(v) && v.length === n && v.every(function (x) { return x === (x | 0) && x >= 1 && x <= 6; }) ? v.slice() : null;
-  }
-  function adopt(s) {
-    var base = freshState(s.bg);
-    Object.keys(base).forEach(function (k) { if (!(k in s)) s[k] = base[k]; });
-    s.inv = s.inv.filter(function (c) { return c && typeof c.key === 'string' && c.key && c.key.length <= 80; }).map(function (c) {
-      return liveProps(c, { id: uid++, key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 });
-    });
-    s.play = normalizePlay(s.play);
-    // Older server copies turned an empty {} into []; named keys on an array would be dropped when saved.
-    if (!s.esAlloc || typeof s.esAlloc !== 'object' || Array.isArray(s.esAlloc)) s.esAlloc = {};
-    s.prosperity = typeof s.prosperity === 'number' && isFinite(s.prosperity) ? Math.max(-10, Math.min(10, Math.round(s.prosperity))) : 0;
-    // Dice shown as markup: only real d6 rolls (a file or a shared sheet could hold anything here).
-    s.bgDice = dice(s.bgDice, 2);
-    s.coinDice = dice(s.coinDice, 3);
-    state = s;
-    syncBonusArrays();
-    pruneTraits();
-    // Drop any overlapping placements from hand-edited files.
-    var seen = { hand: {}, belt: {}, pack: {} };
-    state.inv.forEach(function (c) {
-      if (c.area === 'none') return;
-      var s2 = spanOf(c, c.area), ok = c.idx + s2 <= areaSize(c.area);
-      for (var k = 0; ok && k < s2; k++) if (seen[c.area][c.idx + k]) ok = false;
-      if (!ok) { c.area = 'none'; return; }
-      for (k = 0; k < s2; k++) seen[c.area][c.idx + k] = true;
-    });
-  }
+  A.add({ newCard: newCard, spanOf: spanOf, extraBeltTraits: extraBeltTraits, extraBeltRule: extraBeltRule, beltSize: beltSize,
+      extraBeltOk: extraBeltOk, areaSize: areaSize, occupancy: occupancy, fits: fits, firstFit: firstFit, place: place, cardById: cardById,
+      startingCards: startingCards, weaponScore: weaponScore, autoArrange: autoArrange, moveCard: moveCard, moveToArea: moveToArea, refusal: refusal,
+      handFits: handFits, takeItem: takeItem, addItem: addItem, PACK_ORDER: PACK_ORDER });
+})();
 
+</script>
+<script>
+/*
+ * Character Generator: the Build page: each step’s card, the inventory slots (click or drag), the Crow summary, and the
+ * page’s controls (bind). See state.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsGen, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var addItem = f('addItem'), adopt = f('adopt'), allocTotal = f('allocTotal'), armorInfo = f('armorInfo'), autoArrange = f('autoArrange'),
+      beltSize = f('beltSize'), bg = f('bg'), canLearn = f('canLearn'), cardById = f('cardById'), characteristics = f('characteristics'),
+      download = f('download'), expertiseUses = f('expertiseUses'), exportPdf = f('exportPdf'), exportState = f('exportState'),
+      fileBase = f('fileBase'), findTrait = f('findTrait'), fits = f('fits'), freshState = f('freshState'), item = f('item'),
+      moveCard = f('moveCard'), occupancy = f('occupancy'), ownedTraitIds = f('ownedTraitIds'), pruneTraits = f('pruneTraits'),
+      randomCrow = f('randomCrow'), randomName = f('randomName'), refusal = f('refusal'), resetGear = f('resetGear'), rollCoins = f('rollCoins'),
+      save = f('save'), setBackground = f('setBackground'), spanOf = f('spanOf'), staminaMax = f('staminaMax'),
+      startingTraitId = f('startingTraitId'), startNew = f('startNew'), syncBonusArrays = f('syncBonusArrays'), toast = f('toast'),
+      traitId = f('traitId'), traitXP = f('traitXP'), usePool = f('usePool'), validState = f('validState');
+  var $ = A.$, d = A.d, DIE = A.DIE, el = A.el, fmt = A.fmt, maxUses = A.maxUses, pick = A.pick, TREE_BY_NAME = A.TREE_BY_NAME;
+  var state = A.state; A.share('state', function (v) { state = v; });
+
+  var selectedId = null;
   // ------------------------------------------------------------------ rendering
   function render() {
     syncBonusArrays();
@@ -9019,6 +9232,125 @@ var CROWS_TRAIT_TREES = [
     checklist().forEach(function (c) { cl.appendChild(el('div', { class: c[0], text: c[1] })); });
   }
 
+  // ------------------------------------------------------------------ wiring
+  function bind() {
+    var bs = $('bg-select');
+    CROWS.BACKGROUNDS.forEach(function (b, i) { bs.appendChild(el('option', { value: String(i), text: b.d[0] + '-' + b.d[1] + '  ' + b.name })); });
+    bs.addEventListener('change', function () { state.bgDice = null; setBackground(+this.value, true); render(); });
+    $('btn-roll-bg').addEventListener('click', function () {
+      var r1 = d(6), r2 = d(6);
+      var i = CROWS.BACKGROUNDS.findIndex(function (b) { return b.d[0] === r1 && b.d[1] === r2; });
+      state.bgDice = [r1, r2]; setBackground(i, true); render();
+      toast('Rolled ' + r1 + ', ' + r2 + ': ' + bg().name);
+    });
+    $('char-two').addEventListener('change', function () {
+      state.twoChar = this.value;
+      var others = CROWS.CHARS.filter(function (c) { return c !== state.twoChar; });
+      if (others.indexOf(state.highChar) < 0) state.highChar = others[0];
+      render();
+    });
+    Array.prototype.forEach.call(document.querySelectorAll('input[name=pattern]'), function (r) {
+      r.addEventListener('change', function () { state.pattern = this.value; render(); });
+    });
+    $('char-high').addEventListener('change', function () { state.highChar = this.value; render(); });
+
+    function text(id, key) { $(id).addEventListener('input', function () { state[key] = this.value; renderSummary(); save(); }); }
+    text('in-name', 'name'); text('in-player', 'player'); text('in-feature', 'feature'); text('in-village', 'village');
+    text('in-conn-name', 'connName'); text('in-conn-rel', 'connRel'); text('in-notes', 'notes');
+    $('btn-rand-name').addEventListener('click', function () { state.name = randomName(); render(); });
+    $('btn-rand-feature').addEventListener('click', function () { state.feature = pick(CROWS.NAME_IDEAS.feature); render(); });
+
+    $('in-coins').addEventListener('input', function () { var n = parseInt(this.value, 10); state.coins = isNaN(n) || n < 0 ? 0 : n; state.coinDice = null; renderSummary(); save(); });
+    $('in-coins').addEventListener('change', function () { renderInventory(); });
+    $('btn-roll-coins').addEventListener('click', function () { rollCoins(); render(); });
+    $('btn-arrange').addEventListener('click', function () { selectedId = null; autoArrange(); render(); toast('Inventory arranged.'); });
+    $('btn-reset-gear').addEventListener('click', function () {
+      if (!confirm('Replace your inventory with the starting gear for ' + bg().name + '?')) return;
+      selectedId = null; resetGear(); render();
+    });
+    var ai = $('add-item-select');
+    var groups = { weapon: 'Weapons', ammo: 'Weapons', armor: 'Armor', shield: 'Armor', consumable: 'Alchemy', spell: 'Spellbooks', magic: 'Magic items' };
+    var byGroup = {};
+    Object.keys(CROWS.ITEMS).sort().forEach(function (k) { var g = groups[item(k).cat] || 'Gear'; (byGroup[g] = byGroup[g] || []).push(k); });
+    ['Weapons', 'Armor', 'Gear', 'Alchemy', 'Spellbooks', 'Magic items'].forEach(function (g) {
+      var og = el('optgroup', { label: g });
+      (byGroup[g] || []).forEach(function (k) { og.appendChild(el('option', { value: k, text: k + (item(k).gc ? ' (' + fmt(item(k).gc) + ' gc)' : '') })); });
+      ai.appendChild(og);
+    });
+    $('btn-add-item').addEventListener('click', function () {
+      var key = ai.value, all = addItem(key, Math.max(1, Math.min(99, parseInt($('add-item-qty').value, 10) || 1)));
+      render();
+      toast(all ? 'Added ' + key + '.' : 'Added ' + key + ' (no room for all of it; see "Not carried").');
+    });
+
+    var inst = $('in-institution');
+    inst.appendChild(el('option', { value: '', text: '(not chosen yet)' }));
+    CROWS.STARTING_INSTITUTIONS.forEach(function (n) { inst.appendChild(el('option', { value: n, text: n })); });
+    inst.addEventListener('change', function () { state.institution = this.value; save(); });
+    $('in-prosperity').addEventListener('change', function () {
+      var n = parseInt(this.value, 10); state.prosperity = isNaN(n) ? 0 : Math.max(-10, Math.min(10, n)); render();
+    });
+    var cb = $('in-conn-benefit');
+    cb.appendChild(el('option', { value: '', text: '(choose a benefit)' }));
+    CROWS.CONNECTION_BENEFITS.forEach(function (b) { cb.appendChild(el('option', { value: b[0], text: b[0] })); });
+    cb.addEventListener('change', function () { state.connBenefit = this.value; render(); });
+
+    $('in-txp').addEventListener('change', function () {
+      var n = parseInt(this.value, 10); state.txp = isNaN(n) || n < 0 ? 0 : Math.min(n, 999999); render();
+    });
+    $('tree-select').addEventListener('change', function () { renderTraits(); });
+
+    $('btn-random').addEventListener('click', function () { startNew(); selectedId = null; randomCrow(); render(); toast('A new crow: ' + state.name + ', ' + bg().name + '.'); });
+    $('btn-new').addEventListener('click', function () {
+      if (!confirm('Start a new character? Unsaved changes to this one will be lost.')) return;
+      startNew(); selectedId = null; A.set('state', freshState(0)); resetGear(); rollCoins(); render();
+    });
+    $('btn-save').addEventListener('click', function () {
+      download(JSON.stringify(exportState(), null, 2), fileBase() + '_Crows_Character.json', 'application/json');
+    });
+    $('file-load').addEventListener('change', function () {
+      var f = this.files && this.files[0]; var input = this;
+      if (!f) return;
+      var rd = new FileReader();
+      rd.onload = function () {
+        try {
+          var s = JSON.parse(rd.result);
+          if (!validState(s)) throw new Error('not a Crows character file');
+          startNew(); selectedId = null; adopt(s); render(); toast('Loaded ' + (state.name || 'character') + '.');
+        } catch (e) { toast('Could not load that file: ' + e.message); }
+        input.value = '';
+      };
+      rd.readAsText(f);
+    });
+    $('btn-pdf').addEventListener('click', function () { exportPdf(this); });
+    $('btn-pdf-2').addEventListener('click', function () { exportPdf(this); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && selectedId !== null) { selectedId = null; renderInventory(); } });
+  }
+  function clearSelection() { selectedId = null; }
+
+  A.add({ render: render, renderBackground: renderBackground, renderChars: renderChars, renderIdentity: renderIdentity,
+      renderExpertise: renderExpertise, traitCard: traitCard, renderTraits: renderTraits, cardEl: cardEl, dropTarget: dropTarget,
+      attemptMove: attemptMove, slotLabel: slotLabel, renderInventory: renderInventory, renderVillage: renderVillage, renderAdvance: renderAdvance,
+      ordinal: ordinal, checklist: checklist, renderSummary: renderSummary, bind: bind, clearSelection: clearSelection });
+})();
+
+</script>
+<script>
+/*
+ * Character Generator: the fillable PDF (character record, inventory sheet, cheat sheet), built in the browser with pdf-lib.
+ * See state.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsGen, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var adMax = f('adMax'), adNow = f('adNow'), armorInfo = f('armorInfo'), beltSize = f('beltSize'), bg = f('bg'),
+      characteristics = f('characteristics'), curStamina = f('curStamina'), expertiseUses = f('expertiseUses'), findTrait = f('findTrait'),
+      item = f('item'), ownedTraitIds = f('ownedTraitIds'), spanOf = f('spanOf'), staminaMax = f('staminaMax'), toast = f('toast'),
+      traitXP = f('traitXP');
+  var $ = A.$, d = A.d, el = A.el, fmt = A.fmt, maxUses = A.maxUses;
+  var state = A.state; A.share('state', function (v) { state = v; });
+
   // ------------------------------------------------------------------ PDF export
   var WINANSI_EXTRA = '€‚ƒ„…†‡ˆ‰Š‹ŒŽ‘’“”•–—˜™š›œžŸ';
   function pdfSafe(s) {
@@ -9184,100 +9516,33 @@ var CROWS_TRAIT_TREES = [
     }).then(function () { btn.disabled = false; btn.textContent = old; });
   }
 
-  // ------------------------------------------------------------------ wiring
-  function bind() {
-    var bs = $('bg-select');
-    CROWS.BACKGROUNDS.forEach(function (b, i) { bs.appendChild(el('option', { value: String(i), text: b.d[0] + '-' + b.d[1] + '  ' + b.name })); });
-    bs.addEventListener('change', function () { state.bgDice = null; setBackground(+this.value, true); render(); });
-    $('btn-roll-bg').addEventListener('click', function () {
-      var r1 = d(6), r2 = d(6);
-      var i = CROWS.BACKGROUNDS.findIndex(function (b) { return b.d[0] === r1 && b.d[1] === r2; });
-      state.bgDice = [r1, r2]; setBackground(i, true); render();
-      toast('Rolled ' + r1 + ', ' + r2 + ': ' + bg().name);
-    });
-    $('char-two').addEventListener('change', function () {
-      state.twoChar = this.value;
-      var others = CROWS.CHARS.filter(function (c) { return c !== state.twoChar; });
-      if (others.indexOf(state.highChar) < 0) state.highChar = others[0];
-      render();
-    });
-    Array.prototype.forEach.call(document.querySelectorAll('input[name=pattern]'), function (r) {
-      r.addEventListener('change', function () { state.pattern = this.value; render(); });
-    });
-    $('char-high').addEventListener('change', function () { state.highChar = this.value; render(); });
+  A.add({ pdfSafe: pdfSafe, wrapLines: wrapLines, fitSize: fitSize, b64ToBytes: b64ToBytes, slotText: slotText, fieldValues: fieldValues,
+      buildPdf: buildPdf, download: download, fileBase: fileBase, exportPdf: exportPdf, WINANSI_EXTRA: WINANSI_EXTRA });
+})();
 
-    function text(id, key) { $(id).addEventListener('input', function () { state[key] = this.value; renderSummary(); save(); }); }
-    text('in-name', 'name'); text('in-player', 'player'); text('in-feature', 'feature'); text('in-village', 'village');
-    text('in-conn-name', 'connName'); text('in-conn-rel', 'connRel'); text('in-notes', 'notes');
-    $('btn-rand-name').addEventListener('click', function () { state.name = randomName(); render(); });
-    $('btn-rand-feature').addEventListener('click', function () { state.feature = pick(CROWS.NAME_IDEAS.feature); render(); });
+</script>
+<script>
+/*
+ * Character Generator: window.CrowsApp (for Play mode and tests), account saving (src/cloud.js), and start-up. Loaded last.
+ * See state.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsGen, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var addItem = f('addItem'), adMax = f('adMax'), adNow = f('adNow'), adopt = f('adopt'), allocTotal = f('allocTotal'), areaSize = f('areaSize'),
+      armorInfo = f('armorInfo'), bg = f('bg'), bind = f('bind'), buildPdf = f('buildPdf'), cardById = f('cardById'),
+      characteristics = f('characteristics'), clearSelection = f('clearSelection'), curStamina = f('curStamina'), expertiseUses = f('expertiseUses'),
+      exportState = f('exportState'), extraBeltRule = f('extraBeltRule'), fieldValues = f('fieldValues'), handFits = f('handFits'), item = f('item'),
+      load = f('load'), moveCard = f('moveCard'), moveToArea = f('moveToArea'), occupancy = f('occupancy'), ordinal = f('ordinal'),
+      randomCrow = f('randomCrow'), refusal = f('refusal'), render = f('render'), save = f('save'), setBackground = f('setBackground'),
+      spanOf = f('spanOf'), staminaMax = f('staminaMax'), takeItem = f('takeItem'), toast = f('toast'), traitXP = f('traitXP'),
+      usePool = f('usePool'), validState = f('validState'), woundCount = f('woundCount');
+  var $ = A.$, charBonusCount = A.charBonusCount, clone = A.clone, d = A.d, DIE = A.DIE, el = A.el, esBonusCount = A.esBonusCount, fmt = A.fmt,
+      maxUses = A.maxUses, refView = A.refView, signed = A.signed;
+  var state = A.state; A.share('state', function (v) { state = v; });
 
-    $('in-coins').addEventListener('input', function () { var n = parseInt(this.value, 10); state.coins = isNaN(n) || n < 0 ? 0 : n; state.coinDice = null; renderSummary(); save(); });
-    $('in-coins').addEventListener('change', function () { renderInventory(); });
-    $('btn-roll-coins').addEventListener('click', function () { rollCoins(); render(); });
-    $('btn-arrange').addEventListener('click', function () { selectedId = null; autoArrange(); render(); toast('Inventory arranged.'); });
-    $('btn-reset-gear').addEventListener('click', function () {
-      if (!confirm('Replace your inventory with the starting gear for ' + bg().name + '?')) return;
-      selectedId = null; resetGear(); render();
-    });
-    var ai = $('add-item-select');
-    var groups = { weapon: 'Weapons', ammo: 'Weapons', armor: 'Armor', shield: 'Armor', consumable: 'Alchemy', spell: 'Spellbooks', magic: 'Magic items' };
-    var byGroup = {};
-    Object.keys(CROWS.ITEMS).sort().forEach(function (k) { var g = groups[item(k).cat] || 'Gear'; (byGroup[g] = byGroup[g] || []).push(k); });
-    ['Weapons', 'Armor', 'Gear', 'Alchemy', 'Spellbooks', 'Magic items'].forEach(function (g) {
-      var og = el('optgroup', { label: g });
-      (byGroup[g] || []).forEach(function (k) { og.appendChild(el('option', { value: k, text: k + (item(k).gc ? ' (' + fmt(item(k).gc) + ' gc)' : '') })); });
-      ai.appendChild(og);
-    });
-    $('btn-add-item').addEventListener('click', function () {
-      var key = ai.value, all = addItem(key, Math.max(1, Math.min(99, parseInt($('add-item-qty').value, 10) || 1)));
-      render();
-      toast(all ? 'Added ' + key + '.' : 'Added ' + key + ' (no room for all of it; see "Not carried").');
-    });
-
-    var inst = $('in-institution');
-    inst.appendChild(el('option', { value: '', text: '(not chosen yet)' }));
-    CROWS.STARTING_INSTITUTIONS.forEach(function (n) { inst.appendChild(el('option', { value: n, text: n })); });
-    inst.addEventListener('change', function () { state.institution = this.value; save(); });
-    $('in-prosperity').addEventListener('change', function () {
-      var n = parseInt(this.value, 10); state.prosperity = isNaN(n) ? 0 : Math.max(-10, Math.min(10, n)); render();
-    });
-    var cb = $('in-conn-benefit');
-    cb.appendChild(el('option', { value: '', text: '(choose a benefit)' }));
-    CROWS.CONNECTION_BENEFITS.forEach(function (b) { cb.appendChild(el('option', { value: b[0], text: b[0] })); });
-    cb.addEventListener('change', function () { state.connBenefit = this.value; render(); });
-
-    $('in-txp').addEventListener('change', function () {
-      var n = parseInt(this.value, 10); state.txp = isNaN(n) || n < 0 ? 0 : Math.min(n, 999999); render();
-    });
-    $('tree-select').addEventListener('change', function () { renderTraits(); });
-
-    $('btn-random').addEventListener('click', function () { startNew(); selectedId = null; randomCrow(); render(); toast('A new crow: ' + state.name + ', ' + bg().name + '.'); });
-    $('btn-new').addEventListener('click', function () {
-      if (!confirm('Start a new character? Unsaved changes to this one will be lost.')) return;
-      startNew(); selectedId = null; state = freshState(0); resetGear(); rollCoins(); render();
-    });
-    $('btn-save').addEventListener('click', function () {
-      download(JSON.stringify(exportState(), null, 2), fileBase() + '_Crows_Character.json', 'application/json');
-    });
-    $('file-load').addEventListener('change', function () {
-      var f = this.files && this.files[0]; var input = this;
-      if (!f) return;
-      var rd = new FileReader();
-      rd.onload = function () {
-        try {
-          var s = JSON.parse(rd.result);
-          if (!validState(s)) throw new Error('not a Crows character file');
-          startNew(); selectedId = null; adopt(s); render(); toast('Loaded ' + (state.name || 'character') + '.');
-        } catch (e) { toast('Could not load that file: ' + e.message); }
-        input.value = '';
-      };
-      rd.readAsText(f);
-    });
-    $('btn-pdf').addEventListener('click', function () { exportPdf(this); });
-    $('btn-pdf-2').addEventListener('click', function () { exportPdf(this); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && selectedId !== null) { selectedId = null; renderInventory(); } });
-  }
+  var lastRemote = 0;   // when a change made elsewhere was last brought in
 
   // Expose a tiny API for testing/debugging.
   window.CrowsApp = {
@@ -9346,10 +9611,10 @@ var CROWS_TRAIT_TREES = [
       onStatus: updateSaveBox,
       getData: exportState,
       valid: validState,
-      apply: function (data) { selectedId = null; adopt(clone(data)); render(); },
+      apply: function (data) { clearSelection(); adopt(clone(data)); render(); },
       // Changes the Ref Screen sent to a linked sheet (play.js), redone on top if the player saved meanwhile.
       refOps: { start: refOps('start'), saved: refOps('saved'), canRedo: refOps('canRedo'), redo: refOps('redo') },
-      fresh: function () { selectedId = null; randomCrow(); render(); },
+      fresh: function () { clearSelection(); randomCrow(); render(); },
       name: function (c) { return c.name || 'Unnamed crow'; },
       summary: function (c) {
         var b = CROWS.BACKGROUNDS[c.bg];
@@ -9374,6 +9639,9 @@ var CROWS_TRAIT_TREES = [
       }
     });
   }
+
+  A.add({ updateSaveBox: updateSaveBox, describeChange: describeChange, refOps: refOps, init: init });
+
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
 
@@ -9392,7 +9660,8 @@ var CROWS_TRAIT_TREES = [
   var el = C.el, $ = C.$, d = C.d, fmt = C.fmt, signed = C.signed, item = C.item;
   var MODE_KEY = 'crows-pt2-mode';
   var CONDITIONS = ['Blessed', 'Grabbed', 'Prone', 'Vulnerable', 'Weakened', 'Unconscious'];
-  var DT_CONDITIONS = ['Blessed', 'Vulnerable', 'Weakened']; // end at the end of a dungeon turn
+  var Dice = window.CrowsDice, Rules = window.CrowsRules;   // src/shared/
+  var DT_CONDITIONS = Rules.DT_CONDITIONS; // end at the end of a dungeon turn
   // Rules book, Conditions (condensed). Shown as tooltips on the condition buttons.
   var CONDITION_RULES = {
     Blessed: 'Edge on all tests, and your attacks deal extra damage equal to the characteristic used. Ends at the end of the dungeon turn.',
@@ -9476,13 +9745,13 @@ var CROWS_TRAIT_TREES = [
   function loadCampaign() {
     var id = window.CrowsCloud && window.CrowsCloud.recordId;
     if (!id) return;
-    window.CrowsCloud.campaign().then(function (name) { campaign = name ? { id: id, name: name } : null; applyMode(mode()); }, function () { /* no title change */ });
+    window.CrowsCloud.campaign().then(function (name) { campaign = name ? { id: id, name: name } : null; C.render(); }, function () { /* no title change */ });   // title, and XP claims
     if (window.CrowsCombat) window.CrowsCombat.load();   // a fight the crow is in
   }
   /* A Ref accepted the open crow into `name` while the page was open. */
   function joined(name) {
     var id = window.CrowsCloud && window.CrowsCloud.recordId;
-    if (id) { campaign = { id: id, name: name }; applyMode(mode()); }
+    if (id) { campaign = { id: id, name: name }; C.render(); }
     if (window.CrowsCombat) window.CrowsCombat.load();
   }
   function gotoBuild(sectionId) {
@@ -9562,23 +9831,27 @@ var CROWS_TRAIT_TREES = [
     for (var k = 0; k < n && k < ws.length; k++) { delete p.wounds[ws[k]]; healed++; }
     return healed;
   }
+  /*
+   * Deal damage to this crow (the rules' order, Rules.damage): vulnerable, then the absorbers given (worn armor, shields,
+   * parry weapons) unless piercing, then Stamina, then wounds. vul: a vulnerable roll already made. Returns { parts, total, vul }.
+   */
+  function dealDamage(amount, piercing, abs, vul) {
+    var p = P(), cur = C.curStamina(), parts = [];
+    var r = Rules.damage({ amount: amount, vulnerable: !!p.conds.Vulnerable, vul: vul, piercing: piercing, ad: abs.map(function (c) { return C.adNow(c); }),
+      stamina: cur, woundRoom: 10 - C.woundCount() });
+    if (r.vul) parts.push('vulnerable +' + r.vul);
+    if (piercing) parts.push('piercing');
+    abs.forEach(function (c, i) { if (r.absorbed[i]) { c.dmg = (c.dmg || 0) + r.absorbed[i]; parts.push(c.key + ' absorbs ' + r.absorbed[i] + ' (AD ' + C.adNow(c) + ' left)'); } });
+    if (r.stamina) { setStamina(cur - r.stamina); parts.push('-' + r.stamina + ' Stamina'); }
+    if (r.total - r.stamina - r.absorbed.reduce(function (t, a) { return t + a; }, 0) > 0) { var w = addWounds(r.wounds, 'w'); parts.push(w + ' wound' + (w === 1 ? '' : 's')); }
+    return { parts: parts, total: r.total, vul: r.vul };
+  }
   function takeDamage() {
     var p = P(), amt = parseInt(ui.dmg, 10);
     if (!(amt > 0)) { C.toast('Enter the damage first.'); return; }
-    var parts = [], dmg = amt;
-    if (p.conds.Vulnerable) { var v = d(6); dmg += v; parts.push('vulnerable +' + v); }
-    if (!ui.pierce) {
-      var abs = absorbers().filter(function (c) { return C.adNow(c) > 0; });
-      abs.sort(function (a, b) { return (String(b.id) === ui.first) - (String(a.id) === ui.first); });
-      abs.forEach(function (c) {
-        if (!dmg) return;
-        var a = Math.min(dmg, C.adNow(c)); c.dmg = (c.dmg || 0) + a; dmg -= a;
-        parts.push(c.key + ' absorbs ' + a + ' (AD ' + C.adNow(c) + ' left)');
-      });
-    } else parts.push('piercing');
-    var cur = C.curStamina(), s = Math.min(dmg, cur);
-    if (s) { setStamina(cur - s); dmg -= s; parts.push('-' + s + ' Stamina'); }
-    if (dmg > 0) { var w = addWounds(dmg, 'w'); parts.push(w + ' wound' + (w === 1 ? '' : 's')); }
+    var abs = absorbers().filter(function (c) { return C.adNow(c) > 0; });
+    abs.sort(function (a, b) { return (String(b.id) === ui.first) - (String(a.id) === ui.first); });   // the one picked to take it first
+    var parts = dealDamage(amt, ui.pierce, abs).parts;
     ui.dmg = '';
     var dead = C.woundCount() >= 10;
     commit('Took ' + amt + ' damage: ' + parts.join(', ') + '.' + (dead ? ' All 10 backpack slots are wounded: your crow is dead.' : ''));
@@ -9606,10 +9879,8 @@ var CROWS_TRAIT_TREES = [
   function netEdge(extraE, extraB) {
     var e = 0, b = 0;
     if (ui.eb > 0) e = ui.eb; else b = -ui.eb;
-    e += extraE; b += extraB;
-    return Math.min(e, 2) - Math.min(b, 2);
+    return Dice.netEdges(e + extraE, b + extraB);
   }
-  function tierOf(total) { return total >= 17 ? 3 : total >= 12 ? 2 : 1; }
   // opts: label, charName, charVal, kind ('test'|'attack'|'cast'|'miasma'), group (expertise group allowed), wtype, melee, dmg {t2,t3,brutal}, card
   function rollTest(opts) {
     if (last && last.chaosPending) log(last.label + ': kept tier 1. ' + chaosRoll(last));
@@ -9622,17 +9893,11 @@ var CROWS_TRAIT_TREES = [
     var own = extraE + extraB;
     if (cm) { extraE += cm.e; extraB += cm.b; }
     var net = netEdge(extraE, extraB);
-    var a = d(10), b = d(10), nat = a + b;
-    var bonus = net === 1 ? 2 : net === -1 ? -2 : 0;
-    var mod = (opts.charVal || 0) + (ui.mod || 0) + (opts.extraMod || 0) + bonus + (cm ? cm.mod : 0);
-    var total = nat + mod;
-    var crit = nat >= 19, doom = nat <= 3;
-    if (p.conds.Unconscious && /Agility|Strength/.test(opts.charName || '')) doom = true;
-    var tier = doom ? 1 : crit ? 3 : tierOf(total);
-    if (!doom && !crit && net === 2) tier = Math.min(3, tier + 1);
-    if (!doom && !crit && net === -2) tier = Math.max(1, tier - 1);
-    if (cm && cm.autoT3) tier = 3;   // attacks against an unconscious creature
-    var r = { label: opts.label, opts: opts, dice: [a, b], nat: nat, mod: mod, total: total, net: net, crit: crit, doom: doom,
+    var t = Dice.test((opts.charVal || 0) + (ui.mod || 0) + (opts.extraMod || 0) + (cm ? cm.mod : 0), net,
+      { doom: !!(p.conds.Unconscious && /Agility|Strength/.test(opts.charName || '')) });   // unconscious: automatic doom
+    var tier = cm && cm.autoT3 ? 3 : t.tier;   // attacks against an unconscious creature
+    // r.mod includes an edge's +2 or a bane's -2 (the dice panel shows it as one modifier).
+    var r = { label: opts.label, opts: opts, dice: t.dice, nat: t.nat, mod: t.mod + t.bonus, total: t.total, net: net, crit: t.crit, doom: t.doom,
       baseTier: tier, tier: tier, exp: null, extra: [], conds: [] };
     if (p.conds.Blessed) r.conds.push('blessed: edge');
     if (own && (p.conds.Weakened || (isAttack(opts) && opts.melee && p.conds.Prone))) r.conds.push((p.conds.Weakened ? 'weakened' : 'prone') + ': bane');
@@ -9817,15 +10082,22 @@ var CROWS_TRAIT_TREES = [
   function caretakerBonus() { return (S().prosperity || 0) >= 6 ? 3 : 2; }
   function surgicalKit() { return carried().filter(function (c) { return c.key === 'Surgical Kit' && udNow(c) > 0; })[0] || null; }
   function foodCards() { return carried().filter(function (c) { return c.key === 'Ration' || c.key === 'Hearty Ration'; }); }
-  function rest() {
+  /*
+   * A rest's effects on this crow, whoever started it: the player's Rest button, or the Ref Screen finishing the party's
+   * rest (refChange rest). o: food ('Ration', 'Hearty Ration', 'none', or empty for a ration carried), activity (+ repair,
+   * study, useKit), tended, tendedKit, caretaker, miasma, xp (false: pending XP waits), by ('self' or 'ref'), dt (the DT
+   * the rest used up). Returns { ok, msg }. Records p.lastRest, so the same rest isn't taken twice (see refRest).
+   */
+  function doRest(o) {
     var s = S(), p = P(), msgs = [];
     var over = overloadedSlots();
-    if (over.length) { C.toast('You can\'t rest with two magic items in one slot (' + over.join(', ') + ').'); return; }
-    var food = ui.ration === 'none' ? null : foodCards().filter(function (c) { return c.key === (ui.ration || 'Ration'); })[0] || foodCards()[0] || null;
+    if (over.length) return { ok: false, msg: 'You can\'t rest with two magic items in one slot (' + over.join(', ') + ').' };
+    p.lastRest = { dt: o.dt, by: o.by || 'self', t: Date.now() };
+    var foods = foodCards();
+    var food = o.food === 'none' ? null : foods.filter(function (c) { return c.key === (o.food || 'Ration'); })[0] || foods[0] || null;
     if (!food) {
       var sw = addWounds(1, 's');
-      commit('Rested without eating: no rest benefits' + (sw ? ' and 1 starvation wound' : '') + '.');
-      return;
+      return { ok: true, msg: 'No food: no rest benefits' + (sw ? ' and 1 starvation wound' : '') + '.' };
     }
     var hearty = food.key === 'Hearty Ration';
     useOne(food);
@@ -9835,12 +10107,9 @@ var CROWS_TRAIT_TREES = [
     if (starve.length) msgs.push('Starvation wounds gone (' + starve.length + ').');
     setStamina(C.staminaMax());
     msgs.push('Stamina full.');
-    var heal = 1 + (hearty ? 1 : 0) + (ui.tended ? 1 : 0) + (ui.tended && ui.tendedKit ? 1 : 0) + (ui.caretaker ? caretakerBonus() : 0);
-    var h = healWounds(heal);
-    if (h) msgs.push('Healed ' + h + ' wound' + (h === 1 ? '' : 's') + '.');
     var uses = C.expertiseUses();
     p.temp = {};
-    if (p.miasma) {
+    if (o.miasma) {
       Object.keys(p.spent).forEach(function (k) { p.spent[k] = Math.min(p.spent[k], uses[k] || 0); if (!p.spent[k]) delete p.spent[k]; });
       msgs.push('In the Miasma: expertise uses are NOT restored. Make your Miasma RR.');
     } else {
@@ -9850,27 +10119,73 @@ var CROWS_TRAIT_TREES = [
     }
     s.inv.forEach(function (c) { var u = udInfo(c.key); if (u && u.rest && udNow(c) < u.max) { c.ud = u.max; msgs.push(c.key + ' recharged.'); } });
     CONDITIONS.forEach(function (k) { if (k !== 'Grabbed') delete p.conds[k]; });
-    if (ui.activity === 'repair') {
-      var rc = C.cardById(+ui.repair);
-      if (rc) { rc.dmg = 0; msgs.push('Repaired ' + rc.key + ' to full AD.'); }
-    } else if (ui.activity === 'study' && ui.study) {
-      p.temp[ui.study] = 1; msgs.push('Studied a lore book: +1 use of ' + ui.study + ' until the next rest.');
-    } else if (ui.activity === 'Tend Wounds') {
-      var kit = ui.useKit ? surgicalKit() : null;
-      if (kit) msgs.push('Tended an ally\'s wounds with a surgical kit: they lose 3 wounds instead of 1. ' + rollUD(kit, 'Tend Wounds'));
-      else msgs.push('Tended an ally\'s wounds: they lose 2 wounds instead of 1.');
-    } else if (ui.activity) msgs.push('Rest activity: ' + ui.activity + '.');
+    var heal = 1 + (hearty ? 1 : 0) + restActivity(o, msgs);
+    var h = healWounds(heal);
+    if (h) msgs.push('Healed ' + h + ' wound' + (h === 1 ? '' : 's') + '.');
     // pets eat animal feed
     s.pets.forEach(function (pet, i) {
-      var need = PET_FEED[pet] || 1, feed = findCarried('Animal Feed'), have = carried().filter(function (c) { return c.key === 'Animal Feed'; }).reduce(function (t, c) { return t + c.qty; }, 0);
+      var need = PET_FEED[pet] || 1, feed, have = carried().filter(function (c) { return c.key === 'Animal Feed'; }).reduce(function (t, c) { return t + c.qty; }, 0);
       if (have >= need) {
         for (var k = 0; k < need; k++) { feed = findCarried('Animal Feed'); useOne(feed); }
         delete p.petStam[i]; msgs.push('Your ' + pet.toLowerCase() + ' ate and rested.');
       } else msgs.push('Your ' + pet.toLowerCase() + ' had no animal feed (no rest benefit).');
     });
-    if (p.pendingXP) msgs.push(applyXP());
-    ui.activity = ''; ui.tended = false; ui.tendedKit = false; ui.useKit = false; ui.caretaker = false;
-    commit('Rested. ' + msgs.join(' '));
+    if (p.pendingXP && o.xp !== false) msgs.push(applyXP());
+    return { ok: true, msg: msgs.join(' ') };
+  }
+  /* The rest activity and the healing others give (Tend Wounds on me, my Caretaker): adds to msgs, returns the extra wounds healed. */
+  function restActivity(o, msgs) {
+    var p = P();
+    if (o.activity === 'repair') {
+      var rc = C.cardById(+o.repair);
+      if (rc) { rc.dmg = 0; msgs.push('Repaired ' + rc.key + ' to full AD.'); }
+    } else if (o.activity === 'study' && o.study) {
+      p.temp[o.study] = 1; msgs.push('Studied a lore book: +1 use of ' + o.study + ' until the next rest.');
+    } else if (o.activity === 'Tend Wounds') {
+      var kit = o.useKit ? surgicalKit() : null;
+      if (kit) msgs.push('Tended an ally\'s wounds with a surgical kit: they lose 3 wounds instead of 1. ' + rollUD(kit, 'Tend Wounds'));
+      else msgs.push('Tended an ally\'s wounds: they lose 2 wounds instead of 1.');
+    } else if (o.activity) msgs.push('Rest activity: ' + o.activity + '.');
+    return (o.tended ? 1 : 0) + (o.tended && o.tendedKit ? 1 : 0) + (o.caretaker ? caretakerBonus() : 0);
+  }
+  /* The rest choices made on the Rest card. */
+  function restChoices() {
+    return { food: ui.ration, activity: ui.activity, repair: ui.repair, study: ui.study, useKit: ui.useKit, tended: ui.tended, tendedKit: ui.tendedKit,
+      caretaker: ui.caretaker, miasma: P().miasma };
+  }
+  function clearRestChoices() { ui.activity = ''; ui.tended = false; ui.tendedKit = false; ui.useKit = false; ui.caretaker = false; }
+  /* The player's Rest button: a rest during the current dungeon turn (the one after the last the Ref ended). */
+  function rest() {
+    var o = restChoices(); o.by = 'self'; o.dt = P().dt + 1;
+    var r = doRest(o);
+    if (!r.ok) { C.toast(r.msg); return; }
+    clearRestChoices();
+    commit('Rested. ' + r.msg);
+  }
+  /* True after the Ref Screen rested the party and no dungeon turn has ended since: the sheet's own Rest would be a second one. */
+  function restedWithParty() { var lr = P().lastRest; return !!(lr && lr.by === 'ref' && lr.dt === P().dt); }
+  /* After the party's rest: the activity and extra healing only the player knows about. */
+  function restExtras() {
+    var p = P(), msgs = [], o = restChoices();
+    var h = healWounds(restActivity(o, msgs));
+    if (h) msgs.push('Healed ' + h + ' more wound' + (h === 1 ? '' : 's') + '.');
+    p.lastRest.extras = true;
+    clearRestChoices();
+    commit(msgs.length ? 'During the rest: ' + msgs.join(' ') : 'Nothing more from the rest.');
+  }
+  /*
+   * The Ref Screen finished the party's rest (refChange rest: { dt, miasma, xp }). Skipped if this crow already rested
+   * from its own sheet during that dungeon turn (in the last 12 hours, so an old rest on an unsynced DT doesn't count).
+   */
+  function refRest(r) {
+    var p = P(), lr = p.lastRest;
+    if (lr && lr.by === 'self' && lr.dt === r.dt && Date.now() - lr.t < 12 * 3600000) {
+      p.dt = r.dt;
+      return 'The party rested (DT ' + r.dt + '). You had already rested from your sheet this dungeon turn, so nothing more happens.';
+    }
+    var res = doRest({ by: 'ref', dt: r.dt, miasma: !!r.miasma || p.miasma, xp: r.xp });
+    p.dt = r.dt;
+    return res.ok ? 'Rested with the party (DT ' + r.dt + '). ' + res.msg : 'The party rested (DT ' + r.dt + '), but you couldn\'t: ' + res.msg;
   }
   function applyXP() {
     var s = S(), p = P(), before = C.esBonusCount(s.txp), cb = C.charBonusCount(s.txp), gained = p.pendingXP;
@@ -9881,21 +10196,11 @@ var CROWS_TRAIT_TREES = [
     if (nc) msg += ' New characteristic bonus' + (nc > 1 ? 'es' : '') + ' (' + nc + ').';
     return msg;
   }
-  function nextAt(txp) {
-    var es = null, ch = null;
-    CROWS.ES_ADV.forEach(function (r) { if (es === null && r[0] > txp) es = r[0]; });
-    if (es === null) es = 30000 * (Math.floor(txp / 30000) + 1);
-    CROWS.CHAR_ADV.forEach(function (t) { if (ch === null && t > txp) ch = t; });
-    if (ch === null) ch = 30000 * (Math.floor(txp / 30000) + 1);
-    return { es: es, ch: ch };
-  }
+  var nextAt = Rules.nextBonusAt;
+
 
   // ------------------------------------------------------------------ rendering
-  function btn(text, onclick, cls, extra) {
-    var a = { type: 'button', class: 'btn btn-small' + (cls ? ' ' + cls : ''), text: text, onclick: onclick };
-    if (extra) Object.keys(extra).forEach(function (k) { a[k] = extra[k]; });
-    return el('button', a);
-  }
+  function btn(text, onclick, cls, extra) { return window.CrowsDom.btn(text, onclick, 'btn-small' + (cls ? ' ' + cls : ''), extra); }
   function num(val, oninput, attrs) {
     var a = { type: 'number', value: val, oninput: function () { oninput(this.value); } };
     if (attrs) Object.keys(attrs).forEach(function (k) { a[k] = attrs[k]; });
@@ -9997,8 +10302,8 @@ var CROWS_TRAIT_TREES = [
       rationSel.appendChild(el('option', { value: k, text: 'Eat a ' + k.toLowerCase() + ' (' + n + ' carried)' }));
     });
     rationSel.appendChild(el('option', { value: 'none', text: kinds.length ? "Don't eat (no rest benefits)" : 'No rations! (no rest benefits, starvation wound)' }));
-    rationSel.value = kinds.indexOf(ui.ration) >= 0 || ui.ration === 'none' ? ui.ration : (kinds[0] || 'none');
-    ui.ration = rationSel.value;
+    rationSel.value = kinds.indexOf(ui.ration) >= 0 || (ui.ration === 'none' && kinds.length) ? ui.ration : (kinds[0] || 'none');
+    if (kinds.length) ui.ration = rationSel.value;   // "none" only when picked (not left over from a crow that had no food)
     var act = el('select', { onchange: function () { ui.activity = this.value; C.render(); } }, [
       el('option', { value: '', text: 'No rest activity / not tracked' }),
       el('option', { value: 'repair', text: 'Repair Armor' }),
@@ -10027,23 +10332,28 @@ var CROWS_TRAIT_TREES = [
         el('span', { class: 'fine', text: 'Pick someone with 2+ wounds (not you): they lose 2 wounds instead of 1.' });
       if (!kit) ui.useKit = false;
     }
-    var over = overloadedSlots();
+    var over = overloadedSlots(), party = restedWithParty(), done = party && p.lastRest.extras;
     var restBox = el('div', { class: 'rest-box' }, [
-      el('div', { class: 'row wrap' }, [
-        el('label', { class: 'field' }, ['Food', rationSel]),
+      party ? el('div', { class: 'banner ok', text: 'You rested with the party (dungeon turn ' + p.lastRest.dt + '): food, Stamina, a wound, expertise uses, and recharges are done. ' +
+        (done ? 'Your rest activity is recorded.' : 'Record your rest activity and any extra healing here.') }) : null,
+      done ? null : el('div', { class: 'row wrap' }, [
+        party ? null : el('label', { class: 'field' }, ['Food', rationSel]),
         el('label', { class: 'field' }, ['Rest activity', act]), sub
       ]),
-      el('div', { class: 'row wrap checks' }, [
-        el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: p.miasma, onchange: function () { p.miasma = this.checked; commit(); } }), ' Resting in the Miasma']),
+      done ? null : el('div', { class: 'row wrap checks' }, [
+        party ? null : el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: p.miasma, onchange: function () { p.miasma = this.checked; commit(); } }), ' Resting in the Miasma']),
         el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.tended, onchange: function () { ui.tended = this.checked; if (!this.checked) ui.tendedKit = false; C.render(); } }), ' Someone used Tend Wounds on me (+1 wound healed)']),
         ui.tended ? el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.tendedKit, onchange: function () { ui.tendedKit = this.checked; } }), ' ...with a surgical kit (+1 more)']) : null,
         s.connBenefit === 'Caretaker' ? el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: ui.caretaker, onchange: function () { ui.caretaker = this.checked; } }),
           ' Resting at my Caretaker connection\'s home (+' + caretakerBonus() + ' wounds: 2, or 3 at Prosperity 6+; your village is at ' + (s.prosperity || 0) + ')']) : null
       ]),
       over.length ? el('div', { class: 'banner bad', text: 'You can\'t rest: two magic items are equipped in one slot (' + over.join(', ') + '). Unequip one under Magic item slots.' }) : null,
-      el('p', { class: 'fine', text: '6 uninterrupted hours (4 asleep), eat 1 ration: regain all Stamina, heal 1 wound, regain expertise uses (not in the Miasma), recharge spellbooks and other rest usage dice' +
-        (p.pendingXP ? ', and gain your ' + fmt(p.pendingXP) + ' pending XP' : '') + '.' }),
-      btn('Rest', rest, 'btn-primary', { disabled: over.length ? true : null })
+      party ? null : el('p', { class: 'fine', text: '6 uninterrupted hours (4 asleep), eat 1 ration: regain all Stamina, heal 1 wound, regain expertise uses (not in the Miasma), recharge spellbooks and other rest usage dice' +
+        (p.pendingXP ? ', and gain your ' + fmt(p.pendingXP) + ' pending XP' : '') + '. In a campaign, the Ref finishing the party\'s rest does this for you.' }),
+      el('div', { class: 'row wrap' }, party ? [
+        done ? null : btn('Record activity & extra healing', restExtras, 'btn-primary'),
+        btn('Rest again (a separate rest)', rest, 'btn-ghost', { disabled: over.length ? true : null, title: 'Only for a second, separate rest: the party\'s rest is already applied' })
+      ] : [btn('Rest', rest, 'btn-primary', { disabled: over.length ? true : null })])
     ]);
     card('play-time', 'Dungeon turns & rest', [
       el('div', { class: 'row wrap dt-row' }, [
@@ -10272,6 +10582,7 @@ var CROWS_TRAIT_TREES = [
     if (pool > used) todo.push('Assign ' + (pool - used) + ' bonus expertise use' + (pool - used === 1 ? '' : 's'));
     if (s.charBonus.some(function (c) { return !c; })) todo.push('Choose a characteristic bonus');
     var banner = todo.length ? el('div', { class: 'banner warn' }, [todo.join('. ') + '. ', el('a', { href: '#sec-advance', text: 'Open Advancement', onclick: function (e) { e.preventDefault(); gotoBuild('sec-advance'); } })]) : null;
+    var camp = campaignName();   // in a campaign the Ref awards XP: the player's treasure is a claim for them to answer
     var share = ui.tPlayers > 0 && parseInt(ui.tGc, 10) > 0 ? Math.floor(parseInt(ui.tGc, 10) / ui.tPlayers) : 0;
     var shareEl = el('span', { class: 'fine', id: 'play-share', text: share ? '= ' + fmt(share) + ' XP each' : '' });
     function updShare() { var sh = ui.tPlayers > 0 && parseInt(ui.tGc, 10) > 0 ? Math.floor(parseInt(ui.tGc, 10) / ui.tPlayers) : 0; shareEl.textContent = sh ? '= ' + fmt(sh) + ' XP each' : ''; }
@@ -10280,7 +10591,14 @@ var CROWS_TRAIT_TREES = [
       el('label', { class: 'field' }, ['Value (gc)', num(ui.tGc, function (v) { ui.tGc = v; updShare(); }, { min: 0, class: 'mini' })]),
       el('label', { class: 'field' }, ['Players', num(ui.tPlayers, function (v) { ui.tPlayers = Math.max(1, parseInt(v, 10) || 1); updShare(); }, { min: 1, max: 12, class: 'mini' })]),
       shareEl,
-      btn('Add XP', function () {
+      camp ? btn('Ask the Ref for XP', function () {
+        var gc = parseInt(ui.tGc, 10) || 0, n = Math.max(1, ui.tPlayers | 0);
+        if (!gc) { C.toast('Enter the treasure value.'); return; }
+        if (p.xpClaims.length >= 30) { C.toast('Wait for the Ref to answer your other claims first.'); return; }
+        p.xpClaims.push({ id: Date.now().toString(36) + Math.floor(Math.random() * 1e6).toString(36), t: Date.now(), desc: ui.tDesc || 'Treasure', gc: gc, n: n });
+        var d1 = ui.tDesc || 'treasure'; ui.tDesc = ''; ui.tGc = '';
+        commit('Asked the Ref for XP: ' + d1 + ' worth ' + fmt(gc) + ' gc, split ' + n + ' ways.');
+      }, 'btn-primary', { title: 'In a campaign the Ref awards XP: they see this claim on their Party tab' }) : btn('Add XP', function () {
         var gc = parseInt(ui.tGc, 10) || 0, n = Math.max(1, ui.tPlayers | 0), xp = Math.floor(gc / n);
         if (!xp) { C.toast('Enter the treasure value.'); return; }
         p.pendingXP += xp;
@@ -10290,7 +10608,12 @@ var CROWS_TRAIT_TREES = [
         commit('Recovered ' + d0 + ' worth ' + fmt(gc) + ' gc: ' + fmt(xp) + ' XP each (applies after the next rest).');
       }, 'btn-primary')
     ]);
-    var other = el('div', { class: 'row wrap' }, [
+    var open = p.xpClaims.filter(function (c) { return p.claimsAnswered.indexOf(c.id) < 0; });
+    var claims = open.length ? el('div', { class: 'xp-hist' }, [el('h3', { text: 'Waiting for the Ref' })].concat(open.map(function (x) {
+      return el('div', { class: 'row wrap' }, [el('span', { class: 'grow' }, [el('span', { class: 'muted', text: new Date(x.t).toLocaleDateString() + ' ' }), x.desc + ' (' + fmt(x.gc) + ' gc / ' + x.n + ')']),
+        btn('Withdraw', function () { p.xpClaims = p.xpClaims.filter(function (c) { return c !== x; }); commit('Withdrew the XP claim for ' + x.desc + '.'); }, 'btn-small btn-ghost')]);
+    }))) : null;
+    var other = camp ? el('p', { class: 'fine', text: 'In ' + camp + ', your Ref awards XP: it arrives here as pending XP and applies after the next rest.' }) : el('div', { class: 'row wrap' }, [
       el('label', { class: 'field' }, ['Other XP (Ref award or correction)', num(ui.xpAmt, function (v) { ui.xpAmt = v; }, { class: 'mini' })]),
       btn('Add to pending', function () {
         var n = parseInt(ui.xpAmt, 10) || 0; if (!n) return;
@@ -10303,11 +10626,12 @@ var CROWS_TRAIT_TREES = [
       return el('div', {}, [el('span', { class: 'muted', text: new Date(x.t).toLocaleDateString() + ' ' }), x.desc + (x.gc ? ' (' + fmt(x.gc) + ' gc / ' + x.n + ')' : '') + ': ', el('b', { text: signed(x.xp) + ' XP' })]);
     }));
     card('play-advance', 'Experience & advancement', [
-      el('p', { class: 'hint', text: 'Recovered treasure (not bought, crafted, taken from innocents, or an ally\'s) gives XP = its gc value / number of players. XP and TXP bonuses apply only after a rest.' }),
+      el('p', { class: 'hint', text: 'Recovered treasure (not bought, crafted, taken from innocents, or an ally\'s) gives XP = its gc value / number of players. XP and TXP bonuses apply only after a rest.' +
+        (camp ? ' Your crow is in a campaign, so log treasure here to ask the Ref for the XP.' : '') }),
       stats, banner,
       el('p', { class: 'fine' }, ['Next Expertise & Stamina bonus at ' + fmt(nx.es) + ' TXP; next characteristic bonus at ' + fmt(nx.ch) + ' TXP. ',
         el('a', { href: '#sec-traits', text: 'Buy traits', onclick: function (e) { e.preventDefault(); gotoBuild('tree-browser'); } }), ' with unspent XP.']),
-      form, other, p.xpLog.length ? el('h3', { text: 'Recent XP' }) : null, hist
+      form, other, claims, p.xpLog.length ? el('h3', { text: 'Recent XP' }) : null, hist
     ]);
   }
 
@@ -10483,7 +10807,8 @@ var CROWS_TRAIT_TREES = [
      * overwritten values, so it adds to whatever the player did meanwhile. Any of:
      * xp (+ desc, gc, n): pending XP · apply: pending XP into TXP · full: full Stamina · st: Stamina +/- ·
      * wounds: ordinary wounds +/- · cruelty: +/- · setCruelty: a new value · endDT: dungeon turn n ended ·
-     * endConds: blessed, vulnerable, weakened end (with a rest) · dt: dungeon turn n ended (with a rest).
+     * endConds: blessed, vulnerable, weakened end (with a rest) · dt: dungeon turn n ended (with a rest) ·
+     * rest ({ dt, miasma, xp }): the party's rest, applied in full (see refRest) · claims: XP claims the Ref answered (ids).
      */
     refChange: refChange, refOps: refQueue,
     /* For the Ref Screen's combat tracker: this crow's vitals as the sheet has them (AD from worn armor and parry weapons). */
@@ -10525,17 +10850,9 @@ var CROWS_TRAIT_TREES = [
     var p = P(), parts = [], dmg = o.hit;
     var before = { stamina: p.stamina, wounds: JSON.parse(JSON.stringify(p.wounds)), dmg: {} };
     S().inv.forEach(function (c) { if (c.dmg) before.dmg[c.id] = c.dmg; });
-    if (p.conds.Vulnerable) { if (typeof o.vul !== 'number') o.vul = d(6); dmg += o.vul; parts.push('vulnerable +' + o.vul); }
-    var total = dmg;
-    if (!o.piercing) absorbers().filter(function (c) { return C.adNow(c) > 0; }).forEach(function (c) {
-      if (!dmg) return;
-      var a = Math.min(dmg, C.adNow(c)); c.dmg = (c.dmg || 0) + a; dmg -= a;
-      parts.push(c.key + ' absorbs ' + a);
-    });
-    else parts.push('piercing');
-    var cur = C.curStamina(), st = Math.min(dmg, cur);
-    if (st) { setStamina(cur - st); dmg -= st; parts.push('-' + st + ' Stamina'); }
-    if (dmg > 0) { var w = addWounds(dmg, 'w'); parts.push(w + ' wound' + (w === 1 ? '' : 's')); }
+    var res = dealDamage(dmg, !!o.piercing, absorbers().filter(function (c) { return C.adNow(c) > 0; }), o.vul), total = res.total;
+    if (res.vul) o.vul = res.vul;
+    parts = res.parts;
     if (p.conds.Unconscious) { delete p.conds.Unconscious; parts.push('wakes up'); }   // any damage wakes a sleeper
     o.result = { total: total, parts: parts, before: before };
     return 'Hit for ' + o.hit + (o.piercing ? ' piercing' : '') + (o.from ? ' by ' + o.from : '') + ': ' + parts.join(', ') + '.' +
@@ -10556,6 +10873,12 @@ var CROWS_TRAIT_TREES = [
       if (o.cond[k]) p.conds[k] = true; else delete p.conds[k];
       msgs.push((o.cond[k] ? 'Now ' : 'No longer ') + k.toLowerCase() + '.');
     });
+    if (o.rest) msgs.push(refRest(o.rest));
+    if (o.claims) {   // the player's own sheet takes them off its list (normalizePlay), even if they hadn't reached this copy yet
+      o.claims.forEach(function (id) { if (p.claimsAnswered.indexOf(id) < 0) p.claimsAnswered.push(id); });
+      if (p.claimsAnswered.length > 50) p.claimsAnswered.splice(0, p.claimsAnswered.length - 50);
+      if (!o.xp) msgs.push('The Ref answered your XP claim without an award.');
+    }
     if (o.endDT) msgs.push(endDT(o.endDT));
     if (o.endConds && (n = endDTConditions())) msgs.push('Resting: ' + n);
     if (o.dt && P().dt !== o.dt) { P().dt = o.dt; msgs.push('Dungeon turn ' + o.dt + ' ended with the rest.'); }
@@ -10921,11 +11244,7 @@ var CROWS_TRAIT_TREES = [
   function rich(text) {
     return el('span', null, String(text).split('**').map(function (part, i) { return i % 2 ? el('b', { text: part }) : document.createTextNode(part); }));
   }
-  function btn(text, onclick, cls, extra) {
-    var a = { type: 'button', class: 'btn ' + (cls || ''), text: text, onclick: onclick };
-    Object.keys(extra || {}).forEach(function (k) { a[k] = extra[k]; });
-    return el('button', a);
-  }
+  var btn = window.CrowsDom.btn;
   function row(x) {
     var mine = x === me(), on = targets[0] === x.id, also = !on && targets.indexOf(x.id) >= 0, m = me();
     var nums = typeof x.st === 'number' ? 'Stamina ' + x.st + '/' + x.stMax + (x.adMax ? ' · AD ' + x.ad + '/' + x.adMax : '') + (x.wounds ? ' · ' + x.wounds + ' wound' + (x.wounds === 1 ? '' : 's') : '') : '';

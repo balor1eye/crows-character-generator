@@ -574,7 +574,10 @@ function a_delete(): array {
 // Field name => path in the character (must match LINK_FIELDS in src/cloud.js).
 const SHARED_FIELDS = ['inv' => ['inv'], 'notes' => ['notes'], 'coins' => ['coins'], 'conds' => ['play', 'conds'],
     'stamina' => ['play', 'stamina'], 'cruelty' => ['play', 'cruelty'], 'wounds' => ['play', 'wounds'], 'log' => ['play', 'log'],
-    'txp' => ['txp'], 'pendingXP' => ['play', 'pendingXP'], 'xpLog' => ['play', 'xpLog']];
+    'txp' => ['txp'], 'pendingXP' => ['play', 'pendingXP'], 'xpLog' => ['play', 'xpLog'],
+    // what a rest or the end of a dungeon turn run from the Ref Screen changes, and the XP claims the Ref answers
+    'dt' => ['play', 'dt'], 'spent' => ['play', 'spent'], 'temp' => ['play', 'temp'], 'petStam' => ['play', 'petStam'],
+    'lastRest' => ['play', 'lastRest'], 'claimsAnswered' => ['play', 'claimsAnswered']];
 
 function own_character(array $s, int $id): array {
     $r = q('SELECT id, name FROM characters WHERE id = ? AND user_id = ?', [$id, $s['id']])->fetch();
@@ -739,6 +742,31 @@ function clean_wounds($w): object {
     }
     return $out;
 }
+/** A map of short names (expertises, pet numbers) to small counts: expertise uses spent, lore book uses, pet Stamina. */
+function clean_counts($c, string $what): object {
+    if (!is_object($c) || count(get_object_vars($c)) > 60) fail("Bad $what.");
+    $out = new stdClass();
+    foreach (get_object_vars($c) as $k => $v) {
+        $k = (string)$k;
+        if ($k === '' || mb_strlen($k) > 80 || preg_match('/[\x00-\x1f]/', $k)) fail("Bad $what.");
+        $out->$k = clean_int($v, 0, 999, $what);
+    }
+    return $out;
+}
+/** The last rest: { dt, by: 'self' | 'ref', t, extras? }, or null. */
+function clean_rest($r) {
+    if ($r === null) return null;
+    if (!is_object($r) || !in_array($r->by ?? null, ['self', 'ref'], true)) fail('Bad rest.');
+    $out = (object)['dt' => clean_int($r->dt ?? 0, 0, 999999, 'rest'), 'by' => $r->by, 't' => clean_int($r->t ?? 0, 0, PHP_INT_MAX, 'rest time')];
+    if (!empty($r->extras)) $out->extras = true;
+    return $out;
+}
+/** The ids of the players' XP claims the Ref has answered (the claims themselves are only ever changed by the player). */
+function clean_claim_ids($l): array {
+    if (!is_array($l) || count($l) > 50) fail('Bad XP claims.');
+    foreach ($l as $id) if (!is_string($id) || !preg_match('/^[A-Za-z0-9]{1,24}$/', $id)) fail('Bad XP claim.');
+    return array_values($l);
+}
 function clean_log($l): array {
     if (!is_array($l) || count($l) > 200) fail('Bad log.');
     $out = [];
@@ -803,7 +831,7 @@ function a_link_save(): array {
         if (!is_object($data)) fail('That character could not be read.', 500);
         $changed = [];
         foreach (get_object_vars($b->fields) as $f => $v) {
-            if (!isset(SHARED_FIELDS[$f])) fail('A Ref can only change the vitals, equipment, notes, and XP.', 403);
+            if (!isset(SHARED_FIELDS[$f])) fail('A Ref can only change the vitals, equipment, notes, rests, and XP.', 403);
             if (!property_exists($b->base, $f)) fail('Nothing to save.');
             if ($f !== 'log' && $f !== 'xpLog' && canon(field_get($data, $f)) !== canon($b->base->$f)) {
                 fail('The player changed this character at the same time.', 409, ['item' => linked_out($r, true)]);
@@ -820,6 +848,12 @@ function a_link_save(): array {
                 case 'txp': $v = clean_int($v, 0, 999999, 'total XP'); break;
                 case 'pendingXP': $v = clean_int($v, 0, 99999999, 'pending XP'); break;
                 case 'xpLog': $v = merge_log(field_get($data, 'xpLog'), clean_xplog($v), $b->base->xpLog, 100); break;
+                case 'dt': $v = clean_int($v, 0, 999999, 'dungeon turn'); break;
+                case 'spent': $v = clean_counts($v, 'expertise uses'); break;
+                case 'temp': $v = clean_counts($v, 'lore book uses'); break;
+                case 'petStam': $v = clean_counts($v, 'pet Stamina'); break;
+                case 'lastRest': $v = clean_rest($v); break;
+                case 'claimsAnswered': $v = clean_claim_ids($v); break;
             }
             field_set($data, $f, $v);
             $changed[] = $f;
@@ -1347,7 +1381,9 @@ function a_combat_publish(): array {
     $v = max($prev + 1, (int)floor(microtime(true) * 1000));
     q('INSERT INTO combats (campaign_id, data, version, updated_at) VALUES (?,?,?,?) ON DUPLICATE KEY UPDATE data = VALUES(data), version = VALUES(version), updated_at = VALUES(updated_at)',
       [$cid, $json, $v, now()]);
-    q('DELETE FROM combat_members WHERE campaign_id = ?', [$cid]);
+    // Only the crows that left come off (never all, then back on): a player acting meanwhile must still find theirs.
+    if ($chars) q('DELETE FROM combat_members WHERE campaign_id = ? AND character_id NOT IN (' . implode(',', array_fill(0, count($chars), '?')) . ')', array_merge([$cid], $chars));
+    else q('DELETE FROM combat_members WHERE campaign_id = ?', [$cid]);
     foreach ($chars as $ch) q('INSERT IGNORE INTO combat_members (campaign_id, character_id) VALUES (?,?)', [$cid, $ch]);
     foreach (array_unique(array_merge($old, $chars)) as $ch) signal('combatc', $ch, $v);
     return ['version' => $v, 'members' => count($chars), 'actions' => actions_info($cid)];

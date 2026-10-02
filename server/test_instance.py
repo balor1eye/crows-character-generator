@@ -191,6 +191,12 @@ def smoke():
     cur = ref.get("link.get", id=acc["id"])["item"]
     ref.post("link.save", {"id": acc["id"], "fields": {"coins": 10}, "base": {"coins": cur["data"].get("coins")}})
     check("Ref's vitals change reaches the sheet", p1.get("get", kind="characters", id=ch["id"])["item"]["data"]["coins"] == 10)
+    play = cur["data"].get("play") or {}
+    ref.post("link.save", {"id": acc["id"], "fields": {"dt": 3, "spent": {}, "lastRest": {"dt": 3, "by": "ref", "t": 1}},
+                           "base": {"dt": play.get("dt"), "spent": play.get("spent"), "lastRest": play.get("lastRest")}})
+    check("Ref's rest reaches the sheet", p1.get("get", kind="characters", id=ch["id"])["item"]["data"]["play"]["lastRest"]["by"] == "ref")
+    fails("Ref's rest fields are checked", 400, lambda: ref.post("link.save", {"id": acc["id"], "fields": {"lastRest": {"by": "someone"}},
+                                                                              "base": {"lastRest": {"dt": 3, "by": "ref", "t": 1}}}))
     fails("Ref can't change other fields", 403, lambda: ref.post("link.save", {"id": acc["id"], "fields": {"name": "x"},
                                                                              "base": {"name": "Smoke Kestrel"}}))
     check("player sees the Ref has access", [r["username"] for r in p1.get("share.get", id=ch["id"])["refs"]] == ["test_ref"])
