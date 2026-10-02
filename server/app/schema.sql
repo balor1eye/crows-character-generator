@@ -105,6 +105,18 @@ CREATE TABLE IF NOT EXISTS character_access (
   CONSTRAINT fk_access_ref FOREIGN KEY (ref_user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- A player handing one of their characters to someone else to play (another player, or the Ref), e.g. for a
+-- session they can't make. That user can open, edit, and play it, and act with it in fights, until the owner
+-- takes it back (or they hand it back). One at a time; the owner keeps full access throughout.
+CREATE TABLE IF NOT EXISTS character_control (
+  character_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  user_id INT UNSIGNED NOT NULL,
+  created_at DATETIME NOT NULL,
+  KEY k_user (user_id),
+  CONSTRAINT fk_control_character FOREIGN KEY (character_id) REFERENCES characters(id) ON DELETE CASCADE,
+  CONSTRAINT fk_control_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- A Ref's invite link for one campaign (only the token's hash is kept). Making a new link replaces the old one.
 CREATE TABLE IF NOT EXISTS campaign_invites (
   campaign_id INT UNSIGNED NOT NULL PRIMARY KEY,

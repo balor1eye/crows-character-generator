@@ -392,23 +392,52 @@ function with_watch(array $o, string $k, int $id): array {
 
 function a_list(): array {
     $k = kind(); $s = owner_for($k);
+    if ($k === 'characters') {
+        $rows = q('SELECT c.id, c.name, c.summary, c.version, c.created_at, c.updated_at, u.username AS controller FROM characters c
+                   LEFT JOIN character_control k ON k.character_id = c.id LEFT JOIN users u ON u.id = k.user_id
+                   WHERE c.user_id = ? ORDER BY c.updated_at DESC', [$s['id']])->fetchAll();
+        return ['items' => array_map(function ($r) { return row_out($r) + ['controller' => $r['controller']]; }, $rows)];
+    }
     $rows = q("SELECT id, name, summary, version, created_at, updated_at FROM $k WHERE user_id = ? ORDER BY updated_at DESC", [$s['id']])->fetchAll();
     return ['items' => array_map('row_out', $rows)];
+}
+
+/**
+ * May $s open and save $k #$id? A campaign only its Ref; a character its owner, or whoever the owner handed
+ * control to (character_control). Returns ['owner' => the owner's username when $s is that someone else,
+ * 'controller' => who has control when $s is the owner]. Anyone else is told it wasn't found.
+ */
+function record_access(string $k, array $s, int $id): array {
+    if ($k === 'campaigns') {
+        if ((int)q('SELECT user_id FROM campaigns WHERE id = ?', [$id])->fetchColumn() !== $s['id']) fail('That save was not found. It may have been deleted.', 404);
+        return ['owner' => null, 'controller' => null];
+    }
+    $r = q('SELECT c.user_id, o.username AS owner, k.user_id AS ctl_id, u.username AS ctl FROM characters c JOIN users o ON o.id = c.user_id
+            LEFT JOIN character_control k ON k.character_id = c.id LEFT JOIN users u ON u.id = k.user_id WHERE c.id = ?', [$id])->fetch();
+    if ($r && (int)$r['user_id'] === $s['id']) return ['owner' => null, 'controller' => $r['ctl']];
+    if ($r && (int)$r['ctl_id'] === $s['id']) return ['owner' => $r['owner'], 'controller' => $r['ctl']];
+    fail('That save was not found, or its player has taken back control of it.', 404);
+}
+function with_access(array $o, array $acc): array {
+    if ($acc['owner'] !== null) $o['owner'] = $acc['owner'];
+    if ($acc['controller'] !== null) $o['controller'] = $acc['controller'];
+    return $o;
 }
 
 function a_get(): array {
     $k = kind(); $s = owner_for($k);
     $id = record_id();
+    $acc = record_access($k, $s, $id);
     $known = (int)($_GET['known'] ?? 0);
     if ($known) {
         // Polling: answer "unchanged" without sending the whole save.
-        $v = q("SELECT version FROM $k WHERE id = ? AND user_id = ?", [$id, $s['id']])->fetchColumn();
+        $v = q("SELECT version FROM $k WHERE id = ?", [$id])->fetchColumn();
         if ($v === false) fail('That save was not found. It may have been deleted.', 404);
         if ((int)$v === $known) return ['item' => ['id' => $id, 'version' => $known, 'unchanged' => true]];
     }
-    $r = q("SELECT * FROM $k WHERE id = ? AND user_id = ?", [$id, $s['id']])->fetch();
+    $r = q("SELECT * FROM $k WHERE id = ?", [$id])->fetch();
     if (!$r) fail('That save was not found. It may have been deleted.', 404);
-    return ['item' => with_watch(row_out($r, true), $k, $id)];
+    return ['item' => with_watch(with_access(row_out($r, true), $acc), $k, $id)];
 }
 
 function a_create(): array {
@@ -427,19 +456,20 @@ function a_save(): array {
     $k = kind(); $s = owner_for($k);
     $id = record_id();
     $data = record_data();
+    $acc = record_access($k, $s, $id);
     $force = !empty(body()['force']);
     $base = body()['version'] ?? 0;
-    $args = [$data, clip(str('name', 1000), 120), clip(str('summary', 2000), 255), now(), $id, $s['id']];
-    $sql = "UPDATE $k SET data = ?, name = ?, summary = ?, version = version + 1, updated_at = ? WHERE id = ? AND user_id = ?";
+    $args = [$data, clip(str('name', 1000), 120), clip(str('summary', 2000), 255), now(), $id];
+    $sql = "UPDATE $k SET data = ?, name = ?, summary = ?, version = version + 1, updated_at = ? WHERE id = ?";
     if (!$force) { $sql .= ' AND version = ?'; $args[] = (int)$base; }
     $n = q($sql, $args)->rowCount();
-    $r = q("SELECT id, name, summary, version, created_at, updated_at FROM $k WHERE id = ? AND user_id = ?", [$id, $s['id']])->fetch();
+    $r = q("SELECT id, name, summary, version, created_at, updated_at FROM $k WHERE id = ?", [$id])->fetch();
     if (!$r) fail('That save was not found. It may have been deleted.', 404);
     if ($n === 0 && !$force && (int)$r['version'] !== (int)$base) {
         fail('This was changed in another window or device.', 409, ['item' => row_out($r)]);
     }
     if ($n) signal($k, $id, (int)$r['version']);
-    return ['item' => with_watch(row_out($r), $k, $id)];
+    return ['item' => with_watch(with_access(row_out($r), $acc), $k, $id)];
 }
 
 function a_duplicate(): array {
@@ -725,6 +755,118 @@ function a_link_remove(): array {
     return [];
 }
 
+// ---------------------------------------------------------------- handing a character to someone else to play
+/*
+ * A player can give control of one of their characters to another account (a player, or their Ref), say for a
+ * session they'll miss. That user then opens, edits, and plays it from their own My characters and Play pages
+ * (get and save accept them, see record_access) and acts with it in fights. They can't delete, copy, share, or
+ * pass it on. The owner keeps full access, and takes control back whenever they like; the other user can also
+ * hand it back. Either way the other side is told (notifications), and the version is bumped so a sheet still
+ * open on the delegate's page notices within a second or two that it can no longer save.
+ */
+function control_row(int $characterId): ?array {
+    $r = q('SELECT k.user_id, k.created_at, u.username FROM character_control k JOIN users u ON u.id = k.user_id WHERE k.character_id = ?', [$characterId])->fetch();
+    return $r ?: null;
+}
+/** Make open copies of the character reload (and a delegate who lost control find out). */
+function control_changed(int $characterId): void {
+    q('UPDATE characters SET version = version + 1 WHERE id = ?', [$characterId]);
+    signal('characters', $characterId, (int)q('SELECT version FROM characters WHERE id = ?', [$characterId])->fetchColumn());
+}
+
+/**
+ * The owner's Hand over panel: who has control, the Refs with access, and the campaigns the crow is in with
+ * their Ref and the other players there now (crows in play or sitting out), the likely people to hand it to.
+ * Only usernames go back, nothing else of the Ref's campaign.
+ */
+function a_control_get(): array {
+    $s = need_login();
+    $c = own_character($s, record_id());
+    $k = control_row((int)$c['id']);
+    $access = q('SELECT a.id, a.ref_user_id, u.username FROM character_access a JOIN users u ON u.id = a.ref_user_id WHERE a.character_id = ? ORDER BY u.username', [$c['id']])->fetchAll();
+    $campaigns = [];
+    foreach ($access as $a) {
+        foreach (q('SELECT name, data FROM campaigns WHERE user_id = ? ORDER BY updated_at DESC', [$a['ref_user_id']])->fetchAll() as $camp) {
+            $party = json_decode($camp['data'], true)['party'] ?? null;
+            if (!is_array($party)) continue;
+            $links = []; $mine = false;
+            foreach ($party as $pc) {
+                $aid = is_array($pc) && isset($pc['link']) && is_numeric($pc['link']) ? (int)$pc['link'] : 0;
+                if (!$aid) continue;
+                if ($aid === (int)$a['id']) { $mine = true; continue; }
+                if (in_array($pc['status'] ?? 'active', ['active', 'away'], true)) $links[] = $aid;
+            }
+            if (!$mine) continue;
+            $players = [];
+            if ($links) {
+                $in = implode(',', array_fill(0, count($links), '?'));
+                // Links in this Ref's party are this Ref's access rows; a stale one simply matches nothing.
+                $players = q("SELECT DISTINCT u.username FROM character_access x JOIN characters ch ON ch.id = x.character_id JOIN users u ON u.id = ch.user_id
+                              WHERE x.id IN ($in) AND x.ref_user_id = ? AND u.id <> ? ORDER BY u.username",
+                             array_merge($links, [$a['ref_user_id'], $s['id']]))->fetchAll(PDO::FETCH_COLUMN);
+            }
+            $campaigns[] = ['name' => $camp['name'] !== '' ? $camp['name'] : 'Untitled campaign', 'ref' => $a['username'], 'players' => $players];
+        }
+    }
+    return ['controller' => $k ? ['username' => $k['username'], 'since' => $k['created_at'] . 'Z'] : null,
+            'refs' => array_column($access, 'username'), 'campaigns' => $campaigns];
+}
+
+function a_control_give(): array {
+    $s = need_login();
+    $c = own_character($s, record_id());
+    $name = trim(str('username', 64));
+    if ($name === '') fail('Enter the username of the player or Ref to hand this crow to.');
+    $u = q('SELECT id, username FROM users WHERE username = ?', [$name])->fetch();
+    if (!$u) fail('There\'s no account called ' . $name . '. Check the spelling of their username.', 404);
+    if ((int)$u['id'] === $s['id']) fail('This crow is already yours.', 409);
+    $old = control_row((int)$c['id']);
+    if ($old && (int)$old['user_id'] === (int)$u['id']) return ['controller' => ['username' => $u['username'], 'since' => $old['created_at'] . 'Z']];
+    q('REPLACE INTO character_control (character_id, user_id, created_at) VALUES (?,?,?)', [$c['id'], $u['id'], now()]);
+    audit('control_given', $s['id'], 'character ' . $c['id'] . ' to ' . $u['username']);
+    $detail = ['character' => $c['name'], 'characterId' => (int)$c['id'], 'owner' => $s['username']];
+    if ($old) notify((int)$old['user_id'], 'control_taken', $detail);
+    notify((int)$u['id'], 'control_given', $detail);
+    control_changed((int)$c['id']);
+    return ['controller' => ['username' => $u['username'], 'since' => now() . 'Z']];
+}
+
+/** The owner takes control back. */
+function a_control_take(): array {
+    $s = need_login();
+    $c = own_character($s, record_id());
+    $old = control_row((int)$c['id']);
+    if (!$old) return [];
+    q('DELETE FROM character_control WHERE character_id = ?', [$c['id']]);
+    audit('control_taken', $s['id'], 'character ' . $c['id'] . ' from ' . $old['username']);
+    notify((int)$old['user_id'], 'control_taken', ['character' => $c['name'], 'characterId' => (int)$c['id'], 'owner' => $s['username']]);
+    control_changed((int)$c['id']);
+    return [];
+}
+
+/** The user in control hands it back to its owner. */
+function a_control_release(): array {
+    $s = need_login();
+    $id = record_id();
+    $r = q('SELECT c.id, c.name, c.user_id FROM character_control k JOIN characters c ON c.id = k.character_id
+            WHERE k.character_id = ? AND k.user_id = ?', [$id, $s['id']])->fetch();
+    if (!$r) return [];   // already taken back
+    q('DELETE FROM character_control WHERE character_id = ? AND user_id = ?', [$id, $s['id']]);
+    audit('control_returned', (int)$r['user_id'], 'character ' . $id, $s['id']);
+    notify((int)$r['user_id'], 'control_returned', ['character' => $r['name'], 'characterId' => $id, 'by' => $s['username']]);
+    control_changed($id);
+    return [];
+}
+
+/** Characters other players handed to this user, for their My characters and Play pages. */
+function a_control_list(): array {
+    $s = need_login();
+    $rows = q('SELECT c.id, c.name, c.summary, c.version, c.created_at, c.updated_at, u.username AS owner, k.created_at AS since
+               FROM character_control k JOIN characters c ON c.id = k.character_id JOIN users u ON u.id = c.user_id
+               WHERE k.user_id = ? ORDER BY c.updated_at DESC', [$s['id']])->fetchAll();
+    return ['items' => array_map(function ($r) { return row_out($r) + ['owner' => $r['owner'], 'since' => $r['since'] . 'Z']; }, $rows)];
+}
+
 // ---------------------------------------------------------------- inviting players to a campaign
 /*
  * A Ref makes an invite link for a campaign and sends it to the players. A logged-in player who opens it
@@ -875,7 +1017,8 @@ function a_characters_campaigns(): array {
     $out = [];
     $add = function (int $cid, array $e) use (&$out) { $out[(string)$cid][] = $e; };
     $access = q('SELECT a.id, a.character_id, a.ref_user_id, u.username FROM character_access a JOIN characters c ON c.id = a.character_id
-                 JOIN users u ON u.id = a.ref_user_id WHERE c.user_id = ?', [$s['id']])->fetchAll();
+                 JOIN users u ON u.id = a.ref_user_id WHERE c.user_id = ? OR c.id IN (SELECT character_id FROM character_control WHERE user_id = ?)',
+                 [$s['id'], $s['id']])->fetchAll();
     $byRef = [];
     foreach ($access as $a) $byRef[(int)$a['ref_user_id']][(int)$a['id']] = $a;
     foreach ($byRef as $refId => $rows) {
@@ -896,7 +1039,8 @@ function a_characters_campaigns(): array {
     }
     $reqs = q("SELECT j.character_id, j.status, p.name, u.username FROM join_requests j JOIN characters c ON c.id = j.character_id
                JOIN campaigns p ON p.id = j.campaign_id JOIN users u ON u.id = p.user_id
-               WHERE c.user_id = ? AND (j.status = 'pending' OR (j.status = 'declined' AND j.decided_at > ?))", [$s['id'], now(-14 * 86400)])->fetchAll();
+               WHERE (c.user_id = ? OR c.id IN (SELECT character_id FROM character_control WHERE user_id = ?))
+               AND (j.status = 'pending' OR (j.status = 'declined' AND j.decided_at > ?))", [$s['id'], $s['id'], now(-14 * 86400)])->fetchAll();
     foreach ($reqs as $r) $add((int)$r['character_id'], ['campaign' => $r['name'] !== '' ? $r['name'] : 'Untitled campaign', 'ref' => $r['username'], 'state' => $r['status']]);
     return ['campaigns' => (object)$out];
 }
@@ -1041,7 +1185,7 @@ function member_combat(int $characterId, int $campaignId = 0): ?array {
 function a_combat_mine(): array {
     $s = need_login();
     $id = record_id();
-    own_character($s, $id);
+    record_access('characters', $s, $id);   // its owner, or whoever they handed it to
     $r = member_combat($id);
     $v = max(signal_version('combatc', $id), $r ? (int)$r['version'] : 0);
     $known = (int)($_GET['known'] ?? 0);
@@ -1097,7 +1241,7 @@ function clean_action($a): array {
 function a_combat_act(): array {
     $s = need_login();
     $id = record_id();
-    own_character($s, $id);
+    record_access('characters', $s, $id);
     $cid = combat_campaign_id();
     $r = member_combat($id, $cid);
     $c = $r ? json_decode($r['data']) : null;
@@ -1255,6 +1399,11 @@ const ACTIONS = [
     'share.create' => ['POST', 'a_share_create', true],
     'share.disable' => ['POST', 'a_share_disable', true],
     'share.revoke' => ['POST', 'a_share_revoke', true],
+    'control.get' => ['GET', 'a_control_get', false],
+    'control.give' => ['POST', 'a_control_give', true],
+    'control.take' => ['POST', 'a_control_take', true],
+    'control.release' => ['POST', 'a_control_release', true],
+    'control.list' => ['GET', 'a_control_list', false],
     'link.preview' => ['GET', 'a_link_preview', false],
     'link.redeem' => ['POST', 'a_link_redeem', true],
     'link.get' => ['GET', 'a_link_get', false],

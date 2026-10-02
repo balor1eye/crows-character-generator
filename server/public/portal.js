@@ -398,6 +398,9 @@
     var d = n.detail || {}, crow = d.character || 'your crow', camp = d.campaign || 'their campaign';
     if (n.kind === 'join_accepted') return d.ref + ' accepted ' + crow + ' into ' + camp + '. You\u2019ll see each other\u2019s changes live.';
     if (n.kind === 'join_declined') return d.ref + ' declined ' + crow + '\u2019s request to join ' + camp + '. You can ask again from their invite link.';
+    if (n.kind === 'control_given') return d.owner + ' handed you ' + crow + ' to play. It\u2019s under Handed to you in My characters until they take it back.';
+    if (n.kind === 'control_taken') return d.owner + ' took back control of ' + crow + '.';
+    if (n.kind === 'control_returned') return d.by + ' handed ' + crow + ' back to you.';
     return null;
   }
   function loadNews(box) {
@@ -411,11 +414,12 @@
           api('POST', 'notes.dismiss', { all: true }).then(function () { loadNews(box); }, function (e) { toast(e.message); });
         }, 'btn-small btn-ghost') : null]),
         el('ul', { class: 'rows' }, items.map(function (n) {
-          var ok = n.kind === 'join_accepted';
+          var ok = n.kind !== 'join_declined' && n.kind !== 'control_taken';
+          var open = n.kind === 'join_accepted' || n.kind === 'control_given';
           return el('li', { class: ok ? 'yes' : 'no' }, [
             el('div', null, [el('div', { text: noteText(n) }), el('div', { class: 'meta', text: when(n.at) })]),
             el('div', { class: 'btns' }, [
-              ok && n.detail.characterId ? a('Play ' + (n.detail.character || 'it'), PLAY + '?id=' + n.detail.characterId, 'btn btn-small btn-primary') : null,
+              open && n.detail.characterId ? a('Play ' + (n.detail.character || 'it'), PLAY + '?id=' + n.detail.characterId, 'btn btn-small btn-primary') : null,
               btn('Dismiss', function () { api('POST', 'notes.dismiss', { id: n.id }).then(function () { loadNews(box); }, function (e) { toast(e.message); }); }, 'btn-small btn-ghost')])
           ]);
         }))]));
@@ -447,7 +451,9 @@
     function row(it, camps) {
       var panel = el('div', { class: 'share-panel', hidden: true });
       var btns = opts.buttons(it).concat(opts.manage && kind === 'characters' ? [
-        btn('Share', function () { if (panel.hidden) sharePanel(it, panel); else panel.hidden = true; }, 'btn-small btn-ghost', 'Send your Ref a link to this character')
+        btn('Share', function () { if (panel.hidden) sharePanel(it, panel); else panel.hidden = true; }, 'btn-small btn-ghost', 'Send your Ref a link to this character'),
+        btn('Hand over', function () { if (panel.hidden) controlPanel(it, panel, load); else panel.hidden = true; }, 'btn-small btn-ghost',
+          'Let another player or your Ref play this crow, and take it back when you like')
       ] : []).concat(opts.manage && kind === 'campaigns' ? [
         btn('Rename', function () { if (panel.hidden) renamePanel(it, panel, load); else panel.hidden = true; }, 'btn-small btn-ghost', 'Change this campaign\'s name')
       ] : []).concat(opts.manage ? [
@@ -467,7 +473,9 @@
       return el('li', null, [
         el('div', null, [el('div', { class: 'name', text: it.name || 'Untitled' }),
           el('div', { class: 'meta', text: [it.summary, 'saved ' + when(it.updatedAt)].filter(Boolean).join(' · ') }),
-          opts.campaigns ? campaignChips(camps) : null]),
+          opts.campaigns ? campaignChips(camps) : null,
+          it.controller ? el('div', { class: 'camps' }, [el('span', { class: 'camp-chip warn', title: it.controller + ' can open and play this crow until you take it back' }, [
+            el('b', { text: 'Handed to ' + it.controller })])]) : null]),
         el('div', { class: 'btns' }, btns),
         panel
       ]);
@@ -495,8 +503,78 @@
           el('input', { type: 'file', accept: '.json,application/json', multiple: true, onchange: function () { upload(this); } })])
       ] : [])
     ]);
-    show([head, opts.intro ? el('p', { class: 'muted', text: opts.intro }) : null, el('div', { class: 'card' }, [list])]);
+    var handed = kind === 'characters' ? el('div') : null;
+    show([head, opts.intro ? el('p', { class: 'muted', text: opts.intro }) : null, el('div', { class: 'card' }, [list]), handed]);
     load();
+    if (handed) handedToMe(handed, opts);
+  }
+
+  /* Crows other players handed to this user to play (shown under their own on My characters and Play). */
+  function handedToMe(box, opts) {
+    api('GET', 'control.list').then(function (j) {
+      box.innerHTML = '';
+      if (!j.items.length) return;
+      box.appendChild(el('h2', { class: 'section-head', text: 'Handed to you' }));
+      box.appendChild(el('p', { class: 'muted', text: 'Other players\u2019 crows you can play until they take them back. Changes save to their sheet.' }));
+      box.appendChild(el('div', { class: 'card' }, [el('ul', { class: 'rows' }, j.items.map(function (it) {
+        return el('li', null, [
+          el('div', null, [el('div', { class: 'name', text: it.name || 'Unnamed crow' }),
+            el('div', { class: 'meta', text: [it.owner + '\u2019s crow', it.summary, 'saved ' + when(it.updatedAt)].filter(Boolean).join(' · ') })]),
+          el('div', { class: 'btns' }, [
+            opts.manage ? a('Edit', GEN + '?id=' + it.id + '&mode=build', 'btn btn-small') : null,
+            a('Play', PLAY + '?id=' + it.id, 'btn btn-small btn-primary'),
+            btn('Hand back', function () {
+              if (!confirm('Hand ' + (it.name || 'this crow') + ' back to ' + it.owner + '? You won\u2019t be able to open it after that.')) return;
+              api('POST', 'control.release', { id: it.id }).then(function () { toast('Handed back to ' + it.owner + '.'); handedToMe(box, opts); }, function (e) { toast(e.message); });
+            }, 'btn-small btn-ghost', 'Give control back to ' + it.owner)])
+        ]);
+      }))]));
+    }, function () { /* older server: nothing to show */ });
+  }
+
+  /*
+   * Hand a character to someone else to play (another player, or the Ref), or take it back. They can open,
+   * edit, and play it, and act with it in fights; the owner keeps full access and can take it back any time.
+   */
+  function controlPanel(it, panel, reload) {
+    panel.hidden = false; panel.innerHTML = '';
+    panel.appendChild(el('p', { class: 'muted', text: 'Loading…' }));
+    var crow = it.name || 'this crow';
+    function draw(j) {
+      panel.innerHTML = '';
+      panel.appendChild(el('h3', { text: 'Hand over ' + crow }));
+      if (j.controller) {
+        panel.appendChild(el('p', { text: j.controller.username + ' has control of ' + crow + ' (since ' + new Date(j.controller.since).toLocaleDateString() +
+          '). They can open, edit, and play it, and act with it in fights. You still can too.' }));
+        panel.appendChild(el('div', { class: 'row-btns' }, [btn('Take back control', function () {
+          api('POST', 'control.take', { id: it.id }).then(function () { toast('You have ' + crow + ' back.'); reload(); }, function (e) { toast(e.message); });
+        }, 'btn-small btn-primary')]));
+        return;
+      }
+      var listId = 'control-refs-' + it.id;
+      var who = input('text', 'username', { placeholder: 'Their username', list: listId, autocomplete: 'off', 'aria-label': 'Username' });
+      panel.appendChild(el('p', { class: 'fine', text: 'Let another player or your Ref play ' + crow + ', say for a session you\u2019ll miss. They can open, edit, and play it, and act with it in fights, but not delete, copy, or share it. You keep full access and can take it back any time.' }));
+      panel.appendChild(el('datalist', { id: listId }, j.refs.map(function (r) { return el('option', { value: r }); })));
+      // In a campaign: pick its Ref or one of the other players there, or "Someone else" to type a username.
+      var camps = j.campaigns || [], pick = null, kids = [];
+      if (camps.length) {
+        pick = el('select', { name: 'pick', 'aria-label': 'Hand to', onchange: function () { typed.hidden = pick.value !== ''; if (!typed.hidden) who.focus(); } },
+          camps.map(function (c) {
+            return el('optgroup', { label: c.name }, [el('option', { value: c.ref, text: c.ref + ' (Ref)' })].concat(
+              c.players.map(function (u) { return el('option', { value: u, text: u }); })));
+          }).concat([el('option', { value: '', text: 'Someone else\u2026' })]));
+        kids.push(field('Hand to', pick, camps.some(function (c) { return c.players.length; }) ? null : 'No other players in ' + (camps.length > 1 ? 'these campaigns' : camps[0].name) + ' yet.'));
+      }
+      var typed = field(pick ? 'Their username' : 'Hand to', who, !pick && j.refs.length ? 'Refs with access: ' + j.refs.join(', ') : null);
+      typed.hidden = !!pick;
+      kids.push(typed);
+      panel.appendChild(form(kids, 'Hand over', function (v) {
+        return api('POST', 'control.give', { id: it.id, username: v.pick || v.username }).then(function (r) {
+          toast(r.controller.username + ' can now play ' + crow + '.'); reload();
+        });
+      }));
+    }
+    api('GET', 'control.get', undefined, 'id=' + it.id).then(draw, function (e) { panel.innerHTML = ''; panel.appendChild(el('p', { class: 'muted', text: e.message })); });
   }
 
   /* Where a crow stands in campaigns (My characters): one chip per campaign, Ref, or join request. */

@@ -241,6 +241,46 @@ def smoke():
     check("Ref receives the attack with its crow, target, tier, and damage", a.get("link") == acc["id"] and a["action"]["target"] == "f1"
           and a["action"]["tier"] == 2 and a["action"]["damage"] == 4 and "extra" not in a["action"] and acts["latest"] == a["id"])
     fails("players can't read the actions", 403, lambda: p1.get("combat.actions", campaign=camp["id"]))
+
+    # handing a crow to another player (and the Ref) to play, and taking it back
+    fails("can't hand a crow to yourself", 409, lambda: p1.post("control.give", {"id": ch["id"], "username": "test_player"}))
+    fails("can't hand a crow to an unknown account", 404, lambda: p1.post("control.give", {"id": ch["id"], "username": "no_such_user_xyz"}))
+    check("the hand-over panel suggests the Ref with access", p1.get("control.get", id=ch["id"])["refs"] == ["test_ref"])
+    cv = ref.get("get", kind="campaigns", id=camp["id"])["item"]["version"]
+    ref.post("save", {"id": camp["id"], "version": cv, "name": "Smoke Campaign", "data": {"party": [
+        {"name": "Smoke Kestrel", "link": acc["id"]}, {"name": "Smoke Rook", "link": acc2["id"], "status": "away"},
+        {"name": "Gone Crow", "link": acc2["id"] + 999999, "status": "retired"}]}}, kind="campaigns")
+    check("in a campaign, the panel offers its Ref and the other players there",
+          p1.get("control.get", id=ch["id"])["campaigns"] == [{"name": "Smoke Campaign", "ref": "test_ref", "players": ["test_player2"]}])
+    p1.post("control.give", {"id": ch["id"], "username": "test_player2"})
+    check("owner sees who has control", p1.get("control.get", id=ch["id"])["controller"]["username"] == "test_player2"
+          and next(i for i in p1.get("list", kind="characters")["items"] if i["id"] == ch["id"])["controller"] == "test_player2")
+    check("the other player is told", any(n["kind"] == "control_given" and n["detail"]["characterId"] == ch["id"] for n in p2.get("notes.list")["items"]))
+    check("it's in their Handed to you list", [(i["id"], i["owner"]) for i in p2.get("control.list")["items"]] == [(ch["id"], "test_player")])
+    held = p2.get("get", kind="characters", id=ch["id"])["item"]
+    check("they open it, marked as the owner's", held["owner"] == "test_player" and held["data"]["name"] == "Smoke Kestrel")
+    held = p2.post("save", {"id": ch["id"], "version": held["version"], "name": "Smoke Kestrel", "summary": "played by p2",
+                            "data": dict(held["data"], notes="p2 was here")}, kind="characters")["item"]
+    check("their save reaches the owner's sheet", p1.get("get", kind="characters", id=ch["id"])["item"]["data"]["notes"] == "p2 was here"
+          and p1.get("get", kind="characters", id=ch["id"])["item"]["controller"] == "test_player2")
+    fails("they can't share it", 404, lambda: p2.post("share.create", {"id": ch["id"]}))
+    fails("they can't pass it on", 404, lambda: p2.post("control.give", {"id": ch["id"], "username": "test_ref"}))
+    p2.post("delete", {"id": ch["id"]}, kind="characters")
+    check("they can't delete it", p1.get("get", kind="characters", id=ch["id"])["item"]["id"] == ch["id"])
+    check("they see its fight", p2.get("combat.mine", id=ch["id"])["you"] == acc["id"])
+    act = p2.post("combat.act", {"id": ch["id"], "campaign": camp["id"], "action": {"type": "done"}})["id"]
+    check("and act in it as the crow", ref.get("combat.actions", campaign=camp["id"], after=act - 1)["items"][0]["link"] == acc["id"])
+    p1.post("control.take", {"id": ch["id"]})
+    fails("after the owner takes it back they can't open it", 404, lambda: p2.get("get", kind="characters", id=ch["id"]))
+    fails("or save it", 404, lambda: p2.post("save", {"id": ch["id"], "version": 0, "name": "x", "data": {}}, kind="characters"))
+    fails("or act with it", 404, lambda: p2.post("combat.act", {"id": ch["id"], "campaign": camp["id"], "action": {"type": "done"}}))
+    check("and are told", any(n["kind"] == "control_taken" for n in p2.get("notes.list")["items"]) and p2.get("control.list")["items"] == [])
+    p1.post("control.give", {"id": ch["id"], "username": "test_ref"})
+    check("the Ref can be handed it too", ref.get("get", kind="characters", id=ch["id"])["item"]["owner"] == "test_player")
+    ref.post("control.release", {"id": ch["id"]})
+    check("the Ref hands it back and the owner is told", p1.get("control.get", id=ch["id"])["controller"] is None
+          and any(n["kind"] == "control_returned" and n["detail"]["by"] == "test_ref" for n in p1.get("notes.list")["items"]))
+    p1.post("notes.dismiss", {"all": True}); p2.post("notes.dismiss", {"all": True})
     ref.post("combat.publish", {"campaign": camp["id"], "combat": None})
     check("ending the fight takes it off the player's page", p1.get("combat.mine", id=ch["id"])["combat"] is None)
     fails("acting after the fight is over", 409, lambda: p1.post("combat.act", {"id": ch["id"], "campaign": camp["id"], "action": {"type": "done"}}))

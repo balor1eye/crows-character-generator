@@ -61,6 +61,7 @@ button, input, select { font: inherit; color: inherit; }
 .file-btn input { position: absolute; inset: 0; opacity: 0; cursor: pointer; }
 
 form .field { display: flex; flex-direction: column; gap: .25rem; margin-bottom: .9rem; font-weight: 600; font-size: .9rem; }
+form .field[hidden] { display: none; }
 form .field small { font-weight: normal; color: var(--muted); }
 input[type=text], input[type=email], input[type=password], input[type=search], select {
   width: 100%; padding: .5rem .6rem; border: 1px solid var(--line); border-radius: 6px; background: var(--paper); min-height: 40px; font-weight: normal; }
@@ -96,6 +97,7 @@ input[type=text], input[type=email], input[type=password], input[type=search], s
 .camp-chip.warn { border-color: var(--warn); } .camp-chip.warn b { color: var(--warn); }
 .camp-chip.bad { border-color: var(--bad); } .camp-chip.bad b { color: var(--bad); }
 .camp-chip.none { border-style: dashed; }
+.section-head { margin-top: 1.6rem; }
 .count { display: inline-block; min-width: 1.2rem; margin-left: .35rem; padding: 0 .3rem; border-radius: 999px; background: var(--accent); color: #fff; font-size: .72rem; font-weight: 700; text-align: center; }
 .news .rows li { border-left: 4px solid var(--ok); padding-left: .7rem; }
 .news .rows li.no { border-left-color: var(--warn); }
