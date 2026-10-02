@@ -111,6 +111,34 @@ textarea { width: 100%; resize: vertical; }
 .bg-details dt { font-weight: 600; color: var(--muted); }
 .bg-details dd { margin: 0; }
 
+/* Build steps: a progress bar, Next buttons, and the header's More menu */
+.stepbar { grid-column: 1 / -1; position: sticky; top: 76px; z-index: 10; display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; background: var(--card);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: .45rem .6rem; box-shadow: var(--shadow); }
+.stepbar .meter { flex: 1 0 100%; height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
+.stepbar .meter span { display: block; height: 100%; background: var(--ok); transition: width .2s; }
+.stepbar .pill { border: 1px solid var(--line); background: var(--card); color: var(--ink); border-radius: 999px; padding: .2rem .7rem .2rem .3rem; cursor: pointer; font: inherit; font-size: .82rem; font-weight: 600; min-height: 30px; display: inline-flex; align-items: center; gap: .35rem; }
+.stepbar .pill .n { width: 20px; height: 20px; border-radius: 50%; background: var(--soft); display: inline-flex; align-items: center; justify-content: center; font-size: .72rem; }
+.stepbar .pill.ok .n { background: var(--ok); color: #fff; }
+.stepbar .pill.todo .n { background: var(--warn); color: #fff; }
+.stepbar .pill.err .n { background: var(--bad); color: #fff; }
+.stepbar .pill.cur { border-color: var(--accent); box-shadow: inset 0 0 0 1px var(--accent); }
+.stepbar .count { font-size: .8rem; color: var(--muted); margin-left: auto; }
+.steps .card { scroll-margin-top: 150px; }
+.step-next { display: flex; justify-content: flex-end; margin-top: .8rem; }
+body[data-mode="play"] .step-next, body[data-mode="play"] .stepbar { display: none; }
+.sub-h { margin: 1.2rem 0 .2rem; font-size: .95rem; }
+.sub-h small { font-weight: normal; color: var(--muted); }
+.more-menu { position: relative; display: contents; }
+.more-btn { display: none; }
+.more-pop { display: contents; }
+.more-menu.collapsed { display: block; }
+.more-menu.collapsed .more-btn { display: inline-flex; }
+.more-menu.collapsed .more-pop { display: none; position: absolute; right: 0; top: calc(100% + 6px); z-index: 30; flex-direction: column; gap: .3rem; min-width: 11rem;
+  background: #1f1d1e; border: 1px solid #5a5354; border-radius: 8px; padding: .4rem; box-shadow: var(--shadow); }
+.more-menu.collapsed.open .more-pop { display: flex; }
+.more-menu.collapsed .more-pop .btn { justify-content: flex-start; text-align: left; }
+body[data-mode="play"] .more-pop .build-only { display: none; }
+
 /* Stats */
 .stat-row { display: flex; gap: .6rem; flex-wrap: wrap; margin-top: .8rem; }
 .stat { border: 2px solid var(--ink); border-radius: 6px; padding: .35rem .7rem; min-width: 86px; text-align: center; background: var(--card); }
@@ -182,6 +210,9 @@ textarea { width: 100%; resize: vertical; }
 .tray-wrap { margin-top: .8rem; }
 .tray { min-height: 60px; border: 1px dashed var(--line); border-radius: 6px; padding: 6px; display: flex; flex-wrap: wrap; gap: 6px; }
 .tray .inv-card { flex: 0 0 150px; min-height: 60px; }
+.inv-card.ground { border-left: 4px solid #d9a441; cursor: grab; }
+.zone-ground .tray { border-color: #d9a441; }
+.inv-zone.drop-ok { background: var(--slot-hover); }
 .tray.drop-ok { background: var(--slot-hover); }
 .tray-empty { color: var(--muted); font-size: .85rem; align-self: center; }
 .card-detail { margin-top: .8rem; border: 1px solid var(--sel); border-radius: 6px; padding: .6rem .8rem; background: var(--card); }
@@ -212,7 +243,7 @@ textarea { width: 100%; resize: vertical; }
 .sum-stats b { display: block; font: bold 1.2rem var(--serif); }
 .sum-stats span { font-size: .68rem; color: var(--muted); text-transform: uppercase; }
 .checklist { margin-top: .8rem; font-size: .85rem; }
-.checklist div { padding: .15rem 0; }
+.checklist div { padding: .15rem 0; cursor: pointer; }
 .checklist .ok::before { content: "\2713  "; color: var(--ok); font-weight: bold; }
 .checklist .todo::before { content: "\25CB  "; color: var(--warn); font-weight: bold; }
 .checklist .err::before { content: "\2715  "; color: var(--bad); font-weight: bold; }
@@ -224,7 +255,8 @@ textarea { width: 100%; resize: vertical; }
 @media (max-width: 1000px) {
   .layout { grid-template-columns: minmax(0, 1fr); }
   .summary { position: static; order: -1; }
-  .summary .checklist, .summary .fine { display: none; }
+  .summary .fine { display: none; }
+  .checklist { display: flex; flex-wrap: wrap; gap: .1rem .9rem; }
 }
 @media (max-width: 700px) {
   .grid2 { grid-template-columns: 1fr; }
@@ -237,6 +269,7 @@ textarea { width: 100%; resize: vertical; }
   .slot .s-word { display: none; }
   .brand-sub { display: none; }
   .masthead { position: static; }
+  .stepbar { position: static; }
   .summary { top: 0; }
 }
 @media print {
@@ -253,6 +286,8 @@ textarea { width: 100%; resize: vertical; }
 .play-only { display: none; }
 body[data-mode="play"] .steps, body[data-mode="play"] .build-only { display: none; }
 body[data-mode="play"] .play-main { display: flex; }
+body:not([data-mode="play"]) .vstrip, body:not([data-mode="play"]) .subtabs { display: none; }
+body[data-mode="play"] .vstrip, body[data-mode="play"] .subtabs { display: flex; }
 body[data-mode="play"] .play-only { display: block; }
 .play-main h3 { font-family: var(--font); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 1rem 0 .4rem; }
 
@@ -334,24 +369,6 @@ input.mini { width: 5.5rem; padding: .35rem .45rem; border: 1px solid var(--line
 .atk-main { flex: 1; min-width: 0; }
 .atk-btns { display: flex; gap: .35rem; flex-shrink: 0; }
 .warnish { color: var(--warn); }
-.item-list { display: flex; flex-direction: column; }
-.item-row { display: grid; grid-template-columns: 6.5rem minmax(0, 1fr) auto; gap: .5rem; align-items: center; padding: .3rem 0; border-bottom: 1px solid var(--line); font-size: .9rem; }
-.item-row .loc { color: var(--muted); font-size: .78rem; }
-.item-row .ctl { display: flex; gap: .3rem; flex-wrap: wrap; justify-content: flex-end; align-items: center; }
-.item-zones { display: flex; flex-direction: column; gap: .6rem; }
-.item-zone { border: 1px solid var(--line); border-radius: 6px; padding: .35rem .6rem .2rem; background: var(--slot); transition: background .1s; }
-.item-zone.zone-none { border-style: dashed; background: transparent; }
-.item-zone.zone-ground { border-color: #d9a441; border-style: dashed; }
-.item-row.ground .loc { color: #b07f22; }
-.item-zone.drop-ok { background: var(--slot-hover); outline: 2px dashed var(--sel); outline-offset: -2px; }
-.item-zone h3 { margin: 0 0 .1rem; font-size: .8rem; text-transform: uppercase; letter-spacing: .06em; }
-.item-zone h3 small { text-transform: none; letter-spacing: 0; font-weight: normal; }
-.item-zone .empty { margin: .2rem 0 .3rem; }
-.item-zone .item-row:last-child { border-bottom: 0; }
-.item-row[draggable="true"] { cursor: grab; }
-.item-row.dragging { opacity: .45; }
-.item-row.drop-ok { background: var(--slot-hover); box-shadow: inset 0 0 0 2px var(--sel); }
-.item-row .grip { color: var(--muted); }
 .mini-sel { padding: .15rem .25rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); font-size: .78rem; min-height: 28px; max-width: 8.5rem; }
 .item-add { margin-top: .6rem; align-items: center; gap: .4rem; }
 .item-add select { flex: 1; min-width: 0; padding: .3rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); min-height: 32px; }
@@ -392,8 +409,6 @@ input.mini { width: 5.5rem; padding: .35rem .45rem; border: 1px solid var(--line
   .vital-top { grid-template-columns: 1fr; }
   .vital-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
   .play-exp, .magic-grid { grid-template-columns: 1fr; }
-  .item-row { grid-template-columns: minmax(0, 1fr) auto; }
-  .item-row .loc { grid-column: 1 / -1; }
   .wslot .it { font-size: .68rem; }
   /* The summary column collapses into a condensed header above the vitals strip and the sub-tab. */
   body[data-mode="play"] .summary .sum-stats { display: none; }
@@ -526,9 +541,14 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
     </div>
     <nav class="actions">
       <button type="button" id="btn-random" class="btn build-only">Random crow</button>
-      <button type="button" id="btn-new" class="btn btn-ghost build-only">Start over</button>
-      <button type="button" id="btn-save" class="btn btn-ghost">Save file</button>
-      <label class="btn btn-ghost file-btn">Load file<input type="file" id="file-load" accept=".json,application/json"></label>
+      <div class="more-menu" id="more-menu">
+        <button type="button" class="btn btn-ghost more-btn" id="more-btn" aria-haspopup="true" aria-expanded="false" title="Start over, save or load a file">&#8943; More</button>
+        <div class="more-pop" id="more-pop">
+          <button type="button" id="btn-new" class="btn btn-ghost build-only">Start over</button>
+          <button type="button" id="btn-save" class="btn btn-ghost">Save file</button>
+          <label class="btn btn-ghost file-btn">Load file<input type="file" id="file-load" accept=".json,application/json"></label>
+        </div>
+      </div>
       <button type="button" id="btn-pdf" class="btn btn-primary">Download PDF</button>
       <button type="button" class="btn btn-ghost theme-toggle" title="Theme">&#9680; Auto</button>
     </nav>
@@ -539,6 +559,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
   <div class="sessbar play-only" id="play-session" hidden></div>
   <div class="vstrip play-only" id="play-vstrip"></div>
   <nav class="subtabs play-only" id="play-subtabs" role="tablist" aria-label="Play section"></nav>
+  <nav class="stepbar build-only" id="stepbar" aria-label="Build steps"></nav>
   <div class="steps">
 
     <section class="card" id="sec-background">
@@ -555,7 +576,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
     </section>
 
     <section class="card" id="sec-chars">
-      <h2><span class="step">2</span> Characteristics</h2>
+      <h2><span class="step">2</span> Characteristics &amp; Expertises</h2>
       <p class="hint">Your background sets one characteristic to 2. The other two are either a 1 and a 0, or a -1 and a 2.</p>
       <div class="row wrap">
         <label class="field">At 2 (from background)
@@ -571,6 +592,10 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
         </label>
       </div>
       <div class="stat-row" id="char-display"></div>
+      <h3 class="sub-h">Expertises &amp; Stamina <small>(from your background; bonus uses are assigned in Advancement)</small></h3>
+      <p class="hint">Spend a use after a roll to improve the result by one tier. Uses return when you finish a rest.</p>
+      <div class="stat-row small" id="derived-stats"></div>
+      <div class="exp-grid" id="exp-grid"></div>
     </section>
 
     <section class="card" id="sec-identity">
@@ -588,16 +613,8 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
       </div>
     </section>
 
-    <section class="card" id="sec-expertise">
-      <h2><span class="step">4</span> Expertises &amp; Stamina</h2>
-      <p class="hint">Spend a use after a roll to improve the result by one tier. Uses return when you finish a rest.</p>
-      <div class="stat-row small" id="derived-stats"></div>
-      <div id="alloc-banner" class="banner" hidden></div>
-      <div class="exp-grid" id="exp-grid"></div>
-    </section>
-
     <section class="card" id="sec-traits">
-      <h2><span class="step">5</span> Traits</h2>
+      <h2><span class="step">4</span> Traits</h2>
       <div id="trait-list"></div>
       <details class="tree-browser" id="tree-browser">
         <summary>Browse trait trees<span id="xp-chip" class="chip"></span></summary>
@@ -611,7 +628,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
     </section>
 
     <section class="card" id="sec-equipment">
-      <h2><span class="step">6</span> Equipment &amp; Inventory</h2>
+      <h2><span class="step">5</span> Equipment &amp; Inventory</h2>
       <p class="hint">Every crow starts with an empty coin purse, a knife, a rope, six rations, and 3d6 gc, plus their background's gear. Click a card to select it, then click a slot to move it (or drag it). Hands can't hold stacks; multi-slot items need adjacent slots of one type.</p>
       <div class="row wrap">
         <div class="coins">
@@ -627,12 +644,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
         </div>
       </div>
       <div id="inv-warnings" class="banner warn" hidden></div>
-      <div class="inventory" id="inventory"></div>
-      <div class="tray-wrap">
-        <h3>Not carried <small>(drop here to set aside; left behind at home)</small></h3>
-        <div class="tray" id="tray"></div>
-      </div>
-      <div class="card-detail" id="card-detail" hidden></div>
+      <div id="inventory"></div>
       <div class="add-item row wrap">
         <label class="field grow">Add an item
           <select id="add-item-select"></select>
@@ -646,7 +658,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
     </section>
 
     <section class="card" id="sec-village">
-      <h2><span class="step">7</span> Village &amp; Connection</h2>
+      <h2><span class="step">6</span> Village &amp; Connection</h2>
       <p class="hint">Make an NPC in your village who matters to your crow, and pick the benefit they give you.</p>
       <div class="grid2">
         <label class="field">Village name
@@ -672,7 +684,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
     </section>
 
     <section class="card" id="sec-advance">
-      <h2><span class="step">8</span> Advancement <small>(optional)</small></h2>
+      <h2><span class="step">7</span> Advancement <small>(optional)</small></h2>
       <p class="hint">New crows start at 0 TXP. If every other crow has 5,000+ TXP, the Ref can start a new crow at the lowest TXP in the party. Enter Total XP here to apply bonuses and buy traits.</p>
       <div class="row wrap">
         <label class="field">Total XP (TXP)
@@ -681,10 +693,12 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
         <div class="xp-summary" id="xp-summary"></div>
       </div>
       <div id="bonus-list" class="bonus-list"></div>
+      <div id="alloc-banner" class="banner" hidden></div>
+      <div class="exp-grid" id="alloc-grid" hidden></div>
     </section>
 
     <section class="card" id="sec-notes">
-      <h2><span class="step">9</span> Notes</h2>
+      <h2><span class="step">8</span> Notes</h2>
       <textarea id="in-notes" rows="4" maxlength="1500" placeholder="Backstory, goals, debts, grudges..."></textarea>
     </section>
   </div>
@@ -7553,8 +7567,8 @@ var CROWS_TRAIT_TREES = [
  * The app calls CrowsCloud.attach(opts) once at start-up, CrowsCloud.changed() from its save(),
  * and CrowsCloud.startNew() just before it replaces the whole thing (new, random, load file).
  *
- * With opts.manualNew (the Character Generator), a new record isn't autosaved: it's "held" until the app
- * calls CrowsCloud.saveNow() (its Save character button). From then on it autosaves like any other.
+ * A new character is saved to the account at once as a draft (the server's `draft` flag); CrowsCloud.finish() (the
+ * generator's Finish crow button) clears the flag. A draft autosaves like any other record.
  */
 (function () {
   'use strict';
@@ -7589,8 +7603,8 @@ var CROWS_TRAIT_TREES = [
   var base = null;             // the same, parsed: the common ancestor for three-way merges
   var timer = null, inFlight = false, again = false, retryMs = 0, firstChange = 0;
   var pendingNew = false, fresh = false;
-  var hold = false;            // opts.manualNew: a new record waiting for saveNow() before it's in the account
-  var heldBase = null;         // the held record as it was when holding started (to warn before leaving with changes)
+  var isDraft = false;         // the open character is still being built (the server's draft flag)
+  var finishing = false;       // finish() asked: the next save also clears the draft flag
   var gen = 0;                 // bumped when the app starts a new record, so late replies for the old one are ignored
   var chip = null, bar = null;
   var lastPoll = 0, lastKey = 0;
@@ -7825,6 +7839,7 @@ var CROWS_TRAIT_TREES = [
   function adoptRemote(item, data) {
     rec = { id: item.id, version: item.version, watch: item.watch || (rec && rec.id === item.id ? rec.watch : null) };
     if (item.owner) owner = item.owner;
+    isDraft = !linkId && !!item.draft;
     if (!linkId) controller = item.controller || '';
     cfg.apply(copy(data));
     synced();
@@ -7848,31 +7863,37 @@ var CROWS_TRAIT_TREES = [
   // ---------------------------------------------------------------- saving
   function payload(data) { return { data: data, name: cfg.name(data) || '', summary: cfg.summary(data) || '' }; }
 
+  function savedText() { return isDraft ? 'Draft saved' : 'Saved'; }
+
   function schedule(ms) { clearTimeout(timer); timer = setTimeout(function () { flush(); }, ms); }
   function busy() { return !!(timer || inFlight); }
 
   function flush(force) {
     clearTimeout(timer); timer = null; firstChange = 0;
-    if (!ready || !user || hold) return;
+    if (!ready || !user) return;
     if (inFlight) { again = true; return; }
     var data = cfg.getData(), json = JSON.stringify(data);
-    if (rec && json === lastSent && !force) { status('saved', 'Saved'); return; }
+    if (rec && json === lastSent && !force && !finishing) { status('saved', savedText()); return; }
     if (linkId) return flushLinked(data, json);
     inFlight = true; again = false;
     // The first content sent after startNew() is the new record; anything sent after that is an edit.
     if (pendingNew) { pendingNew = false; fresh = true; } else fresh = false;
     status('saving', 'Saving…');
     var body = payload(data), p, myGen = gen;
+    if (!rec && cfg.kind === 'characters') body.draft = true;   // a new crow starts as a draft
+    if (finishing) body.draft = false;
     if (rec) { body.id = rec.id; body.version = rec.version; if (force) body.force = true; p = call('POST', 'save', kq(), body); }
     else p = call('POST', 'create', kq(), body);
     p.then(function (j) {
       if (myGen !== gen) return;
       rec = { id: j.item.id, version: j.item.version, watch: j.item.watch || null };
       lastSent = json; base = JSON.parse(json); retryMs = 0;
+      isDraft = !!j.item.draft; finishing = false;
       remember(rec.id);
-      status('saved', 'Saved', 'Saved to your account at ' + new Date().toLocaleTimeString());
+      status('saved', savedText(), 'Saved to your account at ' + new Date().toLocaleTimeString());
     }, function (e) {
       if (myGen !== gen) return;
+      finishing = false;
       if (e.status === 409 && e.body && e.body.item) return changedElsewhere(e.body.item.id);
       if (e.status === 404 && rec && !delegated()) { rec = null; remember(null); again = true; return; }  // deleted elsewhere: save as new
       failed(e);
@@ -7959,7 +7980,7 @@ var CROWS_TRAIT_TREES = [
     if (unsaved) cfg.apply(m.value);       // ...with our own changes laid back on top
     if (cfg.onRemote) cfg.onRemote(before);
     if (unsaved && thenSave !== false) flush();
-    else status('saved', 'Saved');
+    else status('saved', savedText());
   }
 
   function clash(item, where) {
@@ -7982,7 +8003,7 @@ var CROWS_TRAIT_TREES = [
         }
         flush(true);
       } },
-      { text: 'Use theirs', cls: 'btn-ghost', on: function () { closeBar(); adoptRemote(item, item.data); status('saved', 'Saved'); } }]);
+      { text: 'Use theirs', cls: 'btn-ghost', on: function () { closeBar(); adoptRemote(item, item.data); status('saved', savedText()); } }]);
   }
 
   /* Someone is typing in a text field: replacing the page under them would move their cursor. */
@@ -8030,13 +8051,6 @@ var CROWS_TRAIT_TREES = [
   }
 
   // Last-chance save when the page is hidden or closed (keepalive bodies are capped near 64 KB).
-  /* Start holding a new record: nothing goes to the account until saveNow(). */
-  function startHold() {
-    hold = true; heldBase = JSON.stringify(cfg.getData());
-    status('unsaved', 'Not saved yet', 'This character isn\u2019t in your account yet. Use Save character.');
-  }
-  function heldChanges() { return hold && JSON.stringify(cfg.getData()) !== heldBase; }
-
   function flushOnExit() {
     if (!ready || !user || !rec || inFlight) return;
     var data = cfg.getData(), json = JSON.stringify(data);
@@ -8109,7 +8123,7 @@ var CROWS_TRAIT_TREES = [
         step.then(function () {
           ready = true;
           if (cfg.onReady) cfg.onReady(p);
-          if (rec) status('saved', 'Saved'); else if (cfg.manualNew && !linkId) startHold(); else flush();
+          if (rec) status('saved', savedText()); else flush();
           lastPoll = Date.now();
           if (!linkId) loadNotes();
           setInterval(slowPoll, 1000);
@@ -8125,14 +8139,11 @@ var CROWS_TRAIT_TREES = [
       document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushOnExit(); else { poll(); checkSignals(); } });
       document.addEventListener('input', function () { lastKey = Date.now(); }, true);
       window.addEventListener('pagehide', flushOnExit);
-      // A held new character with changes isn't anywhere but this browser: ask before leaving it.
-      window.addEventListener('beforeunload', function (e) { if (heldChanges()) { e.preventDefault(); e.returnValue = ''; } });
     },
 
     /* Called from the app's save(). Cheap: the real work is debounced. */
     changed: function () {
       if (!ready || !user) return;
-      if (hold) return;   // a new record waits for saveNow()
       var t = Date.now();
       if (!firstChange) firstChange = t;
       schedule(Math.max(0, Math.min(DELAY, firstChange + MAX_WAIT - t)));
@@ -8146,15 +8157,6 @@ var CROWS_TRAIT_TREES = [
     startNew: function () {
       if (!ready || !user || linkId) return;
       if (owner || controller) { owner = ''; controller = ''; }   // the new one is this user's own
-      if (cfg.manualNew) {
-        // Save what was open (if it's in the account), then hold the new one until Save character.
-        if (!hold && (timer || (rec && JSON.stringify(cfg.getData()) !== lastSent))) flush();
-        gen++; rec = null; lastSent = null; base = null; remember(null);
-        inFlight = false; pendingNew = true; fresh = false;
-        clearTimeout(timer); timer = null;
-        setTimeout(startHold, 0);   // after the app has put the new character in place
-        return;
-      }
       var reuse = fresh && (rec || inFlight);
       if (!reuse) {
         if (timer || (rec && JSON.stringify(cfg.getData()) !== lastSent)) flush();
@@ -8179,12 +8181,12 @@ var CROWS_TRAIT_TREES = [
     /* True while someone is typing in a text field (so a page can hold off re-rendering under them). */
     get typing() { return typing(); },
 
-    /* True while a new record is waiting for saveNow() (opts.manualNew). */
-    get held() { return hold; },
-    /* Save now: a held new record goes into the account (and autosaves from then on); otherwise any pending change is sent. */
-    saveNow: function () {
-      if (!ready || !user || linkId) return;
-      hold = false; heldBase = null; pendingNew = !rec;
+    /* True while the open character is a draft (saved to the account, but not finished). */
+    get draft() { return isDraft && !linkId; },
+    /* The owner is done building: save now and clear the draft flag. */
+    finish: function () {
+      if (!ready || !user || linkId || !isDraft || delegated()) return;
+      finishing = true;
       flush();   // never forced: an existing record still merges with changes made elsewhere
     },
 
@@ -8214,7 +8216,7 @@ var CROWS_TRAIT_TREES = [
   if (!window.CrowsCloud || !window.CrowsCloud.linked) return;
 
   // What a Ref can use. Everything else in the page body is read-only.
-  var EDITABLE = '#inventory, #tray, #card-detail, .add-item, #btn-arrange, #in-notes, #play-vitals, #ref-banner';
+  var EDITABLE = '#inventory, .add-item, #btn-arrange, #in-notes, #play-vitals, #ref-banner';
   var ALWAYS_OK = 'summary, details > summary, a[href]';   // expanding sections and following links is just reading
   var BLOCKED_EVENTS = ['click', 'dblclick', 'mousedown', 'pointerdown', 'touchstart', 'keydown', 'input', 'change', 'dragstart', 'drop', 'dragover'];
 
@@ -9199,6 +9201,209 @@ var CROWS_TRAIT_TREES = [
 </script>
 <script>
 /*
+ * Character Generator: the one inventory component. Build's step 5 and Play's Items card both draw their slot grid (Hands,
+ * Belt, Backpack), the Not carried tray, and the selected card's detail panel with invGrid(). Cards move by click (select a
+ * card, click a slot) or by drag. See state.js.
+ *
+ * invGrid(host, o) fills `host` for o.mode, 'build' or 'play':
+ *   redraw()        draw this component again (a card was selected or put down)
+ *   after(msg)      the sheet changed (a move, a quantity): the page re-renders; Play also logs `msg`
+ *   fallback        a drop onto a taken slot goes to the first free slot of that area (Play)
+ *   badge(c)        extra text on a card's face, like "UD 2/3" (Play)
+ *   controls(c)     buttons for the selected card, such as Use 1 or Roll UD (Play)
+ *   ground, pickUp(g), cantPickUp(g), drop(cards)   the fight's On the ground zone (Play, in a fight; ground is null otherwise)
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsGen, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var beltSize = f('beltSize'), cardById = f('cardById'), fits = f('fits'), item = f('item'), moveCard = f('moveCard'),
+      moveToArea = f('moveToArea'), occupancy = f('occupancy'), refusal = f('refusal'), spanOf = f('spanOf'), toast = f('toast');
+  var el = A.el, fmt = A.fmt;
+  var state = A.state; A.share('state', function (v) { state = v; });
+
+  var selected = { build: null, play: null }, redrawers = {}, dragId = null, dragGround = null;
+  var ZONES = [['hand', 'Hands'], ['belt', 'Belt'], ['pack', 'Backpack'], ['none', 'Not carried']];
+  var TIPS = {
+    hand: 'Hands: what you wield or hold. One item per hand (no stacks); two-handed items take both. In a fight, getting an item into a hand takes Draw From Belt or Draw From Pack.',
+    ground: 'On the ground in this fight: what anyone dropped, or the Ref put there. Drop what’s in your hands here (free). Picking something up is the Pick Up Item maneuver and needs a free hand: drag it into Hands.'
+  };
+
+  function clearSelection(mode) { if (mode) selected[mode] = null; else selected.build = selected.play = null; }
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape') return;
+    Object.keys(selected).forEach(function (m) { if (selected[m] !== null && redrawers[m]) { selected[m] = null; redrawers[m](); } });
+  });
+
+  function slotLabel(word, num) {
+    return el('span', { class: 's-lbl' }, [el('span', { class: 's-word', text: word + ' ' }), num]);
+  }
+  function whereText(c) {
+    return c.area === 'none' ? 'not carried' : c.area === 'hand' ? 'hand ' + (c.idx + 1) : c.area === 'belt' ? 'belt ' + (c.idx + 1) : 'backpack ' + (c.idx + 1);
+  }
+
+  function invGrid(host, o) {
+    var mode = o.mode;
+    redrawers[mode] = o.redraw;
+    var occ = occupancy(), sel = selected[mode] !== null ? cardById(selected[mode]) : null;
+    if (!sel) selected[mode] = null;
+    host.innerHTML = '';
+
+    function select(c) { selected[mode] = selected[mode] === c.id ? null : c.id; o.redraw(); }
+    function attemptMove(c, area, idx) {
+      var ok = idx === undefined ? moveToArea(c, area) : moveCard(c, area, idx);
+      if (!ok && idx !== undefined && o.fallback && area !== 'none') ok = moveToArea(c, area);
+      if (ok) {
+        selected[mode] = null;
+        o.after(area === 'none' ? 'Set aside ' + c.key + '.' : 'Moved ' + c.key + ' to ' + (area === 'pack' ? 'backpack' : area) + '.');
+      } else toast(refusal(c, area, idx));
+    }
+    function cardEl(c) {
+      var it = item(c.key), meta = [], badge = o.badge ? o.badge(c) : '';
+      if (it.st > 1) meta.push(c.qty + ' / ' + it.st);
+      if (it.sl > 1) meta.push(it.sl + ' slots');
+      if (it.hands === 2) meta.push('2 hands');
+      if (badge) meta.push(badge);
+      var n = el('div', { class: 'inv-card cat-' + it.cat + (selected[mode] === c.id ? ' sel' : ''), draggable: 'true', tabindex: '0', role: 'button', title: it.txt,
+        'aria-label': c.key + (c.qty > 1 ? ' x' + c.qty : ''), 'data-id': c.id }, [
+        el('span', { class: 'ic-name', text: c.key + (c.qty > 1 ? ' ×' + c.qty : '') }),
+        meta.length ? el('span', { class: 'ic-meta', text: meta.join(' · ') }) : null,
+        el('span', { class: 'ic-txt', text: it.txt })
+      ]);
+      n.addEventListener('click', function (e) { e.stopPropagation(); select(c); });
+      n.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); n.click(); } });
+      n.addEventListener('dragstart', function (e) { dragId = c.id; try { e.dataTransfer.setData('text/plain', String(c.id)); e.dataTransfer.effectAllowed = 'move'; } catch (x) { /* old browsers */ } });
+      n.addEventListener('dragend', function () { dragId = null; });
+      return n;
+    }
+    function dropTarget(node, area, idx) {
+      node.addEventListener('dragover', function (e) { if (dragId !== null || dragGround) { e.preventDefault(); node.classList.add('drop-ok'); } });
+      node.addEventListener('dragleave', function () { node.classList.remove('drop-ok'); });
+      node.addEventListener('drop', function (e) {
+        e.preventDefault(); e.stopPropagation(); node.classList.remove('drop-ok');
+        var g = dragGround, c = cardById(dragId); dragGround = null; dragId = null;
+        if (g) {   // an item from the ground: only into a hand (the Pick Up Item maneuver)
+          if (area === 'hand') o.pickUp(g);
+          else if (area !== 'ground') toast('Picking something up puts it in a free hand (Pick Up Item): drag it into Hands.');
+          return;
+        }
+        if (!c) return;
+        if (area === 'ground') { o.drop([c]); return; }
+        attemptMove(c, area, area === 'none' ? 0 : idx);
+      });
+      node.addEventListener('click', function () {
+        if (selected[mode] === null || area === 'ground') return;
+        var c = cardById(selected[mode]);
+        if (c) attemptMove(c, area, area === 'none' ? 0 : idx);
+      });
+    }
+
+    // Hands, Belt, Backpack (two rows of five).
+    var inv = el('div', { class: 'inventory' });
+    function rowEl(label, area, count, cellsTotal, zone) {
+      var box = el('div', { class: 'inv-zone zone-' + zone, title: TIPS[zone] || null }, [el('div', { class: 'inv-row-label', text: label })]);
+      var row = el('div', { class: 'inv-row' }), i = 0, base = area === 'pack2' ? 5 : 0, realArea = area === 'pack2' ? 'pack' : area;
+      while (i < cellsTotal) {
+        var slotIdx = base + i;
+        if (i >= count) {
+          row.appendChild(el('div', { class: 'slot disabled', 'aria-hidden': 'true' }, [el('span', { class: 's-lbl', text: realArea === 'belt' ? 'Extra (trait)' : '' })]));
+          i++; continue;
+        }
+        var cid = occ[realArea][slotIdx], c = cid !== null ? cardById(cid) : null;
+        var word = realArea === 'hand' ? 'Hand' : realArea === 'belt' ? 'Belt' : 'Backpack';
+        if (c && c.idx === slotIdx) {
+          var sp = spanOf(c, realArea);
+          var cell = el('div', { class: 'slot', style: sp > 1 ? 'grid-column: span ' + sp : null }, [slotLabel(word, (slotIdx + 1) + (sp > 1 ? '–' + (slotIdx + sp) : '')), cardEl(c)]);
+          dropTarget(cell, realArea, slotIdx);
+          row.appendChild(cell);
+          i += sp;
+        } else if (c) {
+          i++;   // covered by a spanning card that started in the previous row (shouldn't happen)
+        } else {
+          var canHere = sel ? fits(sel.qty > 1 && realArea === 'hand' ? { id: -1, key: sel.key, qty: 1 } : sel, realArea, slotIdx, occ) : false;
+          var empty = el('div', { class: 'slot empty' + (canHere ? ' target' : ''), tabindex: sel ? '0' : null, role: sel ? 'button' : null, 'aria-label': word + ' ' + (slotIdx + 1) + ' (empty)' },
+            [slotLabel(word, String(slotIdx + 1))]);
+          dropTarget(empty, realArea, slotIdx);
+          empty.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.click(); } });
+          row.appendChild(empty);
+          i++;
+        }
+      }
+      box.appendChild(row);
+      inv.appendChild(box);
+    }
+    rowEl('Hands (equipped, not stackable)', 'hand', 2, 5, 'hand');
+    rowEl('Belt', 'belt', beltSize(), 5, 'belt');
+    rowEl('Backpack', 'pack', 5, 5, 'pack');
+    rowEl('', 'pack2', 5, 5, 'pack');
+    host.appendChild(inv);
+
+    // Not carried
+    var loose = state.inv.filter(function (c) { return c.area === 'none'; });
+    var tray = el('div', { class: 'tray' });
+    if (!loose.length) tray.appendChild(el('span', { class: 'tray-empty', text: 'Nothing set aside.' }));
+    loose.forEach(function (c) { tray.appendChild(cardEl(c)); });
+    dropTarget(tray, 'none', 0);
+    host.appendChild(el('div', { class: 'tray-wrap zone-none' }, [el('h3', {}, ['Not carried ', el('small', { text: '(drop here to set aside; left behind at home)' })]), tray]));
+
+    // On the ground (a fight)
+    if (o.ground) {
+      var gt = el('div', { class: 'tray' });
+      if (!o.ground.length) gt.appendChild(el('span', { class: 'tray-empty', text: 'Drag what’s in your hands here to drop it.' }));
+      o.ground.forEach(function (g) {
+        var it = item(g.key), why = o.cantPickUp(g);
+        var gc = el('div', { class: 'inv-card ground cat-' + it.cat, draggable: 'true', title: g.key + (g.by ? '\nDropped by ' + g.by + '.' : '') + '\n' + (why || 'Drag it into Hands, or use Pick up (the Pick Up Item maneuver).'),
+          ondragstart: function (e) { dragGround = g; try { e.dataTransfer.setData('text/plain', g.key); e.dataTransfer.effectAllowed = 'move'; } catch (x) { /* old browsers */ } },
+          ondragend: function () { dragGround = null; } }, [
+          el('span', { class: 'ic-name', text: g.key + (g.qty > 1 ? ' ×' + g.qty : '') }),
+          g.by ? el('span', { class: 'ic-meta', text: 'dropped by ' + g.by }) : null,
+          el('button', { type: 'button', class: 'btn btn-small', text: 'Pick up', disabled: why ? true : null, title: why || 'Pick Up Item (a maneuver): into a free hand', onclick: function () { o.pickUp(g); } })
+        ]);
+        gt.appendChild(gc);
+      });
+      dropTarget(gt, 'ground');
+      host.appendChild(el('div', { class: 'tray-wrap zone-ground', title: TIPS.ground }, [el('h3', {}, ['On the ground ', el('small', { text: '(this fight)' })]), gt]));
+    }
+
+    // The selected card
+    var det = el('div', { class: 'card-detail', hidden: sel ? null : true });
+    if (sel) {
+      var it = item(sel.key), btns = [];
+      det.appendChild(el('h3', { text: sel.key }));
+      det.appendChild(el('p', { text: it.txt }));
+      det.appendChild(el('p', { class: 'fine', text: 'Stack ' + it.st + ' · ' + it.sl + ' slot' + (it.sl > 1 ? 's' : '') + (it.gc ? ' · ' + fmt(it.gc) + ' gc' : '') + ' · Now: ' + whereText(sel) +
+        '. Click a highlighted slot to move it.' }));
+      if (o.controls) btns = btns.concat(o.controls(sel));
+      if (mode === 'build') {
+        btns.push(el('button', { type: 'button', class: 'btn btn-small', text: '− 1', disabled: sel.qty <= 1, onclick: function () { sel.qty--; o.after(); } }));
+        btns.push(el('span', { text: 'Qty ' + sel.qty }));
+        btns.push(el('button', { type: 'button', class: 'btn btn-small', text: '+ 1', disabled: sel.qty >= it.st || sel.area === 'hand', onclick: function () { sel.qty++; o.after(); } }));
+        btns.push(el('button', { type: 'button', class: 'btn btn-small btn-ghost', text: 'Set aside', disabled: sel.area === 'none', onclick: function () { attemptMove(sel, 'none'); } }));
+        btns.push(el('button', { type: 'button', class: 'btn btn-small btn-ghost', text: 'Delete card', onclick: function () {
+          state.inv = state.inv.filter(function (x) { return x !== sel; }); selected[mode] = null; o.after();
+        } }));
+      } else {
+        var mv = el('select', { class: 'mini-sel', 'aria-label': 'Move ' + sel.key, title: 'Move ' + sel.key + ' to another area (it goes in the first free slot that fits)', onchange: function () {
+          if (this.value === 'ground') { o.drop([sel]); return; }
+          attemptMove(sel, this.value);
+        } }, ZONES.concat(o.ground && sel.area === 'hand' ? [['ground', 'On the ground']] : []).map(function (z) {
+          return el('option', { value: z[0], text: z[0] === sel.area ? z[1] : '→ ' + z[1] });
+        }));
+        mv.value = sel.area;
+        btns.push(mv);
+      }
+      btns.push(el('button', { type: 'button', class: 'btn btn-small btn-ghost', text: 'Done', onclick: function () { selected[mode] = null; o.redraw(); } }));
+      det.appendChild(el('div', { class: 'row' }, btns));
+    }
+    host.appendChild(det);
+  }
+
+  A.add({ invGrid: invGrid, invClear: clearSelection, slotLabel: slotLabel });
+})();
+
+</script>
+<script>
+/*
  * Character Generator: the Build page: each step’s card, the inventory slots (click or drag), the Crow summary, and the
  * page’s controls (bind). See state.js.
  */
@@ -9206,19 +9411,18 @@ var CROWS_TRAIT_TREES = [
   'use strict';
   var A = window.CrowsGen, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var addItem = f('addItem'), adopt = f('adopt'), allocTotal = f('allocTotal'), armorInfo = f('armorInfo'), autoArrange = f('autoArrange'),
-      beltSize = f('beltSize'), bg = f('bg'), canLearn = f('canLearn'), cardById = f('cardById'), characteristics = f('characteristics'),
+  var addItem = f('addItem'), invClear = f('invClear'), invGrid = f('invGrid'), adopt = f('adopt'), allocTotal = f('allocTotal'), armorInfo = f('armorInfo'), autoArrange = f('autoArrange'),
+      bg = f('bg'), canLearn = f('canLearn'), characteristics = f('characteristics'),
       download = f('download'), expertiseUses = f('expertiseUses'), exportPdf = f('exportPdf'), exportState = f('exportState'),
-      fileBase = f('fileBase'), findTrait = f('findTrait'), fits = f('fits'), freshState = f('freshState'), item = f('item'),
-      moveCard = f('moveCard'), occupancy = f('occupancy'), ownedTraitIds = f('ownedTraitIds'), pruneTraits = f('pruneTraits'),
-      randomCrow = f('randomCrow'), randomName = f('randomName'), refusal = f('refusal'), resetGear = f('resetGear'), rollCoins = f('rollCoins'),
-      save = f('save'), setBackground = f('setBackground'), spanOf = f('spanOf'), staminaMax = f('staminaMax'),
+      fileBase = f('fileBase'), findTrait = f('findTrait'), freshState = f('freshState'), item = f('item'),
+      ownedTraitIds = f('ownedTraitIds'), pruneTraits = f('pruneTraits'),
+      randomCrow = f('randomCrow'), randomName = f('randomName'), resetGear = f('resetGear'), rollCoins = f('rollCoins'),
+      save = f('save'), setBackground = f('setBackground'), staminaMax = f('staminaMax'),
       startingTraitId = f('startingTraitId'), startNew = f('startNew'), syncBonusArrays = f('syncBonusArrays'), toast = f('toast'),
       traitId = f('traitId'), traitXP = f('traitXP'), usePool = f('usePool'), validState = f('validState');
   var $ = A.$, d = A.d, DIE = A.DIE, el = A.el, fmt = A.fmt, maxUses = A.maxUses, pick = A.pick, TREE_BY_NAME = A.TREE_BY_NAME;
   var state = A.state; A.share('state', function (v) { state = v; });
 
-  var selectedId = null;
   // ------------------------------------------------------------------ rendering
   function render() {
     syncBonusArrays();
@@ -9285,20 +9489,10 @@ var CROWS_TRAIT_TREES = [
     });
   }
 
-  function renderExpertise() {
+  // The 18 expertises with their uses. editable: +/- buttons to assign the bonus uses from advancement (rendered in Advancement).
+  function expertiseGrid(grid, editable) {
     var uses = expertiseUses(), mx = maxUses(state.txp), pool = usePool(), used = allocTotal(), b = bg();
-    var ds = $('derived-stats'); ds.innerHTML = '';
-    var ai = armorInfo();
-    [['Stamina', staminaMax()], ['Speed', CROWS.BASE_SPEED], ['Armor AD', ai.text], ['Max uses', mx]].forEach(function (p) {
-      ds.appendChild(el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: p[0] }), el('div', { class: 'val', text: String(p[1]) })]));
-    });
-    var ban = $('alloc-banner');
-    if (pool > 0) {
-      ban.hidden = false;
-      ban.className = 'banner ' + (used === pool ? 'ok' : 'warn');
-      ban.textContent = 'Advancement: ' + used + ' of ' + pool + ' bonus expertise uses assigned. Use + / - to assign them (max ' + mx + ' uses per expertise).';
-    } else ban.hidden = true;
-    var grid = $('exp-grid'); grid.innerHTML = '';
+    grid.innerHTML = '';
     Object.keys(CROWS.EXPERTISES).forEach(function (cat) {
       var col = el('div', { class: 'exp-col' }, [el('h3', { text: cat })]);
       CROWS.EXPERTISES[cat].forEach(function (e) {
@@ -9306,9 +9500,9 @@ var CROWS_TRAIT_TREES = [
         var pips = el('span', { class: 'pips', title: u + ' use' + (u === 1 ? '' : 's') });
         for (var i = 0; i < Math.max(u, 0); i++) pips.appendChild(el('span', { class: 'pip ' + (i < baseU ? 'on' : 'bonus') }));
         var kids = [el('span', { text: n, title: e[1] }), pips];
-        if (pool > 0) {
+        if (editable) {
           kids.push(el('span', { class: 'pips' }, [
-            el('button', { type: 'button', class: 'pm', text: '−', 'aria-label': 'Remove a use of ' + n, disabled: extra <= 0, onclick: function () { state.esAlloc[n]--; if (!state.esAlloc[n]) delete state.esAlloc[n]; render(); } }),
+            el('button', { type: 'button', class: 'pm', text: '\u2212', 'aria-label': 'Remove a use of ' + n, disabled: extra <= 0, onclick: function () { state.esAlloc[n]--; if (!state.esAlloc[n]) delete state.esAlloc[n]; render(); } }),
             el('button', { type: 'button', class: 'pm', text: '+', 'aria-label': 'Add a use of ' + n, disabled: used >= pool || u >= mx, onclick: function () { state.esAlloc[n] = extra + 1; render(); } })
           ]));
         }
@@ -9316,6 +9510,15 @@ var CROWS_TRAIT_TREES = [
       });
       grid.appendChild(col);
     });
+  }
+
+  function renderExpertise() {
+    var ds = $('derived-stats'); ds.innerHTML = '';
+    var ai = armorInfo();
+    [['Stamina', staminaMax()], ['Speed', CROWS.BASE_SPEED], ['Armor AD', ai.text], ['Max uses', maxUses(state.txp)]].forEach(function (p) {
+      ds.appendChild(el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: p[0] }), el('div', { class: 'val', text: String(p[1]) })]));
+    });
+    expertiseGrid($('exp-grid'), false);
   }
 
   function traitCard(id, bought) {
@@ -9361,134 +9564,17 @@ var CROWS_TRAIT_TREES = [
     });
   }
 
-  // ---- inventory rendering + interaction
-  var dragId = null;
-  function cardEl(c) {
-    var it = item(c.key);
-    var meta = [];
-    if (it.st > 1) meta.push(c.qty + ' / ' + it.st);
-    if (it.sl > 1) meta.push(it.sl + ' slots');
-    if (it.hands === 2) meta.push('2 hands');
-    var n = el('div', { class: 'inv-card cat-' + it.cat + (selectedId === c.id ? ' sel' : ''), draggable: 'true', tabindex: '0', role: 'button',
-      'aria-label': c.key + (c.qty > 1 ? ' x' + c.qty : ''), 'data-id': c.id }, [
-      el('span', { class: 'ic-name', text: c.key + (c.qty > 1 ? ' ×' + c.qty : '') }),
-      meta.length ? el('span', { class: 'ic-meta', text: meta.join(' · ') }) : null,
-      el('span', { class: 'ic-txt', text: it.txt })
-    ]);
-    n.addEventListener('click', function (e) { e.stopPropagation(); selectedId = selectedId === c.id ? null : c.id; renderInventory(); });
-    n.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); n.click(); } });
-    n.addEventListener('dragstart', function (e) { dragId = c.id; try { e.dataTransfer.setData('text/plain', String(c.id)); e.dataTransfer.effectAllowed = 'move'; } catch (x) { /* old browsers */ } });
-    n.addEventListener('dragend', function () { dragId = null; });
-    return n;
-  }
-  function dropTarget(node, area, idx) {
-    node.addEventListener('dragover', function (e) { if (dragId !== null) { e.preventDefault(); node.classList.add('drop-ok'); } });
-    node.addEventListener('dragleave', function () { node.classList.remove('drop-ok'); });
-    node.addEventListener('drop', function (e) {
-      e.preventDefault(); node.classList.remove('drop-ok');
-      var c = cardById(dragId); dragId = null;
-      if (c) attemptMove(c, area, idx);
-    });
-    node.addEventListener('click', function () {
-      if (selectedId === null) return;
-      var c = cardById(selectedId);
-      if (c) attemptMove(c, area, idx);
-    });
-  }
-  function attemptMove(c, area, idx) {
-    if (moveCard(c, area, idx)) { selectedId = null; render(); }
-    else toast(refusal(c, area, idx));
-  }
-
-  function slotLabel(word, num) {
-    return el('span', { class: 's-lbl' }, [el('span', { class: 's-word', text: word + ' ' }), num]);
-  }
+  // ---- inventory: the slot grid is the shared component (inventory-ui.js); this adds Build's warnings, coins, and pets
   function renderInventory() {
-    var inv = $('inventory'); inv.innerHTML = '';
-    var occ = occupancy();
-    var sel = selectedId !== null ? cardById(selectedId) : null;
-    function rowEl(label, area, count, cellsTotal) {
-      inv.appendChild(el('div', { class: 'inv-row-label', text: label }));
-      var row = el('div', { class: 'inv-row' });
-      var i = 0;
-      var base = area === 'pack2' ? 5 : 0;
-      var realArea = area === 'pack2' ? 'pack' : area;
-      while (i < cellsTotal) {
-        var slotIdx = base + i;
-        if (i >= count) {
-          row.appendChild(el('div', { class: 'slot disabled', 'aria-hidden': 'true' }, [el('span', { class: 's-lbl', text: realArea === 'belt' ? 'Extra (trait)' : '' })]));
-          i++; continue;
-        }
-        var cid = occ[realArea][slotIdx];
-        var c = cid !== null ? cardById(cid) : null;
-        var word = realArea === 'hand' ? 'Hand' : realArea === 'belt' ? 'Belt' : 'Backpack';
-        var lbl = word + ' ' + (slotIdx + 1);
-        if (c && c.idx === slotIdx) {
-          var sp = spanOf(c, realArea);
-          var cell = el('div', { class: 'slot', style: sp > 1 ? 'grid-column: span ' + sp : null }, [slotLabel(word, (slotIdx + 1) + (sp > 1 ? '\u2013' + (slotIdx + sp) : '')), cardEl(c)]);
-          dropTarget(cell, realArea, slotIdx);
-          row.appendChild(cell);
-          i += sp;
-        } else if (c) {
-          i++; // covered by a spanning card that started in the previous row (shouldn't happen)
-        } else {
-          var canHere = sel ? fits(sel.qty > 1 && realArea === 'hand' ? { id: -1, key: sel.key, qty: 1 } : sel, realArea, slotIdx, occ) : false;
-          var empty = el('div', { class: 'slot empty' + (canHere ? ' target' : ''), tabindex: sel ? '0' : null, role: sel ? 'button' : null, 'aria-label': lbl + ' (empty)' },
-            [slotLabel(word, String(slotIdx + 1))]);
-          dropTarget(empty, realArea, slotIdx);
-          empty.addEventListener('keydown', function (e) { if (e.key === 'Enter' || e.key === ' ') { e.preventDefault(); this.click(); } });
-          row.appendChild(empty);
-          i++;
-        }
-      }
-      inv.appendChild(row);
-    }
-    rowEl('Hands (equipped, not stackable)', 'hand', 2, 5);
-    rowEl('Belt', 'belt', beltSize(), 5);
-    rowEl('Backpack', 'pack', 5, 5);
-    rowEl('', 'pack2', 5, 5);
-
-    var tray = $('tray'); tray.innerHTML = '';
-    var loose = state.inv.filter(function (c) { return c.area === 'none'; });
-    if (!loose.length) tray.appendChild(el('span', { class: 'tray-empty', text: 'Nothing set aside.' }));
-    loose.forEach(function (c) { tray.appendChild(cardEl(c)); });
-    if (!tray._wired) { dropTarget(tray, 'none', 0); tray._wired = true; }
-
-    // warnings
+    invGrid($('inventory'), { mode: 'build', redraw: renderInventory, after: render });
     var warns = [];
+    var loose = state.inv.filter(function (c) { return c.area === 'none'; });
     if (loose.length) warns.push(loose.length + ' item card' + (loose.length > 1 ? 's are' : ' is') + ' not carried. Only carried items go in the inventory on your sheet.');
-    var ai = armorInfo();
     state.inv.forEach(function (c) { if (item(c.key).cat === 'armor' && c.area !== 'pack' && c.area !== 'none') warns.push(c.key + ' only protects you when worn from your backpack.'); });
     var coinCap = state.inv.filter(function (c) { return c.key === 'Coin Purse' && c.area !== 'none'; }).length * 500;
     if (state.coins > coinCap) warns.push('You carry ' + fmt(state.coins) + ' gc but your purses hold ' + fmt(coinCap) + '. Loose coins take a slot per 250.');
     var wb = $('inv-warnings'); wb.hidden = !warns.length; wb.textContent = warns.join(' ');
-    void ai;
 
-    // detail panel
-    var det = $('card-detail');
-    if (!sel) { det.hidden = true; }
-    else {
-      det.hidden = false; det.innerHTML = '';
-      var it = item(sel.key);
-      det.appendChild(el('h3', { text: sel.key }));
-      det.appendChild(el('p', { text: it.txt }));
-      det.appendChild(el('p', { class: 'fine', text: 'Stack ' + it.st + ' · ' + it.sl + ' slot' + (it.sl > 1 ? 's' : '') + (it.gc ? ' · ' + fmt(it.gc) + ' gc' : '') + ' · Now: ' +
-        (sel.area === 'none' ? 'not carried' : sel.area === 'hand' ? 'hand ' + (sel.idx + 1) : sel.area === 'belt' ? 'belt ' + (sel.idx + 1) : 'backpack ' + (sel.idx + 1)) +
-        '. Click a highlighted slot to move it.' }));
-      var ctr = el('div', { class: 'row' }, [
-        el('button', { type: 'button', class: 'btn btn-small', text: '− 1', disabled: sel.qty <= 1, onclick: function () { sel.qty--; render(); } }),
-        el('span', { text: 'Qty ' + sel.qty }),
-        el('button', { type: 'button', class: 'btn btn-small', text: '+ 1', disabled: sel.qty >= it.st || sel.area === 'hand', onclick: function () { sel.qty++; render(); } }),
-        el('button', { type: 'button', class: 'btn btn-small btn-ghost', text: 'Set aside', disabled: sel.area === 'none', onclick: function () { moveCard(sel, 'none', 0); render(); } }),
-        el('button', { type: 'button', class: 'btn btn-small btn-ghost', text: 'Delete card', onclick: function () {
-          state.inv = state.inv.filter(function (x) { return x !== sel; }); selectedId = null; render();
-        } }),
-        el('button', { type: 'button', class: 'btn btn-small btn-ghost', text: 'Done', onclick: function () { selectedId = null; renderInventory(); } })
-      ]);
-      det.appendChild(ctr);
-    }
-
-    // pets
     var pets = $('pets'); pets.innerHTML = '';
     if (state.pets.length) {
       pets.appendChild(el('h3', { text: 'Pets' }));
@@ -9529,22 +9615,58 @@ var CROWS_TRAIT_TREES = [
       s.value = o;
       list.appendChild(el('div', { class: 'bonus' }, [el('b', { text: ordinal(i + 1) + ' Characteristic bonus' }), s]));
     });
+    var pool = usePool(), used = allocTotal(), ban = $('alloc-banner'), grid = $('alloc-grid');
+    ban.hidden = grid.hidden = pool <= 0;
+    if (pool > 0) {
+      ban.className = 'banner ' + (used === pool ? 'ok' : 'warn');
+      ban.textContent = 'Bonus expertise uses: ' + used + ' of ' + pool + ' assigned. Use + / - to assign them (max ' + maxUses(state.txp) + ' uses per expertise).';
+      expertiseGrid(grid, true);
+    }
     if (!state.esBonus.length && !state.charBonus.length) list.appendChild(el('p', { class: 'hint', text: 'No bonuses yet. The first Expertise & Stamina bonus arrives at 100 TXP; the first characteristic bonus at 5,000 TXP.' }));
   }
   function ordinal(n) { var s = ['th', 'st', 'nd', 'rd'], v = n % 100; return n + (s[(v - 20) % 10] || s[v] || s[0]); }
 
+  // What's left to do, each tied to the step card that fixes it: [state (ok|todo|err), text, step id].
   function checklist() {
     var items = [];
-    items.push([state.name.trim() ? 'ok' : 'todo', state.name.trim() ? 'Named' : 'Give your crow a name']);
-    items.push([state.feature.trim() ? 'ok' : 'todo', state.feature.trim() ? 'Distinguishing feature' : 'Pick a distinguishing feature']);
-    items.push([state.connName.trim() && state.connBenefit ? 'ok' : 'todo', state.connName.trim() && state.connBenefit ? 'NPC connection' : 'Make an NPC connection and pick a benefit']);
+    items.push([state.name.trim() ? 'ok' : 'todo', state.name.trim() ? 'Named' : 'Give your crow a name', 'sec-identity']);
+    items.push([state.feature.trim() ? 'ok' : 'todo', state.feature.trim() ? 'Distinguishing feature' : 'Pick a distinguishing feature', 'sec-identity']);
+    items.push([state.connName.trim() && state.connBenefit ? 'ok' : 'todo', state.connName.trim() && state.connBenefit ? 'NPC connection' : 'Make an NPC connection and pick a benefit', 'sec-village']);
     var loose = state.inv.filter(function (c) { return c.area === 'none'; }).length;
-    items.push([loose ? 'todo' : 'ok', loose ? loose + ' item(s) not carried' : 'All gear carried']);
+    items.push([loose ? 'todo' : 'ok', loose ? loose + ' item(s) not carried' : 'All gear carried', 'sec-equipment']);
     var pool = usePool(), used = allocTotal();
-    if (pool) items.push([used === pool ? 'ok' : 'err', used === pool ? 'Bonus expertise uses assigned' : 'Assign ' + (pool - used) + ' more bonus expertise use(s)']);
-    if (state.charBonus.some(function (c) { return !c; })) items.push(['err', 'Choose characteristic bonus(es)']);
-    if (state.txp - traitXP() < 0) items.push(['err', 'Traits cost more XP than you have']);
+    if (pool) items.push([used === pool ? 'ok' : 'err', used === pool ? 'Bonus expertise uses assigned' : 'Assign ' + (pool - used) + ' more bonus expertise use(s)', 'sec-advance']);
+    if (state.charBonus.some(function (c) { return !c; })) items.push(['err', 'Choose characteristic bonus(es)', 'sec-advance']);
+    if (state.txp - traitXP() < 0) items.push(['err', 'Traits cost more XP than you have', 'sec-traits']);
     return items;
+  }
+
+  // The Build steps, in page order. Each pill shows the worst state among the checklist items for its card.
+  var STEPS = [['sec-background', 'Background'], ['sec-chars', 'Characteristics'], ['sec-identity', 'Name'], ['sec-traits', 'Traits'], ['sec-equipment', 'Gear'],
+    ['sec-village', 'Village'], ['sec-advance', 'Advancement'], ['sec-notes', 'Notes']];
+  function goStep(id) { var n = $(id); if (n) n.scrollIntoView({ behavior: 'smooth', block: 'start' }); }
+  function renderStepbar() {
+    var bar = $('stepbar'), list = checklist(), rank = { ok: 0, todo: 1, err: 2 }, ready = 0;
+    bar.innerHTML = '';
+    var pills = STEPS.map(function (st, i) {
+      var worst = 'ok';
+      list.forEach(function (c) { if (c[2] === st[0] && rank[c[0]] > rank[worst]) worst = c[0]; });
+      if (worst === 'ok') ready++;
+      return el('button', { type: 'button', class: 'pill ' + worst, 'data-step': st[0], title: worst === 'ok' ? st[1] : st[1] + ': something left to do',
+        onclick: function () { goStep(st[0]); } }, [el('span', { class: 'n', text: String(i + 1) }), st[1]]);
+    });
+    bar.appendChild(el('div', { class: 'meter', role: 'progressbar', 'aria-valuemin': '0', 'aria-valuemax': String(STEPS.length), 'aria-valuenow': String(ready) },
+      [el('span', { style: 'width:' + Math.round(ready / STEPS.length * 100) + '%' })]));
+    pills.forEach(function (p) { bar.appendChild(p); });
+    bar.appendChild(el('span', { class: 'count', text: ready + ' of ' + STEPS.length + ' steps ready' }));
+  }
+  // A Next button at the foot of each step card.
+  function addNextButtons() {
+    STEPS.forEach(function (st, i) {
+      var nx = STEPS[i + 1], card = $(st[0]);
+      if (!nx || !card) return;
+      card.appendChild(el('div', { class: 'step-next' }, [el('button', { type: 'button', class: 'btn btn-small', text: 'Next: ' + nx[1] + ' \u2192', onclick: function () { goStep(nx[0]); } })]));
+    });
   }
 
   function renderSummary() {
@@ -9561,11 +9683,14 @@ var CROWS_TRAIT_TREES = [
     var inHands = state.inv.filter(function (c) { return c.area === 'hand'; }).map(function (c) { return c.key + (c.thrown ? ' (thrown)' : ''); });
     body.appendChild(el('div', { class: 'fine', text: 'Hands: ' + (inHands.join(', ') || 'empty') + ' · ' + fmt(state.coins) + ' gc' }));
     var cl = $('checklist'); cl.innerHTML = '';
-    checklist().forEach(function (c) { cl.appendChild(el('div', { class: c[0], text: c[1] })); });
+    checklist().forEach(function (c) { cl.appendChild(el('div', { class: c[0], text: c[1], role: 'button', tabindex: '0', title: 'Go to that step',
+      onclick: function () { goStep(c[2]); }, onkeydown: function (e) { if (e.key === 'Enter') goStep(c[2]); } })); });
+    renderStepbar();
   }
 
   // ------------------------------------------------------------------ wiring
   function bind() {
+    addNextButtons();
     var bs = $('bg-select');
     CROWS.BACKGROUNDS.forEach(function (b, i) { bs.appendChild(el('option', { value: String(i), text: b.d[0] + '-' + b.d[1] + '  ' + b.name })); });
     bs.addEventListener('change', function () { state.bgDice = null; setBackground(+this.value, true); render(); });
@@ -9595,10 +9720,10 @@ var CROWS_TRAIT_TREES = [
     $('in-coins').addEventListener('input', function () { var n = parseInt(this.value, 10); state.coins = isNaN(n) || n < 0 ? 0 : n; state.coinDice = null; renderSummary(); save(); });
     $('in-coins').addEventListener('change', function () { renderInventory(); });
     $('btn-roll-coins').addEventListener('click', function () { rollCoins(); render(); });
-    $('btn-arrange').addEventListener('click', function () { selectedId = null; autoArrange(); render(); toast('Inventory arranged.'); });
+    $('btn-arrange').addEventListener('click', function () { clearSelection(); autoArrange(); render(); toast('Inventory arranged.'); });
     $('btn-reset-gear').addEventListener('click', function () {
       if (!confirm('Replace your inventory with the starting gear for ' + bg().name + '?')) return;
-      selectedId = null; resetGear(); render();
+      clearSelection(); resetGear(); render();
     });
     var ai = $('add-item-select');
     var groups = { weapon: 'Weapons', ammo: 'Weapons', armor: 'Armor', shield: 'Armor', consumable: 'Alchemy', spell: 'Spellbooks', magic: 'Magic items' };
@@ -9632,10 +9757,10 @@ var CROWS_TRAIT_TREES = [
     });
     $('tree-select').addEventListener('change', function () { renderTraits(); });
 
-    $('btn-random').addEventListener('click', function () { startNew(); selectedId = null; randomCrow(); render(); toast('A new crow: ' + state.name + ', ' + bg().name + '.'); });
+    $('btn-random').addEventListener('click', function () { startNew(); clearSelection(); randomCrow(); render(); toast('A new crow: ' + state.name + ', ' + bg().name + '.'); });
     $('btn-new').addEventListener('click', function () {
       if (!confirm('Start a new character? Unsaved changes to this one will be lost.')) return;
-      startNew(); selectedId = null; A.set('state', freshState(0)); resetGear(); rollCoins(); render();
+      startNew(); clearSelection(); A.set('state', freshState(0)); resetGear(); rollCoins(); render();
     });
     $('btn-save').addEventListener('click', function () {
       download(JSON.stringify(exportState(), null, 2), fileBase() + '_Crows_Character.json', 'application/json');
@@ -9648,7 +9773,7 @@ var CROWS_TRAIT_TREES = [
         try {
           var s = JSON.parse(rd.result);
           if (!validState(s)) throw new Error('not a Crows character file');
-          startNew(); selectedId = null; adopt(s); render(); toast('Loaded ' + (state.name || 'character') + '.');
+          startNew(); clearSelection(); adopt(s); render(); toast('Loaded ' + (state.name || 'character') + '.');
         } catch (e) { toast('Could not load that file: ' + e.message); }
         input.value = '';
       };
@@ -9656,13 +9781,11 @@ var CROWS_TRAIT_TREES = [
     });
     $('btn-pdf').addEventListener('click', function () { exportPdf(this); });
     $('btn-pdf-2').addEventListener('click', function () { exportPdf(this); });
-    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && selectedId !== null) { selectedId = null; renderInventory(); } });
   }
-  function clearSelection() { selectedId = null; }
+  function clearSelection() { invClear('build'); }
 
   A.add({ render: render, renderBackground: renderBackground, renderChars: renderChars, renderIdentity: renderIdentity,
-      renderExpertise: renderExpertise, traitCard: traitCard, renderTraits: renderTraits, cardEl: cardEl, dropTarget: dropTarget,
-      attemptMove: attemptMove, slotLabel: slotLabel, renderInventory: renderInventory, renderVillage: renderVillage, renderAdvance: renderAdvance,
+      renderExpertise: renderExpertise, traitCard: traitCard, renderTraits: renderTraits, renderInventory: renderInventory, renderVillage: renderVillage, renderAdvance: renderAdvance,
       ordinal: ordinal, checklist: checklist, renderSummary: renderSummary, bind: bind, clearSelection: clearSelection });
 })();
 
@@ -9862,7 +9985,7 @@ var CROWS_TRAIT_TREES = [
   'use strict';
   var A = window.CrowsGen, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var addItem = f('addItem'), adMax = f('adMax'), adNow = f('adNow'), adopt = f('adopt'), allocTotal = f('allocTotal'), areaSize = f('areaSize'),
+  var addItem = f('addItem'), checklist = f('checklist'), adMax = f('adMax'), adNow = f('adNow'), adopt = f('adopt'), allocTotal = f('allocTotal'), areaSize = f('areaSize'),
       armorInfo = f('armorInfo'), bg = f('bg'), bind = f('bind'), buildPdf = f('buildPdf'), cardById = f('cardById'),
       characteristics = f('characteristics'), clearSelection = f('clearSelection'), curStamina = f('curStamina'), expertiseUses = f('expertiseUses'),
       exportState = f('exportState'), extraBeltRule = f('extraBeltRule'), fieldValues = f('fieldValues'), handFits = f('handFits'), item = f('item'),
@@ -9882,7 +10005,7 @@ var CROWS_TRAIT_TREES = [
     randomCrow: function () { randomCrow(); render(); }, setBackground: function (i) { setBackground(i, true); render(); },
     // Shared with play.js (Play mode).
     core: {
-      render: render, save: save, toast: toast, el: el, $: $, d: d, fmt: fmt, signed: signed, ordinal: ordinal, DIE: DIE,
+      invGrid: f('invGrid'), render: render, save: save, toast: toast, el: el, $: $, d: d, fmt: fmt, signed: signed, ordinal: ordinal, DIE: DIE,
       item: item, bg: bg, characteristics: characteristics, staminaMax: staminaMax, curStamina: curStamina,
       expertiseUses: expertiseUses, maxUses: maxUses, armorInfo: armorInfo, adMax: adMax, adNow: adNow,
       woundCount: woundCount, occupancy: occupancy, cardById: cardById, spanOf: spanOf, traitXP: traitXP,
@@ -9892,20 +10015,21 @@ var CROWS_TRAIT_TREES = [
   };
 
   /*
-   * The Save character button (right column, logged in only). A new character isn't in the account until it's
-   * pressed (cloud.js holds it: manualNew); after that it autosaves, and the button just shows that it's saved.
+   * The Finish crow button (right column, logged in only). A new character is saved to the account at once as a draft
+   * (cloud.js) and autosaves from then on; Finish crow marks it ready to play. A finished crow just shows that it's saved.
    */
   function updateSaveBox(s) {
     var box = $('acct-save'), C = window.CrowsCloud;
     if (!box) return;
     if (refView || !C || !C.user) { box.hidden = true; return; }
-    var held = C.held, saving = s === 'saving' || s === 'loading';
+    var draft = C.draft, saving = s === 'saving' || s === 'loading', open = checklist().filter(function (c) { return c[0] === 'err'; }).length;
     box.hidden = false; box.innerHTML = '';
-    box.appendChild(el('button', { type: 'button', class: 'btn wide ' + (held ? 'btn-primary' : 'btn-ghost'), disabled: saving || (!held && s === 'saved'),
-      text: saving ? 'Saving\u2026' : held ? 'Save character' : s === 'saved' ? 'Saved \u2713' : 'Save character', onclick: function () { C.saveNow(); } }));
-    box.appendChild(el('p', { class: 'fine', text: held ? 'Not in your account yet. Once you save it, your changes save automatically.'
-      : s === 'saved' ? 'In your account. Changes save automatically.' : s === 'error' ? 'Not saved yet: trying again. Your work is kept in this browser.'
-      : s === 'conflict' ? 'Changed elsewhere: choose which version to keep.' : '' }));
+    box.appendChild(el('button', { type: 'button', class: 'btn wide ' + (draft ? 'btn-primary' : 'btn-ghost'), disabled: saving || !draft || open > 0 || null,
+      text: saving ? 'Saving\u2026' : draft ? 'Finish crow' : 'Saved \u2713', onclick: function () { C.finish(); } }));
+    box.appendChild(el('p', { class: 'fine', text: s === 'error' ? 'Not saved yet: trying again. Your work is kept in this browser.'
+      : s === 'conflict' ? 'Changed elsewhere: choose which version to keep.'
+      : draft ? (open ? 'Draft: saved to your account. Fix the items marked \u2715 to finish it.' : 'Draft: saved to your account and not shown as ready yet. Press Finish crow when this crow is ready to play.')
+      : s === 'saved' ? 'In your account. Changes save automatically.' : '' }));
   }
 
   /*
@@ -9931,6 +10055,18 @@ var CROWS_TRAIT_TREES = [
     return text;
   }
 
+  /* On the accounts site, Start over, Save file, and Load file go behind a ⋯ More button in the header (offline they stay as buttons). */
+  function moreMenu() {
+    var menu = $('more-menu'), btn = $('more-btn');
+    if (!menu || menu.classList.contains('collapsed')) return;
+    menu.classList.add('collapsed');
+    function open(on) { menu.classList.toggle('open', on); btn.setAttribute('aria-expanded', String(on)); }
+    btn.addEventListener('click', function (e) { e.stopPropagation(); open(!menu.classList.contains('open')); });
+    document.addEventListener('click', function (e) { if (!menu.contains(e.target)) open(false); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') open(false); });
+    $('more-pop').addEventListener('click', function (e) { if (e.target.closest('button')) open(false); });
+  }
+
   function init() {
     bind();
     var s = load();
@@ -9938,7 +10074,6 @@ var CROWS_TRAIT_TREES = [
     render();
     if (window.CrowsCloud) window.CrowsCloud.attach({
       kind: 'characters',
-      manualNew: true,   // new characters wait for the Save character button
       onStatus: updateSaveBox,
       getData: exportState,
       valid: validState,
@@ -9949,7 +10084,7 @@ var CROWS_TRAIT_TREES = [
         var b = CROWS.BACKGROUNDS[c.bg];
         return [b ? b.name : '', c.txp ? fmt(c.txp) + ' XP' : '', c.player ? 'played by ' + c.player : ''].filter(Boolean).join(' · ');
       },
-      onServer: function () { if (window.CrowsPlay) window.CrowsPlay.syncAddress(); },
+      onServer: function () { moreMenu(); if (window.CrowsPlay) window.CrowsPlay.syncAddress(); },
       onJoined: function (campaign) { if (window.CrowsPlay) window.CrowsPlay.joined(campaign); },
       onReady: function (p) {
         if (window.CrowsPlay && (p.mode === 'play' || p.mode === 'build')) window.CrowsPlay.setMode(p.mode);
@@ -9969,7 +10104,7 @@ var CROWS_TRAIT_TREES = [
     });
   }
 
-  A.add({ updateSaveBox: updateSaveBox, describeChange: describeChange, init: init });
+  A.add({ moreMenu: moreMenu, updateSaveBox: updateSaveBox, describeChange: describeChange, init: init });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();
@@ -10627,100 +10762,35 @@ var CROWS_TRAIT_TREES = [
     ]);
   }
 
-  // Items: Hands, Belt, Backpack, and Not carried, each a drop zone. Rows drag between them (or use their Move menu);
-  // what's allowed is app.js's inventory rules (slots, both hands for two-handed, one item per hand, restricted extra belt slot).
-  // In a fight, On the ground too (combat.js): drop what's in your hands there, and drag an item from it into your hands to pick it up.
-  var ZONES = [['hand', 'Hands'], ['belt', 'Belt'], ['pack', 'Backpack'], ['none', 'Not carried']];
-  var ZONE_TIPS = {
-    hand: 'Hands: what you wield or hold. One item per hand (no stacks); two-handed items take both. Getting an item into a hand in a fight: Draw From Belt or Draw From Pack.',
-    belt: 'Belt: quick to reach. Draw From Belt takes 1-2 items as a maneuver.',
-    pack: 'Backpack: 10 slots in two rows of 5; a multi-slot item stays on one row. Armor is worn from here. Draw From Pack: roll 1d10 and get the item if the roll is at least one of its slot numbers.',
-    none: 'Not carried: items set aside (left at camp or stored). They don\u2019t count against your slots.',
-    ground: 'On the ground in this fight: what anyone dropped, or the Ref put there. Drop what\u2019s in your hands here (free). Picking something up is the Pick Up Item maneuver and needs a free hand: drag it into Hands.'
-  };
-  var dragCard = null, dragGround = null;
+  // Items: the shared inventory component (inventory-ui.js): Hands, Belt, Backpack and Not carried as a slot grid. Click a card
+  // for its controls (Use 1, usage dice, ammo, Move menu...), or drag it between areas. In a fight, On the ground too (combat.js):
+  // drop what's in your hands there, and drag an item from it into your hands to pick it up.
   function fightGround() { return window.CrowsCombat && !window.CrowsRefView ? window.CrowsCombat.ground() : null; }
-  function zoneName(area) { return ZONES.filter(function (z) { return z[0] === area; })[0][1].toLowerCase(); }
-  function moveItem(c, area, idx) {
-    if (area === c.area && idx === undefined) return;
-    var key = c.key, ok = idx === undefined ? C.moveToArea(c, area) : C.moveCard(c, area, idx);
-    if (!ok) { C.toast(C.refusal(c, area, idx)); return; }
-    commit(area === 'none' ? 'Set aside ' + key + '.' : 'Moved ' + key + ' to ' + (area === 'pack' ? 'backpack' : area) + '.');
-  }
-  function dropZone(node, area, idx) {
-    node.addEventListener('dragover', function (e) { if (dragCard || dragGround) { e.preventDefault(); e.stopPropagation(); node.classList.add('drop-ok'); } });
-    node.addEventListener('dragleave', function () { node.classList.remove('drop-ok'); });
-    node.addEventListener('drop', function (e) {
-      e.preventDefault(); e.stopPropagation(); node.classList.remove('drop-ok');
-      var c = dragCard, g = dragGround; dragCard = null; dragGround = null;
-      if (g) {   // an item from the ground: only into a hand (Pick Up Item)
-        if (area === 'hand') window.CrowsCombat.pickUp(g);
-        else if (area !== 'ground') C.toast('Picking something up puts it in a free hand (Pick Up Item): drag it into Hands.');
-        return;
-      }
-      if (c && area === 'ground') { window.CrowsCombat.drop([c]); return; }
-      if (!c || c.area === area && (idx === undefined || c.idx === idx)) return;
-      // Onto another item: stack or swap with it if the rules allow, otherwise anywhere free in its area.
-      if (idx !== undefined && area !== 'none' && C.moveCard(c, area, idx)) { commit('Moved ' + c.key + ' to ' + (area === 'pack' ? 'backpack' : area) + '.'); return; }
-      moveItem(c, area);
-    });
-  }
   function renderItems() {
-    var occ = C.occupancy(), zones = el('div', { class: 'item-zones' });
-    ZONES.forEach(function (z) {
-      var area = z[0], cards = S().inv.filter(function (c) { return c.area === area; }).sort(function (a, b) { return a.idx - b.idx; });
-      var free = area === 'none' ? 0 : occ[area].filter(function (x) { return x === null; }).length;
-      var note = area === 'belt' && C.areaSize('belt') > 4 ? ' · slot 5: ' + C.extraBeltRule() : '';
-      var box = el('div', { class: 'item-zone zone-' + area, 'data-area': area }, [
-        el('h3', { title: ZONE_TIPS[area] + (area === 'belt' && C.areaSize('belt') > 4 ? ' Slot 5 (from a trait) holds ' + C.extraBeltRule() + '.' : '') }, [z[1], el('small', { class: 'muted', text: area === 'none' ? (cards.length ? '' : ' · drag here to set an item aside') : ' · ' + free + ' of ' + C.areaSize(area) + ' free' + note })])]);
-      dropZone(box, area);
-      cards.forEach(function (c) { box.appendChild(itemRow(c)); });
-      if (!cards.length && area !== 'none') box.appendChild(el('p', { class: 'fine empty', text: area === 'hand' ? 'Empty-handed.' : 'Nothing here.' }));
-      zones.appendChild(box);
-    });
-    var ground = fightGround();
-    if (ground) {
-      var gbox = el('div', { class: 'item-zone zone-ground', 'data-area': 'ground' }, [el('h3', { title: ZONE_TIPS.ground }, ['On the ground',
-        el('small', { class: 'muted', text: ground.length ? ' · this fight' : ' · this fight: drag what\u2019s in your hands here to drop it' })])]);
-      dropZone(gbox, 'ground');
-      ground.forEach(function (g) { gbox.appendChild(groundRow(g)); });
-      zones.appendChild(gbox);
-    }
+    var ground = fightGround(), host = el('div', { class: 'inv-host' });
+    C.invGrid(host, { mode: 'play', fallback: true, redraw: renderItems, after: commit, badge: itemBadge, controls: itemControls, ground: ground,
+      pickUp: function (g) { window.CrowsCombat.pickUp(g); }, cantPickUp: function (g) { return window.CrowsCombat.cantPickUp(g); },
+      drop: function (cards) { window.CrowsCombat.drop(cards); } });
     var pick = el('select', { 'aria-label': 'Item to add', title: 'An item you found or bought' }), qty = el('input', { type: 'number', class: 'mini', min: 1, max: 99, value: 1, 'aria-label': 'How many', title: 'How many' });
     Object.keys(CROWS.ITEMS).sort().forEach(function (k) { pick.appendChild(el('option', { value: k, text: k })); });
     var add = el('div', { class: 'row wrap item-add' }, [el('span', { class: 'fine', text: 'Found something?' }), pick, qty, btn('Add', function () {
       var key = pick.value, all = C.addItem(key, Math.max(1, Math.min(99, parseInt(qty.value, 10) || 1)));
       commit('Picked up ' + key + (all ? '.' : ' (no room for all of it: some is set aside).'));
     }, '', { title: 'Add it to your backpack, then your belt; anything that doesn\u2019t fit goes to Not carried' })]);
-    card('play-items', 'Items', [el('p', { class: 'hint', text: 'Drag items between your hands, belt, and backpack (or use an item\u2019s Move menu). In a fight, getting things out takes a maneuver: Draw From Belt or Draw From Pack' +
+    card('play-items', 'Items', [el('p', { class: 'hint', text: 'Click an item for what you can do with it, or drag it between your hands, belt, and backpack. In a fight, getting things out takes a maneuver: Draw From Belt or Draw From Pack' +
       (ground ? '; drop what\u2019s in your hands On the ground, and drag an item from there into Hands to pick it up (a maneuver)' : '') + '. Usage dice: each 1 or 2 rolled removes a die.' }),
-      zones, add]);
+      host, add]);
   }
-  /* An item on the ground in a fight: drag it into Hands, or use Pick up. */
-  function groundRow(g) {
-    var it = item(g.key), why = window.CrowsCombat.cantPickUp(g);
-    var row = el('div', { class: 'item-row ground cat-' + it.cat, draggable: 'true',
-      title: g.key + (g.qty > 1 ? ' \u00d7' + g.qty : '') + (it.txt ? '\n' + it.txt : '') + (g.by ? '\nDropped by ' + g.by + '.' : '') + '\n' + (why || 'Drag it into Hands, or use Pick up (the Pick Up Item maneuver).'),
-      ondragstart: function (e) { dragGround = g; row.classList.add('dragging'); try { e.dataTransfer.setData('text/plain', g.key); e.dataTransfer.effectAllowed = 'move'; } catch (x) { /* old browsers */ } },
-      ondragend: function () { dragGround = null; row.classList.remove('dragging'); } }, [
-      el('span', { class: 'loc' }, [el('span', { class: 'grip', 'aria-hidden': 'true', text: '\u2807 ' }), 'Ground']),
-      el('span', { class: 'nm' }, [el('b', { text: g.key }), g.qty > 1 ? ' \u00d7' + g.qty : '', g.by ? el('small', { class: 'muted', text: ' (dropped by ' + g.by + ')' }) : null]),
-      el('span', { class: 'ctl' }, [btn('Pick up', function () { window.CrowsCombat.pickUp(g); }, '', { disabled: why ? true : null, title: why || 'Pick Up Item (a maneuver): into a free hand' })])
-    ]);
-    return row;
+  // What shows on an item's card face in Play: usage dice, shots left, damage to armor.
+  function itemBadge(c) {
+    var u = udInfo(c.key), out = [];
+    if (c.area !== 'none' && u) out.push('UD ' + udNow(c) + '/' + u.max);
+    if (c.area !== 'none' && AMMO_CASES[c.key]) out.push((typeof c.ammo === 'number' ? c.ammo : 20) + ' shots');
+    if (C.adMax(c) && c.dmg) out.push('AD ' + C.adNow(c) + '/' + C.adMax(c));
+    return out.join(' \u00b7 ');
   }
-  // An item's tooltip: its card text, size, where it is, and how to move it.
-  function itemTip(c) {
-    var it = item(c.key), sp = C.spanOf(c, c.area === 'none' ? 'pack' : c.area), facts = [];
-    if (it.st > 1) facts.push('Stacks to ' + it.st + (c.qty > 1 ? ' (' + c.qty + ' here)' : ''));
-    facts.push(it.sl + ' slot' + (it.sl > 1 ? 's' : '') + (it.hands === 2 ? ', needs both hands to wield' : ''));
-    if (C.adMax(c)) facts.push('AD ' + C.adNow(c) + '/' + C.adMax(c));
-    if (it.gc) facts.push(fmt(it.gc) + ' gc');
-    return c.key + (c.qty > 1 ? ' \u00d7' + c.qty : '') + '\n' + it.txt + '\n' + facts.join(' \u00b7 ') + '\n' +
-      (c.area === 'none' ? 'Not carried. Drag it to your hands, belt, or backpack to carry it.'
-        : where(c) + (sp > 1 && c.area !== 'hand' ? ' (' + sp + ' slots)' : '') + '. Drag it to another area, or drop another item on it to swap or stack.');
-  }
-  function itemRow(c) {
+  // The selected item's buttons: usage dice, ammo, Use 1, Drink, Drop in a fight, Discard.
+  function itemControls(c) {
     var it = item(c.key), u = udInfo(c.key), ctl = [], carriedNow = c.area !== 'none';
     if (carriedNow && u) {
       var n = udNow(c);
@@ -10749,20 +10819,7 @@ var CROWS_TRAIT_TREES = [
     if (carriedNow && it.st > 1 && c.qty < it.st && c.area !== 'hand') ctl.push(btn('+1', function () { c.qty++; delete c.ud; commit(); }, 'btn-ghost', { title: 'Add one to this stack (up to ' + it.st + ')' }));
     var inFight = !!fightGround();
     if (inFight && c.area === 'hand') ctl.push(btn('Drop', function () { window.CrowsCombat.drop([c]); }, 'btn-ghost', { title: 'Drop ' + c.key + ' on the ground in this fight (free). Anyone can pick it up' }));
-    var mv = el('select', { class: 'mini-sel', 'aria-label': 'Move ' + c.key, title: 'Move ' + c.key + ' to another area (it goes in the first free slot that fits)', onchange: function () { if (this.value === 'ground') window.CrowsCombat.drop([c]); else moveItem(c, this.value); this.value = c.area; } },
-      ZONES.concat(inFight && c.area === 'hand' ? [['ground', 'On the ground']] : []).map(function (z) { return el('option', { value: z[0], text: z[0] === c.area ? z[1] : '\u2192 ' + z[1] }); }));
-    mv.value = c.area;
-    ctl.push(mv);
-    var row = el('div', { class: 'item-row cat-' + it.cat, draggable: 'true', title: itemTip(c),
-      ondragstart: function (e) { dragCard = c; row.classList.add('dragging'); try { e.dataTransfer.setData('text/plain', c.key); e.dataTransfer.effectAllowed = 'move'; } catch (x) { /* old browsers */ } },
-      ondragend: function () { dragCard = null; row.classList.remove('dragging'); } }, [
-      el('span', { class: 'loc' }, [el('span', { class: 'grip', 'aria-hidden': 'true', text: '\u2807 ' }), carriedNow ? where(c) : '']),
-      el('span', { class: 'nm' }, [el('b', { text: c.key }), c.qty > 1 ? ' \u00d7' + c.qty : '', C.adMax(c) && c.dmg ? el('small', { class: 'muted', text: ' AD ' + C.adNow(c) + '/' + C.adMax(c) }) : null,
-        it.hands === 2 ? el('small', { class: 'muted', text: ' (2 hands)' }) : null, C.spanOf(c, c.area === 'none' ? 'pack' : c.area) > 1 && c.area !== 'hand' ? el('small', { class: 'muted', text: ' (' + C.spanOf(c, c.area === 'none' ? 'pack' : c.area) + ' slots)' }) : null]),
-      el('span', { class: 'ctl' }, ctl)
-    ]);
-    if (c.area !== 'none') dropZone(row, c.area, c.idx);
-    return row;
+    return ctl;
   }
 
   var AMMO_CASES = { 'Quiver of 20 Arrows': 1, 'Case of 20 Crossbow Bolts': 1 };
@@ -11633,7 +11690,7 @@ var CROWS_TRAIT_TREES = [
     ground: ground, pickUp: pickUp, cantPickUp: cantPickUp, drop: drop,
     rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') load(); });
-  // A crow that gets its record id later (a new one saved with Save character) starts being watched then.
+  // A crow that gets its record id later (a new crow, saved as a draft) starts being watched then.
   setInterval(function () { var id = charId(); if (id && (!fight || fight.charId !== id)) load(); }, 2000);
 })();
 

@@ -68,7 +68,6 @@ def main():
         # The player's new crow: two wounds, 1 Stamina, an expertise use spent.
         P.go(base + "play?new=1")
         pwait("return !!(window.CrowsCloud && window.CrowsCloud.active)", "the Play page to load")
-        p("window.CrowsCloud.saveNow();")
         pwait("return !!window.CrowsCloud.recordId", "the new crow to be saved")
         char = p("return window.CrowsCloud.recordId")
         exp = p("""var st = window.CrowsApp.state, C = window.CrowsApp.core, e = Object.keys(C.expertiseUses())[0];

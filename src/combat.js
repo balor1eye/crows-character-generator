@@ -596,6 +596,6 @@
     ground: ground, pickUp: pickUp, cantPickUp: cantPickUp, drop: drop,
     rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') load(); });
-  // A crow that gets its record id later (a new one saved with Save character) starts being watched then.
+  // A crow that gets its record id later (a new crow, saved as a draft) starts being watched then.
   setInterval(function () { var id = charId(); if (id && (!fight || fight.charId !== id)) load(); }, 2000);
 })();

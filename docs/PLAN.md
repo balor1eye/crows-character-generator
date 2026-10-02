@@ -1,7 +1,7 @@
 # UX streamlining plan (remaining phases)
 
 Done: phase 0 (party rests and XP claims on linked sheets) and phase 1 (src/shared/, split app.js and ref.js), in 658e657;
-phase 2; phase 5; phase 6. Remaining phases, in this order: **3, 4**. Do one phase per session, then commit (see Workflow). Tick its boxes here and
+phase 2; phase 3; phase 5; phase 6. Remaining phase: **4**. Do one phase per session, then commit (see Workflow). Tick its boxes here and
 commit this file with it.
 
 ## Workflow (every phase)
@@ -132,17 +132,25 @@ commit this file with it.
 
 ## Phase 3: Build flow (src/build-view.js, src/index.html, src/app.css, src/cloud.js, server/app/api.php)
 
-- [ ] **Steps**: a progress bar over the step cards (sections `sec-background` … `sec-notes`), "Next" buttons, and the checklist
+- [x] **Steps**: a progress bar over the step cards (sections `sec-background` … `sec-notes`), "Next" buttons, and the checklist
   (`checklist()` in build-view.js) visible on mobile too (app.css hides `.summary .checklist` under 1000px).
-- [ ] Fold step 4 (`sec-expertise`, `renderExpertise`) into a read-only part of step 2. Bonus allocation moves to Growth (phase 2).
-- [ ] **One inventory component**: Play's Items card (`renderItems`/`itemRow` in play.js) and Build's slot grid
+- [x] Fold step 4 (`sec-expertise`, `renderExpertise`) into a read-only part of step 2. Bonus allocation moves to Growth (phase 2).
+- [x] **One inventory component**: Play's Items card (`renderItems`/`itemRow` in play.js) and Build's slot grid
   (`renderInventory`) become one renderer with a `mode` ('build' | 'play'). Play adds usage dice, ammo, and the ground zone.
-- [ ] **Drafts**:
+- [x] **Drafts**:
   - A new crow saves to the account at once as a draft. Add a `draft` column to `characters` in server/app/schema.sql (additive,
     via install.php) and return it from list.
   - cloud.js `manualNew`/`hold`/`saveNow` becomes "save as draft, then Finish crow".
   - The portal shows drafts (phase 4).
-- [ ] **Header**: on the accounts site (`CrowsCloud.server`), put Save file, Load file, and Start over in a "⋯" menu.
+- [x] **Header**: on the accounts site (`CrowsCloud.server`), put Save file, Load file, and Start over in a "⋯" menu.
+- Done as described, plus: the steps are renumbered 1-8 (expertises are part of step 2, so `sec-expertise` is gone); the bonus-use
+  +/- grid is in Advancement (`#alloc-grid`, shown when there are bonus uses to assign). `checklist()` items carry the step id they
+  belong to and drive the pills (`renderStepbar`). One inventory component: src/inventory-ui.js (`invGrid(host, {mode, ...})`),
+  used by build-view.js `renderInventory` and play.js `renderItems`; in Play, click a card for its controls (`itemControls`) and
+  the Move menu, and the fight's ground is a tray under the grid. The old `.item-row`/`.item-zone` list is gone (the live combat test
+  selects a hand card, then presses Drop in `.card-detail`). Drafts: `characters.draft` (install.php adds it to existing tables),
+  `create`/`save` take `draft`, `list`/`get` return it; cloud.js has no hold/`saveNow` any more: `finish()` clears the flag. The
+  portal (phase 4) should show it. Also fixed: the vitals strip and sub-tabs showed in Build and lost their flex layout in Play.
 
 ## Phase 4: Portal (server/public/portal.js, portal.css)
 

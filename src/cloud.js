@@ -21,8 +21,8 @@
  * The app calls CrowsCloud.attach(opts) once at start-up, CrowsCloud.changed() from its save(),
  * and CrowsCloud.startNew() just before it replaces the whole thing (new, random, load file).
  *
- * With opts.manualNew (the Character Generator), a new record isn't autosaved: it's "held" until the app
- * calls CrowsCloud.saveNow() (its Save character button). From then on it autosaves like any other.
+ * A new character is saved to the account at once as a draft (the server's `draft` flag); CrowsCloud.finish() (the
+ * generator's Finish crow button) clears the flag. A draft autosaves like any other record.
  */
 (function () {
   'use strict';
@@ -57,8 +57,8 @@
   var base = null;             // the same, parsed: the common ancestor for three-way merges
   var timer = null, inFlight = false, again = false, retryMs = 0, firstChange = 0;
   var pendingNew = false, fresh = false;
-  var hold = false;            // opts.manualNew: a new record waiting for saveNow() before it's in the account
-  var heldBase = null;         // the held record as it was when holding started (to warn before leaving with changes)
+  var isDraft = false;         // the open character is still being built (the server's draft flag)
+  var finishing = false;       // finish() asked: the next save also clears the draft flag
   var gen = 0;                 // bumped when the app starts a new record, so late replies for the old one are ignored
   var chip = null, bar = null;
   var lastPoll = 0, lastKey = 0;
@@ -293,6 +293,7 @@
   function adoptRemote(item, data) {
     rec = { id: item.id, version: item.version, watch: item.watch || (rec && rec.id === item.id ? rec.watch : null) };
     if (item.owner) owner = item.owner;
+    isDraft = !linkId && !!item.draft;
     if (!linkId) controller = item.controller || '';
     cfg.apply(copy(data));
     synced();
@@ -316,31 +317,37 @@
   // ---------------------------------------------------------------- saving
   function payload(data) { return { data: data, name: cfg.name(data) || '', summary: cfg.summary(data) || '' }; }
 
+  function savedText() { return isDraft ? 'Draft saved' : 'Saved'; }
+
   function schedule(ms) { clearTimeout(timer); timer = setTimeout(function () { flush(); }, ms); }
   function busy() { return !!(timer || inFlight); }
 
   function flush(force) {
     clearTimeout(timer); timer = null; firstChange = 0;
-    if (!ready || !user || hold) return;
+    if (!ready || !user) return;
     if (inFlight) { again = true; return; }
     var data = cfg.getData(), json = JSON.stringify(data);
-    if (rec && json === lastSent && !force) { status('saved', 'Saved'); return; }
+    if (rec && json === lastSent && !force && !finishing) { status('saved', savedText()); return; }
     if (linkId) return flushLinked(data, json);
     inFlight = true; again = false;
     // The first content sent after startNew() is the new record; anything sent after that is an edit.
     if (pendingNew) { pendingNew = false; fresh = true; } else fresh = false;
     status('saving', 'Saving…');
     var body = payload(data), p, myGen = gen;
+    if (!rec && cfg.kind === 'characters') body.draft = true;   // a new crow starts as a draft
+    if (finishing) body.draft = false;
     if (rec) { body.id = rec.id; body.version = rec.version; if (force) body.force = true; p = call('POST', 'save', kq(), body); }
     else p = call('POST', 'create', kq(), body);
     p.then(function (j) {
       if (myGen !== gen) return;
       rec = { id: j.item.id, version: j.item.version, watch: j.item.watch || null };
       lastSent = json; base = JSON.parse(json); retryMs = 0;
+      isDraft = !!j.item.draft; finishing = false;
       remember(rec.id);
-      status('saved', 'Saved', 'Saved to your account at ' + new Date().toLocaleTimeString());
+      status('saved', savedText(), 'Saved to your account at ' + new Date().toLocaleTimeString());
     }, function (e) {
       if (myGen !== gen) return;
+      finishing = false;
       if (e.status === 409 && e.body && e.body.item) return changedElsewhere(e.body.item.id);
       if (e.status === 404 && rec && !delegated()) { rec = null; remember(null); again = true; return; }  // deleted elsewhere: save as new
       failed(e);
@@ -427,7 +434,7 @@
     if (unsaved) cfg.apply(m.value);       // ...with our own changes laid back on top
     if (cfg.onRemote) cfg.onRemote(before);
     if (unsaved && thenSave !== false) flush();
-    else status('saved', 'Saved');
+    else status('saved', savedText());
   }
 
   function clash(item, where) {
@@ -450,7 +457,7 @@
         }
         flush(true);
       } },
-      { text: 'Use theirs', cls: 'btn-ghost', on: function () { closeBar(); adoptRemote(item, item.data); status('saved', 'Saved'); } }]);
+      { text: 'Use theirs', cls: 'btn-ghost', on: function () { closeBar(); adoptRemote(item, item.data); status('saved', savedText()); } }]);
   }
 
   /* Someone is typing in a text field: replacing the page under them would move their cursor. */
@@ -498,13 +505,6 @@
   }
 
   // Last-chance save when the page is hidden or closed (keepalive bodies are capped near 64 KB).
-  /* Start holding a new record: nothing goes to the account until saveNow(). */
-  function startHold() {
-    hold = true; heldBase = JSON.stringify(cfg.getData());
-    status('unsaved', 'Not saved yet', 'This character isn\u2019t in your account yet. Use Save character.');
-  }
-  function heldChanges() { return hold && JSON.stringify(cfg.getData()) !== heldBase; }
-
   function flushOnExit() {
     if (!ready || !user || !rec || inFlight) return;
     var data = cfg.getData(), json = JSON.stringify(data);
@@ -577,7 +577,7 @@
         step.then(function () {
           ready = true;
           if (cfg.onReady) cfg.onReady(p);
-          if (rec) status('saved', 'Saved'); else if (cfg.manualNew && !linkId) startHold(); else flush();
+          if (rec) status('saved', savedText()); else flush();
           lastPoll = Date.now();
           if (!linkId) loadNotes();
           setInterval(slowPoll, 1000);
@@ -593,14 +593,11 @@
       document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'hidden') flushOnExit(); else { poll(); checkSignals(); } });
       document.addEventListener('input', function () { lastKey = Date.now(); }, true);
       window.addEventListener('pagehide', flushOnExit);
-      // A held new character with changes isn't anywhere but this browser: ask before leaving it.
-      window.addEventListener('beforeunload', function (e) { if (heldChanges()) { e.preventDefault(); e.returnValue = ''; } });
     },
 
     /* Called from the app's save(). Cheap: the real work is debounced. */
     changed: function () {
       if (!ready || !user) return;
-      if (hold) return;   // a new record waits for saveNow()
       var t = Date.now();
       if (!firstChange) firstChange = t;
       schedule(Math.max(0, Math.min(DELAY, firstChange + MAX_WAIT - t)));
@@ -614,15 +611,6 @@
     startNew: function () {
       if (!ready || !user || linkId) return;
       if (owner || controller) { owner = ''; controller = ''; }   // the new one is this user's own
-      if (cfg.manualNew) {
-        // Save what was open (if it's in the account), then hold the new one until Save character.
-        if (!hold && (timer || (rec && JSON.stringify(cfg.getData()) !== lastSent))) flush();
-        gen++; rec = null; lastSent = null; base = null; remember(null);
-        inFlight = false; pendingNew = true; fresh = false;
-        clearTimeout(timer); timer = null;
-        setTimeout(startHold, 0);   // after the app has put the new character in place
-        return;
-      }
       var reuse = fresh && (rec || inFlight);
       if (!reuse) {
         if (timer || (rec && JSON.stringify(cfg.getData()) !== lastSent)) flush();
@@ -647,12 +635,12 @@
     /* True while someone is typing in a text field (so a page can hold off re-rendering under them). */
     get typing() { return typing(); },
 
-    /* True while a new record is waiting for saveNow() (opts.manualNew). */
-    get held() { return hold; },
-    /* Save now: a held new record goes into the account (and autosaves from then on); otherwise any pending change is sent. */
-    saveNow: function () {
-      if (!ready || !user || linkId) return;
-      hold = false; heldBase = null; pendingNew = !rec;
+    /* True while the open character is a draft (saved to the account, but not finished). */
+    get draft() { return isDraft && !linkId; },
+    /* The owner is done building: save now and clear the draft flag. */
+    finish: function () {
+      if (!ready || !user || linkId || !isDraft || delegated()) return;
+      finishing = true;
       flush();   // never forced: an existing record still merges with changes made elsewhere
     },
 

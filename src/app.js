@@ -6,7 +6,7 @@
   'use strict';
   var A = window.CrowsGen, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var addItem = f('addItem'), adMax = f('adMax'), adNow = f('adNow'), adopt = f('adopt'), allocTotal = f('allocTotal'), areaSize = f('areaSize'),
+  var addItem = f('addItem'), checklist = f('checklist'), adMax = f('adMax'), adNow = f('adNow'), adopt = f('adopt'), allocTotal = f('allocTotal'), areaSize = f('areaSize'),
       armorInfo = f('armorInfo'), bg = f('bg'), bind = f('bind'), buildPdf = f('buildPdf'), cardById = f('cardById'),
       characteristics = f('characteristics'), clearSelection = f('clearSelection'), curStamina = f('curStamina'), expertiseUses = f('expertiseUses'),
       exportState = f('exportState'), extraBeltRule = f('extraBeltRule'), fieldValues = f('fieldValues'), handFits = f('handFits'), item = f('item'),
@@ -26,7 +26,7 @@
     randomCrow: function () { randomCrow(); render(); }, setBackground: function (i) { setBackground(i, true); render(); },
     // Shared with play.js (Play mode).
     core: {
-      render: render, save: save, toast: toast, el: el, $: $, d: d, fmt: fmt, signed: signed, ordinal: ordinal, DIE: DIE,
+      invGrid: f('invGrid'), render: render, save: save, toast: toast, el: el, $: $, d: d, fmt: fmt, signed: signed, ordinal: ordinal, DIE: DIE,
       item: item, bg: bg, characteristics: characteristics, staminaMax: staminaMax, curStamina: curStamina,
       expertiseUses: expertiseUses, maxUses: maxUses, armorInfo: armorInfo, adMax: adMax, adNow: adNow,
       woundCount: woundCount, occupancy: occupancy, cardById: cardById, spanOf: spanOf, traitXP: traitXP,
@@ -36,20 +36,21 @@
   };
 
   /*
-   * The Save character button (right column, logged in only). A new character isn't in the account until it's
-   * pressed (cloud.js holds it: manualNew); after that it autosaves, and the button just shows that it's saved.
+   * The Finish crow button (right column, logged in only). A new character is saved to the account at once as a draft
+   * (cloud.js) and autosaves from then on; Finish crow marks it ready to play. A finished crow just shows that it's saved.
    */
   function updateSaveBox(s) {
     var box = $('acct-save'), C = window.CrowsCloud;
     if (!box) return;
     if (refView || !C || !C.user) { box.hidden = true; return; }
-    var held = C.held, saving = s === 'saving' || s === 'loading';
+    var draft = C.draft, saving = s === 'saving' || s === 'loading', open = checklist().filter(function (c) { return c[0] === 'err'; }).length;
     box.hidden = false; box.innerHTML = '';
-    box.appendChild(el('button', { type: 'button', class: 'btn wide ' + (held ? 'btn-primary' : 'btn-ghost'), disabled: saving || (!held && s === 'saved'),
-      text: saving ? 'Saving\u2026' : held ? 'Save character' : s === 'saved' ? 'Saved \u2713' : 'Save character', onclick: function () { C.saveNow(); } }));
-    box.appendChild(el('p', { class: 'fine', text: held ? 'Not in your account yet. Once you save it, your changes save automatically.'
-      : s === 'saved' ? 'In your account. Changes save automatically.' : s === 'error' ? 'Not saved yet: trying again. Your work is kept in this browser.'
-      : s === 'conflict' ? 'Changed elsewhere: choose which version to keep.' : '' }));
+    box.appendChild(el('button', { type: 'button', class: 'btn wide ' + (draft ? 'btn-primary' : 'btn-ghost'), disabled: saving || !draft || open > 0 || null,
+      text: saving ? 'Saving\u2026' : draft ? 'Finish crow' : 'Saved \u2713', onclick: function () { C.finish(); } }));
+    box.appendChild(el('p', { class: 'fine', text: s === 'error' ? 'Not saved yet: trying again. Your work is kept in this browser.'
+      : s === 'conflict' ? 'Changed elsewhere: choose which version to keep.'
+      : draft ? (open ? 'Draft: saved to your account. Fix the items marked \u2715 to finish it.' : 'Draft: saved to your account and not shown as ready yet. Press Finish crow when this crow is ready to play.')
+      : s === 'saved' ? 'In your account. Changes save automatically.' : '' }));
   }
 
   /*
@@ -75,6 +76,18 @@
     return text;
   }
 
+  /* On the accounts site, Start over, Save file, and Load file go behind a ⋯ More button in the header (offline they stay as buttons). */
+  function moreMenu() {
+    var menu = $('more-menu'), btn = $('more-btn');
+    if (!menu || menu.classList.contains('collapsed')) return;
+    menu.classList.add('collapsed');
+    function open(on) { menu.classList.toggle('open', on); btn.setAttribute('aria-expanded', String(on)); }
+    btn.addEventListener('click', function (e) { e.stopPropagation(); open(!menu.classList.contains('open')); });
+    document.addEventListener('click', function (e) { if (!menu.contains(e.target)) open(false); });
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape') open(false); });
+    $('more-pop').addEventListener('click', function (e) { if (e.target.closest('button')) open(false); });
+  }
+
   function init() {
     bind();
     var s = load();
@@ -82,7 +95,6 @@
     render();
     if (window.CrowsCloud) window.CrowsCloud.attach({
       kind: 'characters',
-      manualNew: true,   // new characters wait for the Save character button
       onStatus: updateSaveBox,
       getData: exportState,
       valid: validState,
@@ -93,7 +105,7 @@
         var b = CROWS.BACKGROUNDS[c.bg];
         return [b ? b.name : '', c.txp ? fmt(c.txp) + ' XP' : '', c.player ? 'played by ' + c.player : ''].filter(Boolean).join(' · ');
       },
-      onServer: function () { if (window.CrowsPlay) window.CrowsPlay.syncAddress(); },
+      onServer: function () { moreMenu(); if (window.CrowsPlay) window.CrowsPlay.syncAddress(); },
       onJoined: function (campaign) { if (window.CrowsPlay) window.CrowsPlay.joined(campaign); },
       onReady: function (p) {
         if (window.CrowsPlay && (p.mode === 'play' || p.mode === 'build')) window.CrowsPlay.setMode(p.mode);
@@ -113,7 +125,7 @@
     });
   }
 
-  A.add({ updateSaveBox: updateSaveBox, describeChange: describeChange, init: init });
+  A.add({ moreMenu: moreMenu, updateSaveBox: updateSaveBox, describeChange: describeChange, init: init });
 
   if (document.readyState === 'loading') document.addEventListener('DOMContentLoaded', init); else init();
 })();

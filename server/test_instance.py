@@ -177,6 +177,17 @@ def smoke():
     check("list shows the character, not the deleted copy",
           {i["id"] for i in p1.get("list", kind="characters")["items"]} >= {ch["id"]} and
           dup["id"] not in {i["id"] for i in p1.get("list", kind="characters")["items"]})
+    check("a crow made without the draft flag is not a draft", ch.get("draft") is False and got.get("draft") is False)
+    dr = p1.post("create", {"name": "Smoke Draft", "summary": "", "draft": True, "data": {"name": "Smoke Draft"}}, kind="characters")["item"]
+    check("a new crow can be saved as a draft", dr["draft"] is True)
+    dr2 = p1.post("save", {"id": dr["id"], "version": dr["version"], "name": "Smoke Draft", "summary": "", "data": {"name": "Smoke Draft", "notes": "x"}},
+                  kind="characters")["item"]
+    check("saving keeps it a draft, and the list says so",
+          dr2["draft"] is True and {i["id"]: i["draft"] for i in p1.get("list", kind="characters")["items"]}[dr["id"]] is True)
+    dr3 = p1.post("save", {"id": dr["id"], "version": dr2["version"], "draft": False, "name": "Smoke Draft", "summary": "",
+                           "data": {"name": "Smoke Draft", "notes": "x"}}, kind="characters")["item"]
+    check("finishing the crow clears the draft flag", dr3["draft"] is False)
+    p1.post("delete", {"id": dr["id"]}, kind="characters")
     fails("another player can't read it", 404, lambda: p2.get("get", kind="characters", id=ch["id"]))
     fails("players can't keep campaigns", 403, lambda: p1.get("list", kind="campaigns"))
 

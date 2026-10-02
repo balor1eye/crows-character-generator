@@ -649,100 +649,35 @@
     ]);
   }
 
-  // Items: Hands, Belt, Backpack, and Not carried, each a drop zone. Rows drag between them (or use their Move menu);
-  // what's allowed is app.js's inventory rules (slots, both hands for two-handed, one item per hand, restricted extra belt slot).
-  // In a fight, On the ground too (combat.js): drop what's in your hands there, and drag an item from it into your hands to pick it up.
-  var ZONES = [['hand', 'Hands'], ['belt', 'Belt'], ['pack', 'Backpack'], ['none', 'Not carried']];
-  var ZONE_TIPS = {
-    hand: 'Hands: what you wield or hold. One item per hand (no stacks); two-handed items take both. Getting an item into a hand in a fight: Draw From Belt or Draw From Pack.',
-    belt: 'Belt: quick to reach. Draw From Belt takes 1-2 items as a maneuver.',
-    pack: 'Backpack: 10 slots in two rows of 5; a multi-slot item stays on one row. Armor is worn from here. Draw From Pack: roll 1d10 and get the item if the roll is at least one of its slot numbers.',
-    none: 'Not carried: items set aside (left at camp or stored). They don\u2019t count against your slots.',
-    ground: 'On the ground in this fight: what anyone dropped, or the Ref put there. Drop what\u2019s in your hands here (free). Picking something up is the Pick Up Item maneuver and needs a free hand: drag it into Hands.'
-  };
-  var dragCard = null, dragGround = null;
+  // Items: the shared inventory component (inventory-ui.js): Hands, Belt, Backpack and Not carried as a slot grid. Click a card
+  // for its controls (Use 1, usage dice, ammo, Move menu...), or drag it between areas. In a fight, On the ground too (combat.js):
+  // drop what's in your hands there, and drag an item from it into your hands to pick it up.
   function fightGround() { return window.CrowsCombat && !window.CrowsRefView ? window.CrowsCombat.ground() : null; }
-  function zoneName(area) { return ZONES.filter(function (z) { return z[0] === area; })[0][1].toLowerCase(); }
-  function moveItem(c, area, idx) {
-    if (area === c.area && idx === undefined) return;
-    var key = c.key, ok = idx === undefined ? C.moveToArea(c, area) : C.moveCard(c, area, idx);
-    if (!ok) { C.toast(C.refusal(c, area, idx)); return; }
-    commit(area === 'none' ? 'Set aside ' + key + '.' : 'Moved ' + key + ' to ' + (area === 'pack' ? 'backpack' : area) + '.');
-  }
-  function dropZone(node, area, idx) {
-    node.addEventListener('dragover', function (e) { if (dragCard || dragGround) { e.preventDefault(); e.stopPropagation(); node.classList.add('drop-ok'); } });
-    node.addEventListener('dragleave', function () { node.classList.remove('drop-ok'); });
-    node.addEventListener('drop', function (e) {
-      e.preventDefault(); e.stopPropagation(); node.classList.remove('drop-ok');
-      var c = dragCard, g = dragGround; dragCard = null; dragGround = null;
-      if (g) {   // an item from the ground: only into a hand (Pick Up Item)
-        if (area === 'hand') window.CrowsCombat.pickUp(g);
-        else if (area !== 'ground') C.toast('Picking something up puts it in a free hand (Pick Up Item): drag it into Hands.');
-        return;
-      }
-      if (c && area === 'ground') { window.CrowsCombat.drop([c]); return; }
-      if (!c || c.area === area && (idx === undefined || c.idx === idx)) return;
-      // Onto another item: stack or swap with it if the rules allow, otherwise anywhere free in its area.
-      if (idx !== undefined && area !== 'none' && C.moveCard(c, area, idx)) { commit('Moved ' + c.key + ' to ' + (area === 'pack' ? 'backpack' : area) + '.'); return; }
-      moveItem(c, area);
-    });
-  }
   function renderItems() {
-    var occ = C.occupancy(), zones = el('div', { class: 'item-zones' });
-    ZONES.forEach(function (z) {
-      var area = z[0], cards = S().inv.filter(function (c) { return c.area === area; }).sort(function (a, b) { return a.idx - b.idx; });
-      var free = area === 'none' ? 0 : occ[area].filter(function (x) { return x === null; }).length;
-      var note = area === 'belt' && C.areaSize('belt') > 4 ? ' · slot 5: ' + C.extraBeltRule() : '';
-      var box = el('div', { class: 'item-zone zone-' + area, 'data-area': area }, [
-        el('h3', { title: ZONE_TIPS[area] + (area === 'belt' && C.areaSize('belt') > 4 ? ' Slot 5 (from a trait) holds ' + C.extraBeltRule() + '.' : '') }, [z[1], el('small', { class: 'muted', text: area === 'none' ? (cards.length ? '' : ' · drag here to set an item aside') : ' · ' + free + ' of ' + C.areaSize(area) + ' free' + note })])]);
-      dropZone(box, area);
-      cards.forEach(function (c) { box.appendChild(itemRow(c)); });
-      if (!cards.length && area !== 'none') box.appendChild(el('p', { class: 'fine empty', text: area === 'hand' ? 'Empty-handed.' : 'Nothing here.' }));
-      zones.appendChild(box);
-    });
-    var ground = fightGround();
-    if (ground) {
-      var gbox = el('div', { class: 'item-zone zone-ground', 'data-area': 'ground' }, [el('h3', { title: ZONE_TIPS.ground }, ['On the ground',
-        el('small', { class: 'muted', text: ground.length ? ' · this fight' : ' · this fight: drag what\u2019s in your hands here to drop it' })])]);
-      dropZone(gbox, 'ground');
-      ground.forEach(function (g) { gbox.appendChild(groundRow(g)); });
-      zones.appendChild(gbox);
-    }
+    var ground = fightGround(), host = el('div', { class: 'inv-host' });
+    C.invGrid(host, { mode: 'play', fallback: true, redraw: renderItems, after: commit, badge: itemBadge, controls: itemControls, ground: ground,
+      pickUp: function (g) { window.CrowsCombat.pickUp(g); }, cantPickUp: function (g) { return window.CrowsCombat.cantPickUp(g); },
+      drop: function (cards) { window.CrowsCombat.drop(cards); } });
     var pick = el('select', { 'aria-label': 'Item to add', title: 'An item you found or bought' }), qty = el('input', { type: 'number', class: 'mini', min: 1, max: 99, value: 1, 'aria-label': 'How many', title: 'How many' });
     Object.keys(CROWS.ITEMS).sort().forEach(function (k) { pick.appendChild(el('option', { value: k, text: k })); });
     var add = el('div', { class: 'row wrap item-add' }, [el('span', { class: 'fine', text: 'Found something?' }), pick, qty, btn('Add', function () {
       var key = pick.value, all = C.addItem(key, Math.max(1, Math.min(99, parseInt(qty.value, 10) || 1)));
       commit('Picked up ' + key + (all ? '.' : ' (no room for all of it: some is set aside).'));
     }, '', { title: 'Add it to your backpack, then your belt; anything that doesn\u2019t fit goes to Not carried' })]);
-    card('play-items', 'Items', [el('p', { class: 'hint', text: 'Drag items between your hands, belt, and backpack (or use an item\u2019s Move menu). In a fight, getting things out takes a maneuver: Draw From Belt or Draw From Pack' +
+    card('play-items', 'Items', [el('p', { class: 'hint', text: 'Click an item for what you can do with it, or drag it between your hands, belt, and backpack. In a fight, getting things out takes a maneuver: Draw From Belt or Draw From Pack' +
       (ground ? '; drop what\u2019s in your hands On the ground, and drag an item from there into Hands to pick it up (a maneuver)' : '') + '. Usage dice: each 1 or 2 rolled removes a die.' }),
-      zones, add]);
+      host, add]);
   }
-  /* An item on the ground in a fight: drag it into Hands, or use Pick up. */
-  function groundRow(g) {
-    var it = item(g.key), why = window.CrowsCombat.cantPickUp(g);
-    var row = el('div', { class: 'item-row ground cat-' + it.cat, draggable: 'true',
-      title: g.key + (g.qty > 1 ? ' \u00d7' + g.qty : '') + (it.txt ? '\n' + it.txt : '') + (g.by ? '\nDropped by ' + g.by + '.' : '') + '\n' + (why || 'Drag it into Hands, or use Pick up (the Pick Up Item maneuver).'),
-      ondragstart: function (e) { dragGround = g; row.classList.add('dragging'); try { e.dataTransfer.setData('text/plain', g.key); e.dataTransfer.effectAllowed = 'move'; } catch (x) { /* old browsers */ } },
-      ondragend: function () { dragGround = null; row.classList.remove('dragging'); } }, [
-      el('span', { class: 'loc' }, [el('span', { class: 'grip', 'aria-hidden': 'true', text: '\u2807 ' }), 'Ground']),
-      el('span', { class: 'nm' }, [el('b', { text: g.key }), g.qty > 1 ? ' \u00d7' + g.qty : '', g.by ? el('small', { class: 'muted', text: ' (dropped by ' + g.by + ')' }) : null]),
-      el('span', { class: 'ctl' }, [btn('Pick up', function () { window.CrowsCombat.pickUp(g); }, '', { disabled: why ? true : null, title: why || 'Pick Up Item (a maneuver): into a free hand' })])
-    ]);
-    return row;
+  // What shows on an item's card face in Play: usage dice, shots left, damage to armor.
+  function itemBadge(c) {
+    var u = udInfo(c.key), out = [];
+    if (c.area !== 'none' && u) out.push('UD ' + udNow(c) + '/' + u.max);
+    if (c.area !== 'none' && AMMO_CASES[c.key]) out.push((typeof c.ammo === 'number' ? c.ammo : 20) + ' shots');
+    if (C.adMax(c) && c.dmg) out.push('AD ' + C.adNow(c) + '/' + C.adMax(c));
+    return out.join(' \u00b7 ');
   }
-  // An item's tooltip: its card text, size, where it is, and how to move it.
-  function itemTip(c) {
-    var it = item(c.key), sp = C.spanOf(c, c.area === 'none' ? 'pack' : c.area), facts = [];
-    if (it.st > 1) facts.push('Stacks to ' + it.st + (c.qty > 1 ? ' (' + c.qty + ' here)' : ''));
-    facts.push(it.sl + ' slot' + (it.sl > 1 ? 's' : '') + (it.hands === 2 ? ', needs both hands to wield' : ''));
-    if (C.adMax(c)) facts.push('AD ' + C.adNow(c) + '/' + C.adMax(c));
-    if (it.gc) facts.push(fmt(it.gc) + ' gc');
-    return c.key + (c.qty > 1 ? ' \u00d7' + c.qty : '') + '\n' + it.txt + '\n' + facts.join(' \u00b7 ') + '\n' +
-      (c.area === 'none' ? 'Not carried. Drag it to your hands, belt, or backpack to carry it.'
-        : where(c) + (sp > 1 && c.area !== 'hand' ? ' (' + sp + ' slots)' : '') + '. Drag it to another area, or drop another item on it to swap or stack.');
-  }
-  function itemRow(c) {
+  // The selected item's buttons: usage dice, ammo, Use 1, Drink, Drop in a fight, Discard.
+  function itemControls(c) {
     var it = item(c.key), u = udInfo(c.key), ctl = [], carriedNow = c.area !== 'none';
     if (carriedNow && u) {
       var n = udNow(c);
@@ -771,20 +706,7 @@
     if (carriedNow && it.st > 1 && c.qty < it.st && c.area !== 'hand') ctl.push(btn('+1', function () { c.qty++; delete c.ud; commit(); }, 'btn-ghost', { title: 'Add one to this stack (up to ' + it.st + ')' }));
     var inFight = !!fightGround();
     if (inFight && c.area === 'hand') ctl.push(btn('Drop', function () { window.CrowsCombat.drop([c]); }, 'btn-ghost', { title: 'Drop ' + c.key + ' on the ground in this fight (free). Anyone can pick it up' }));
-    var mv = el('select', { class: 'mini-sel', 'aria-label': 'Move ' + c.key, title: 'Move ' + c.key + ' to another area (it goes in the first free slot that fits)', onchange: function () { if (this.value === 'ground') window.CrowsCombat.drop([c]); else moveItem(c, this.value); this.value = c.area; } },
-      ZONES.concat(inFight && c.area === 'hand' ? [['ground', 'On the ground']] : []).map(function (z) { return el('option', { value: z[0], text: z[0] === c.area ? z[1] : '\u2192 ' + z[1] }); }));
-    mv.value = c.area;
-    ctl.push(mv);
-    var row = el('div', { class: 'item-row cat-' + it.cat, draggable: 'true', title: itemTip(c),
-      ondragstart: function (e) { dragCard = c; row.classList.add('dragging'); try { e.dataTransfer.setData('text/plain', c.key); e.dataTransfer.effectAllowed = 'move'; } catch (x) { /* old browsers */ } },
-      ondragend: function () { dragCard = null; row.classList.remove('dragging'); } }, [
-      el('span', { class: 'loc' }, [el('span', { class: 'grip', 'aria-hidden': 'true', text: '\u2807 ' }), carriedNow ? where(c) : '']),
-      el('span', { class: 'nm' }, [el('b', { text: c.key }), c.qty > 1 ? ' \u00d7' + c.qty : '', C.adMax(c) && c.dmg ? el('small', { class: 'muted', text: ' AD ' + C.adNow(c) + '/' + C.adMax(c) }) : null,
-        it.hands === 2 ? el('small', { class: 'muted', text: ' (2 hands)' }) : null, C.spanOf(c, c.area === 'none' ? 'pack' : c.area) > 1 && c.area !== 'hand' ? el('small', { class: 'muted', text: ' (' + C.spanOf(c, c.area === 'none' ? 'pack' : c.area) + ' slots)' }) : null]),
-      el('span', { class: 'ctl' }, ctl)
-    ]);
-    if (c.area !== 'none') dropZone(row, c.area, c.idx);
-    return row;
+    return ctl;
   }
 
   var AMMO_CASES = { 'Quiver of 20 Arrows': 1, 'Case of 20 Crossbow Bolts': 1 };

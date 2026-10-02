@@ -21,9 +21,14 @@
     </div>
     <nav class="actions">
       <button type="button" id="btn-random" class="btn build-only">Random crow</button>
-      <button type="button" id="btn-new" class="btn btn-ghost build-only">Start over</button>
-      <button type="button" id="btn-save" class="btn btn-ghost">Save file</button>
-      <label class="btn btn-ghost file-btn">Load file<input type="file" id="file-load" accept=".json,application/json"></label>
+      <div class="more-menu" id="more-menu">
+        <button type="button" class="btn btn-ghost more-btn" id="more-btn" aria-haspopup="true" aria-expanded="false" title="Start over, save or load a file">&#8943; More</button>
+        <div class="more-pop" id="more-pop">
+          <button type="button" id="btn-new" class="btn btn-ghost build-only">Start over</button>
+          <button type="button" id="btn-save" class="btn btn-ghost">Save file</button>
+          <label class="btn btn-ghost file-btn">Load file<input type="file" id="file-load" accept=".json,application/json"></label>
+        </div>
+      </div>
       <button type="button" id="btn-pdf" class="btn btn-primary">Download PDF</button>
       <button type="button" class="btn btn-ghost theme-toggle" title="Theme">&#9680; Auto</button>
     </nav>
@@ -34,6 +39,7 @@
   <div class="sessbar play-only" id="play-session" hidden></div>
   <div class="vstrip play-only" id="play-vstrip"></div>
   <nav class="subtabs play-only" id="play-subtabs" role="tablist" aria-label="Play section"></nav>
+  <nav class="stepbar build-only" id="stepbar" aria-label="Build steps"></nav>
   <div class="steps">
 
     <section class="card" id="sec-background">
@@ -50,7 +56,7 @@
     </section>
 
     <section class="card" id="sec-chars">
-      <h2><span class="step">2</span> Characteristics</h2>
+      <h2><span class="step">2</span> Characteristics &amp; Expertises</h2>
       <p class="hint">Your background sets one characteristic to 2. The other two are either a 1 and a 0, or a -1 and a 2.</p>
       <div class="row wrap">
         <label class="field">At 2 (from background)
@@ -66,6 +72,10 @@
         </label>
       </div>
       <div class="stat-row" id="char-display"></div>
+      <h3 class="sub-h">Expertises &amp; Stamina <small>(from your background; bonus uses are assigned in Advancement)</small></h3>
+      <p class="hint">Spend a use after a roll to improve the result by one tier. Uses return when you finish a rest.</p>
+      <div class="stat-row small" id="derived-stats"></div>
+      <div class="exp-grid" id="exp-grid"></div>
     </section>
 
     <section class="card" id="sec-identity">
@@ -83,16 +93,8 @@
       </div>
     </section>
 
-    <section class="card" id="sec-expertise">
-      <h2><span class="step">4</span> Expertises &amp; Stamina</h2>
-      <p class="hint">Spend a use after a roll to improve the result by one tier. Uses return when you finish a rest.</p>
-      <div class="stat-row small" id="derived-stats"></div>
-      <div id="alloc-banner" class="banner" hidden></div>
-      <div class="exp-grid" id="exp-grid"></div>
-    </section>
-
     <section class="card" id="sec-traits">
-      <h2><span class="step">5</span> Traits</h2>
+      <h2><span class="step">4</span> Traits</h2>
       <div id="trait-list"></div>
       <details class="tree-browser" id="tree-browser">
         <summary>Browse trait trees<span id="xp-chip" class="chip"></span></summary>
@@ -106,7 +108,7 @@
     </section>
 
     <section class="card" id="sec-equipment">
-      <h2><span class="step">6</span> Equipment &amp; Inventory</h2>
+      <h2><span class="step">5</span> Equipment &amp; Inventory</h2>
       <p class="hint">Every crow starts with an empty coin purse, a knife, a rope, six rations, and 3d6 gc, plus their background's gear. Click a card to select it, then click a slot to move it (or drag it). Hands can't hold stacks; multi-slot items need adjacent slots of one type.</p>
       <div class="row wrap">
         <div class="coins">
@@ -122,12 +124,7 @@
         </div>
       </div>
       <div id="inv-warnings" class="banner warn" hidden></div>
-      <div class="inventory" id="inventory"></div>
-      <div class="tray-wrap">
-        <h3>Not carried <small>(drop here to set aside; left behind at home)</small></h3>
-        <div class="tray" id="tray"></div>
-      </div>
-      <div class="card-detail" id="card-detail" hidden></div>
+      <div id="inventory"></div>
       <div class="add-item row wrap">
         <label class="field grow">Add an item
           <select id="add-item-select"></select>
@@ -141,7 +138,7 @@
     </section>
 
     <section class="card" id="sec-village">
-      <h2><span class="step">7</span> Village &amp; Connection</h2>
+      <h2><span class="step">6</span> Village &amp; Connection</h2>
       <p class="hint">Make an NPC in your village who matters to your crow, and pick the benefit they give you.</p>
       <div class="grid2">
         <label class="field">Village name
@@ -167,7 +164,7 @@
     </section>
 
     <section class="card" id="sec-advance">
-      <h2><span class="step">8</span> Advancement <small>(optional)</small></h2>
+      <h2><span class="step">7</span> Advancement <small>(optional)</small></h2>
       <p class="hint">New crows start at 0 TXP. If every other crow has 5,000+ TXP, the Ref can start a new crow at the lowest TXP in the party. Enter Total XP here to apply bonuses and buy traits.</p>
       <div class="row wrap">
         <label class="field">Total XP (TXP)
@@ -176,10 +173,12 @@
         <div class="xp-summary" id="xp-summary"></div>
       </div>
       <div id="bonus-list" class="bonus-list"></div>
+      <div id="alloc-banner" class="banner" hidden></div>
+      <div class="exp-grid" id="alloc-grid" hidden></div>
     </section>
 
     <section class="card" id="sec-notes">
-      <h2><span class="step">9</span> Notes</h2>
+      <h2><span class="step">8</span> Notes</h2>
       <textarea id="in-notes" rows="4" maxlength="1500" placeholder="Backstory, goals, debts, grudges..."></textarea>
     </section>
   </div>
@@ -240,6 +239,7 @@
 <script src="layout.js"></script>
 <script src="state.js"></script>
 <script src="inventory.js"></script>
+<script src="inventory-ui.js"></script>
 <script src="build-view.js"></script>
 <script src="pdf.js"></script>
 <script src="app.js"></script>

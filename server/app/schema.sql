@@ -51,6 +51,7 @@ CREATE TABLE IF NOT EXISTS characters (
   summary VARCHAR(255) NOT NULL DEFAULT '',
   data MEDIUMTEXT NOT NULL,
   version INT UNSIGNED NOT NULL DEFAULT 1,
+  draft TINYINT(1) NOT NULL DEFAULT 0,
   created_at DATETIME NOT NULL,
   updated_at DATETIME NOT NULL,
   KEY k_user (user_id, updated_at),

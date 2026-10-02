@@ -413,6 +413,7 @@ function clip(string $s, int $n): string { return mb_substr(trim(preg_replace('/
 function row_out(array $r, bool $withData = false): array {
     $o = ['id' => (int)$r['id'], 'name' => $r['name'], 'summary' => $r['summary'], 'version' => (int)$r['version'],
           'createdAt' => $r['created_at'] . 'Z', 'updatedAt' => $r['updated_at'] . 'Z'];
+    if (isset($r['draft'])) $o['draft'] = (int)$r['draft'] === 1;   // a crow still being built (characters only)
     if ($withData) $o['data'] = json_decode($r['data']);   // objects stay objects, so {} is sent back as {}
     return $o;
 }
@@ -465,7 +466,7 @@ function with_watch(array $o, string $k, int $id): array {
 function a_list(): array {
     $k = kind(); $s = owner_for($k);
     if ($k === 'characters') {
-        $rows = q('SELECT c.id, c.name, c.summary, c.version, c.created_at, c.updated_at, u.username AS controller FROM characters c
+        $rows = q('SELECT c.id, c.name, c.summary, c.version, c.draft, c.created_at, c.updated_at, u.username AS controller FROM characters c
                    LEFT JOIN character_control k ON k.character_id = c.id LEFT JOIN users u ON u.id = k.user_id
                    WHERE c.user_id = ? ORDER BY c.updated_at DESC', [$s['id']])->fetchAll();
         return ['items' => array_map(function ($r) { return row_out($r) + ['controller' => $r['controller']]; }, $rows)];
@@ -520,7 +521,9 @@ function a_create(): array {
     }
     q("INSERT INTO $k (user_id, name, summary, data, version, created_at, updated_at) VALUES (?,?,?,?,1,?,?)",
       [$s['id'], clip(str('name', 1000), 120), clip(str('summary', 2000), 255), $data, now(), now()]);
-    $r = q("SELECT * FROM $k WHERE id = ?", [(int)db()->lastInsertId()])->fetch();
+    $new = (int)db()->lastInsertId();
+    if ($k === 'characters' && !empty(body()['draft'])) q('UPDATE characters SET draft = 1 WHERE id = ?', [$new]);   // still being built
+    $r = q("SELECT * FROM $k WHERE id = ?", [$new])->fetch();
     return ['item' => with_watch(row_out($r), $k, (int)$r['id'])];
 }
 
@@ -533,9 +536,13 @@ function a_save(): array {
     $base = body()['version'] ?? 0;
     $args = [$data, clip(str('name', 1000), 120), clip(str('summary', 2000), 255), now(), $id];
     $sql = "UPDATE $k SET data = ?, name = ?, summary = ?, version = version + 1, updated_at = ? WHERE id = ?";
+    // The owner can finish a draft crow (or reopen it): `draft` is sent only then.
+    if ($k === 'characters' && $acc['owner'] === null && array_key_exists('draft', body())) {
+        $sql = str_replace(' version = version + 1,', ' version = version + 1, draft = ' . (empty(body()['draft']) ? 0 : 1) . ',', $sql);
+    }
     if (!$force) { $sql .= ' AND version = ?'; $args[] = (int)$base; }
     $n = q($sql, $args)->rowCount();
-    $r = q("SELECT id, name, summary, version, created_at, updated_at FROM $k WHERE id = ?", [$id])->fetch();
+    $r = q('SELECT id, name, summary, version, created_at, updated_at' . ($k === 'characters' ? ', draft' : '') . " FROM $k WHERE id = ?", [$id])->fetch();
     if (!$r) fail('That save was not found. It may have been deleted.', 404);
     if ($n === 0 && !$force && (int)$r['version'] !== (int)$base) {
         fail('This was changed in another window or device.', 409, ['item' => row_out($r)]);
@@ -1022,7 +1029,7 @@ function a_control_release(): array {
 /** Characters other players handed to this user, for their My characters and Play pages. */
 function a_control_list(): array {
     $s = need_login();
-    $rows = q('SELECT c.id, c.name, c.summary, c.version, c.created_at, c.updated_at, u.username AS owner, k.created_at AS since
+    $rows = q('SELECT c.id, c.name, c.summary, c.version, c.draft, c.created_at, c.updated_at, u.username AS owner, k.created_at AS since
                FROM character_control k JOIN characters c ON c.id = k.character_id JOIN users u ON u.id = c.user_id
                WHERE k.user_id = ? ORDER BY c.updated_at DESC', [$s['id']])->fetchAll();
     return ['items' => array_map(function ($r) { return row_out($r) + ['owner' => $r['owner'], 'since' => $r['since'] . 'Z']; }, $rows)];

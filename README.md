@@ -15,17 +15,22 @@ connection needed. You can copy it anywhere (USB stick, cloud drive, email) and 
 What it does:
 
 1. **Background**: roll 2d6 on the backgrounds table or pick one of the 36 backgrounds.
-2. **Characteristics**: the background's 2, plus a 1 and a 0 or a -1 and a 2 for the other two.
+2. **Characteristics & expertises**: the background's 2, plus a 1 and a 0 or a -1 and a 2 for the other two. Below them,
+   the expertises and Stamina from the background (read-only; bonus uses from advancement are assigned in step 7).
 3. **Name & feature**: type them in or use the random ideas.
-4. **Expertises & Stamina**: filled in from the background.
-5. **Traits**: the starting trait, plus a browser for all 23 trait trees. With XP you can buy traits;
+4. **Traits**: the starting trait, plus a browser for all 23 trait trees. With XP you can buy traits;
    prerequisites follow the connecting lines printed in the book.
-6. **Equipment & inventory**: the standard kit, background gear, and 3d6 gc, auto-arranged into
+5. **Equipment & inventory**: the standard kit, background gear, and 3d6 gc, auto-arranged into
    hand, belt, and backpack slots. Click or drag cards to rearrange them, add items from the full card
-   list, and set gear aside. Stacking, multi-slot, and two-handed rules are enforced.
-7. **Village & NPC connection**, including the 10 connection benefits.
-8. **Advancement** (optional): enter Total XP for Expertise & Stamina bonuses, characteristic
-   bonuses, and trait purchases (for the "Starting With More" rule).
+   list, and set gear aside. Stacking, multi-slot, and two-handed rules are enforced. Play mode's Items card is the
+   same grid, with usage dice, ammo, and the fight's ground added.
+6. **Village & NPC connection**, including the 10 connection benefits.
+7. **Advancement** (optional): enter Total XP for Expertise & Stamina bonuses (and assign the extra expertise uses),
+   characteristic bonuses, and trait purchases (for the "Starting With More" rule).
+8. **Notes**.
+
+A progress bar over the steps shows which are ready (click one to jump to it; each card ends with a Next button), and the
+checklist of what's left stays visible on a phone too.
 
 **Play mode** (the *Play* tab in the header) turns the app into a character manager for the table. A sticky
 **vitals strip** (Stamina, AD, wounds, speed, active conditions) stays visible at the top, and the page is split
@@ -133,7 +138,8 @@ Source is in `ref/src/`; rebuild with `python ref/build/build.py` (plain Python 
 ## Accounts (optional)
 
 The apps are also hosted with accounts at **https://joshuaramsey.com/crows/**. Log in to keep your characters
-(and, for Refs, campaigns) on the server with autosave, or continue as a guest. An admin marks accounts as
+(and, for Refs, campaigns) on the server with autosave, or continue as a guest. A new crow is saved to your account at once as a
+*draft*; press **Finish crow** when it's ready to play. There, Start over, Save file, and Load file sit in a **⋯ More** menu. An admin marks accounts as
 players or Refs, and only Refs can open the Ref Screen there. Players can share a character with their Ref by link, or ask to join a campaign from the Ref's invite link. The Ref adds it to a campaign (or accepts the request), works the
 crow's vitals on the Party tab (Stamina, damage through its armor, wounds, conditions, cruelty: the Ref Screen makes the
 change on the player's sheet with the same rules the sheet uses), opens the sheet to change equipment and notes too,
@@ -148,6 +154,7 @@ dist/Crows_Ref_Screen.html            the Ref Screen (built from ref/src by ref/
 src/index.html, app.css              the app's page (the dev version loads the files below separately)
 src/state.js                          the character: helpers, traits, advancement, derived numbers, new/random/save/load
 src/inventory.js                      the inventory slot rules, starting gear, auto-arrange
+src/inventory-ui.js                   the one inventory grid (Build's step 5 and Play's Items card)
 src/build-view.js                     the Build page: each step's card, the inventory slots, the Crow summary, its controls
 src/pdf.js                            the fillable PDF
 src/app.js                            window.CrowsApp (for Play mode), account saving, start-up

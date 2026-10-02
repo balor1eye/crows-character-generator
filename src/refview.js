@@ -12,7 +12,7 @@
   if (!window.CrowsCloud || !window.CrowsCloud.linked) return;
 
   // What a Ref can use. Everything else in the page body is read-only.
-  var EDITABLE = '#inventory, #tray, #card-detail, .add-item, #btn-arrange, #in-notes, #play-vitals, #ref-banner';
+  var EDITABLE = '#inventory, .add-item, #btn-arrange, #in-notes, #play-vitals, #ref-banner';
   var ALWAYS_OK = 'summary, details > summary, a[href]';   // expanding sections and following links is just reading
   var BLOCKED_EVENTS = ['click', 'dblclick', 'mousedown', 'pointerdown', 'touchstart', 'keydown', 'input', 'change', 'dragstart', 'drop', 'dragover'];
 

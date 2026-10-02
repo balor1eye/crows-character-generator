@@ -74,7 +74,6 @@ def main():
         # The player's new crow, saved to the account, on the Play page.
         P.go(base + "play?new=1")
         pwait("return !!(window.CrowsCloud && window.CrowsCloud.active)", "the Play page to load")
-        p("window.CrowsCloud.saveNow();")
         pwait("return !!window.CrowsCloud.recordId", "the new crow to be saved")
         char = p("return window.CrowsCloud.recordId")
         crow = p("return window.CrowsApp.state.name")
@@ -313,7 +312,8 @@ def main():
         ok("the player's attack marked as a reaction goes to the Ref as one, and uses the crow's reaction for round 2")
 
         # Unattended items: drops, pickups (first come, needing a free hand), creatures, hidden items, a dump, a death.
-        p("button('Drop', qa('#play-items .zone-hand .item-row').filter(function (x) { return /Sword/.test(text(x)); })[0]).click();")
+        p("qa('#play-items .zone-hand .inv-card').filter(function (x) { return /Sword/.test(text(x)); })[0].click();")   # select the card: its controls open under the grid
+        p("button('Drop', q('#play-items .card-detail')).click();")
         rwait("return (combat().items || []).some(function (it) { return it.key === 'Sword' && it.by === arguments[0]; })".replace("arguments[0]", repr(crow)), "the dropped sword on the Ref's ground")
         pwait("return !window.CrowsApp.state.inv.some(function (c) { return c.key === 'Sword'; }) && /Sword/.test(text(q('#play-combat .cbt-ground')))", "the sword to leave the sheet and show on the ground")
         assert "drops" in p("return text(q('#play-combat .cbt-feed'))"), "no drop in the player's feed"

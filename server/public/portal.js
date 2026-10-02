@@ -798,7 +798,7 @@
   function viewCharacters() {
     listPage('characters', {
       title: 'My characters', manage: true, campaigns: true,
-      intro: 'Create a character to roll up a new crow; it goes into your account when you press Save character. Saved crows save changes as you go.',
+      intro: 'Create a character to roll up a new crow; it is saved to your account as a draft right away; press Finish crow when it is ready to play.',
       empty: 'No characters yet. Use Create a character above, or upload a save file from the character generator.',
       buttons: function (it) { return [a('Edit', GEN + '?id=' + it.id + '&mode=build', 'btn btn-small btn-primary'), a('Play', PLAY + '?id=' + it.id, 'btn btn-small')]; }
     });
