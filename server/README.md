@@ -6,6 +6,9 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
 - **Visitors** can create an account, log in, reset a forgotten password by email, change their email or
   password, log out other devices, and delete their account. They can also skip all of that and use the
   apps as a guest, which keeps today's browser-only behavior.
+- **Signing up** takes a code emailed to the new address; the account is made only once it's entered. If the
+  address already has an account, its owner is emailed that instead and no code works, so the sign-up page never
+  shows whether an email is in use. Changing a password or email cancels any reset link still out there.
 - **Two-step login** is part of every account. While signing up, people pick an authenticator app (QR code,
   recommended) or a code emailed at each login, confirm it with a code, and save ten one-time recovery codes.
   Accounts made before this set it up at their next login. The Account page shows the method, switches it, and
@@ -36,7 +39,8 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
   the other player can also **Hand back**. Each side is told in News, and a sheet still open on the other player's
   page stops saving within a second or two of being taken back (it never saves a copy). One account at a time.
   A Ref can also **Take control** of a linked crow that's in play or sitting out in one of their own campaigns
-  (Party status tile, or More on its party card), without waiting to be handed it: the sheet opens for them as if
+  (Party status tile, or More on its party card), without waiting to be handed it, but only once the player has ticked
+  **Can take control of the whole sheet** next to that Ref in the crow's Share panel (off by default): the sheet opens for them as if
   the player had handed it over, and the player (and anyone it was handed to, who loses it) is told. The player
   takes it back as usual.
 - **Inviting players to a campaign:** it also works the other way. On the Ref Screen's Party tab, **Invite players**

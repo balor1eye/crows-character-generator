@@ -306,6 +306,10 @@ def smoke():
     # the Ref taking control of a crow in their campaign (here from the player it was handed to)
     fails("players can't take control through a Ref link", 403, lambda: p1.post("control.claim", {"id": acc["id"]}))
     p1.post("control.give", {"id": ch["id"], "username": "test_player2"})
+    fails("the Ref can't take control until the player allows it", 403, lambda: ref.post("control.claim", {"id": acc["id"]}))
+    fails("another player can't allow it for them", 404, lambda: p2.post("share.allowControl", {"accessId": acc["id"], "allow": True}))
+    p1.post("share.allowControl", {"accessId": acc["id"], "allow": True})
+    check("the player sees they allowed it", [r["canTakeControl"] for r in p1.get("share.get", id=ch["id"])["refs"]] == [True])
     got = ref.post("control.claim", {"id": acc["id"]})
     check("the Ref takes control of a crow in their campaign", got["characterId"] == ch["id"]
           and p1.get("control.get", id=ch["id"])["controller"]["username"] == "test_ref"
@@ -317,6 +321,8 @@ def smoke():
     ref.post("save", {"id": camp["id"], "version": cv, "name": "Smoke Campaign", "data": {"party": [
         {"name": "Smoke Kestrel", "link": acc["id"], "status": "retired"}, {"name": "Smoke Rook", "link": acc2["id"]}]}}, kind="campaigns")
     fails("not once the crow has left play", 409, lambda: ref.post("control.claim", {"id": acc["id"]}))
+    p1.post("share.allowControl", {"accessId": acc["id"], "allow": False})
+    check("allowing it can be turned off", [r["canTakeControl"] for r in p1.get("share.get", id=ch["id"])["refs"]] == [False])
     p1.post("notes.dismiss", {"all": True}); p2.post("notes.dismiss", {"all": True})
     ref.post("combat.publish", {"campaign": camp["id"], "combat": None})
     check("ending the fight takes it off the player's page", p1.get("combat.mine", id=ch["id"])["combat"] is None)
@@ -353,6 +359,26 @@ def smoke():
     anon.post("forgot", {"email": accounts()["test_player"]["email"]})
     reset = [m for m in mail(5) if m["subject"].startswith("Reset your password")]
     check("forgot-password email logged with a reset link", reset and BASE in reset[-1]["text"])
+
+    # sign-up: the account is made only after the emailed code, and the answer never shows whether an email is in use
+    stamp = str(int(time.time()))[-7:]
+    new_name, new_email = "smoke_new" + stamp, "smoke-new-" + stamp + "@example.invalid"
+    fails("sign-up refuses a taken username", 409, lambda: anon.post("register", {"username": "test_player", "email": new_email, "password": "Smoke-pass-" + stamp}))
+    fresh = anon.post("register", {"username": new_name, "email": new_email, "password": "Smoke-pass-" + stamp})
+    taken = Client().post("register", {"username": new_name + "x", "email": accounts()["test_player"]["email"], "password": "Smoke-pass-" + stamp})
+    check("a new and a taken email get the same answer", set(fresh) == set(taken) and set(fresh["verify"]) == set(taken["verify"]))
+    check("no account until the code is entered", new_name not in {u["username"] for u in admin.get("admin.users")["users"]})
+    msgs = mail(10)
+    code = next((m["text"].split("    ")[1][:6] for m in reversed(msgs) if m["to"] == new_email and m["subject"].startswith("Your code")), None)
+    check("the new address gets a code; the taken one is told instead", code and any(m["to"] == accounts()["test_player"]["email"]
+          and m["subject"].startswith("Someone tried to sign up") for m in msgs))
+    fails("a wrong sign-up code is refused", 400, lambda: anon.post("register.verify", {"token": fresh["verify"]["token"], "code": "000000" if code != "000000" else "111111"}))
+    fails("no code works for a taken email", 400, lambda: anon.post("register.verify", {"token": taken["verify"]["token"], "code": code}))
+    done = anon.post("register.verify", {"token": fresh["verify"]["token"], "code": code})
+    check("the right code makes the account and goes on to two-step setup", "mfaSetup" in done)
+    nu = next((u for u in admin.get("admin.users")["users"] if u["username"] == new_name), None)
+    check("the new account exists", nu is not None)
+    if nu: admin.post("admin.deleteUser", {"id": nu["id"]})
 
     # clean up what this run made
     ref.post("link.remove", {"id": acc["id"]}); ref.post("link.remove", {"id": acc2["id"]})

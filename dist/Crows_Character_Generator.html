@@ -8569,6 +8569,9 @@ var CROWS_TRAIT_TREES = [
   function validState(s) {
     return s && typeof s === 'object' && s.v === 1 && typeof s.bg === 'number' && CROWS.BACKGROUNDS[s.bg] && Array.isArray(s.inv);
   }
+  function dice(v, n) {
+    return Array.isArray(v) && v.length === n && v.every(function (x) { return x === (x | 0) && x >= 1 && x <= 6; }) ? v.slice() : null;
+  }
   function adopt(s) {
     var base = freshState(s.bg);
     Object.keys(base).forEach(function (k) { if (!(k in s)) s[k] = base[k]; });
@@ -8579,6 +8582,9 @@ var CROWS_TRAIT_TREES = [
     // Older server copies turned an empty {} into []; named keys on an array would be dropped when saved.
     if (!s.esAlloc || typeof s.esAlloc !== 'object' || Array.isArray(s.esAlloc)) s.esAlloc = {};
     s.prosperity = typeof s.prosperity === 'number' && isFinite(s.prosperity) ? Math.max(-10, Math.min(10, Math.round(s.prosperity))) : 0;
+    // Dice shown as markup: only real d6 rolls (a file or a shared sheet could hold anything here).
+    s.bgDice = dice(s.bgDice, 2);
+    s.coinDice = dice(s.coinDice, 3);
     state = s;
     syncBonusArrays();
     pruneTraits();

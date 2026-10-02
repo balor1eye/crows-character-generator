@@ -182,21 +182,91 @@ function a_me(): array {
     return ['user' => $s ? public_user($s) : null, 'csrf' => $s ? $s['csrf'] : null, 'https' => is_https(), 'notes' => $notes];
 }
 
+/*
+ * Creating an account takes two steps. register checks the username and password and emails a 6-digit code to the
+ * address; register.verify with that code makes the account (then two-step login is set up, mfa.php). If the
+ * address already has an account, its owner is emailed that instead and no code works, but the answer is the same,
+ * so signing up never shows whether an email is in use. (Usernames are shown to other players, so a taken one
+ * is still said straight away.)
+ */
+const SIGNUP_TTL = 1800;
+
 function a_register(): array {
     $username = valid_username(str('username', 64));
     $email = valid_email(str('email', 300));
     $pw = valid_password(str('password', 300), $username, $email);
     throttle('register', 1000, 10, 3600);
+    throttle('signup:' . strtolower($email), 3, 1000, 3600);
     note_attempt('register');
+    note_attempt('signup:' . strtolower($email));
     if (q('SELECT 1 FROM users WHERE username = ?', [$username])->fetch()) fail('That username is taken.', 409);
-    if (q('SELECT 1 FROM users WHERE email = ?', [$email])->fetch()) fail('An account already uses that email. Try logging in or resetting your password.', 409);
+    $hash = hash_password($pw);
+    $existing = q('SELECT id, username, email FROM users WHERE email = ?', [$email])->fetch();
+    q('DELETE FROM pending_signups WHERE expires_at < ?', [now()]);
+    $tok = token();
+    q('INSERT INTO pending_signups (token_hash, username, email, pass_hash, existing_user_id, expires_at) VALUES (?,?,?,?,?,?)',
+      [sha($tok), $username, $email, $hash, $existing ? (int)$existing['id'] : null, now(SIGNUP_TTL)]);
+    signup_send(signup_row($tok));
+    return ['verify' => ['token' => $tok, 'email' => mask_email($email)]];
+}
+
+function signup_row(string $tok): array {
+    if (!preg_match('/^[0-9a-f]{64}$/', $tok)) fail('That sign-up has expired. Please start again.', 401);
+    $r = q('SELECT * FROM pending_signups WHERE token_hash = ?', [sha($tok)])->fetch();
+    if (!$r || $r['expires_at'] < now()) fail('That sign-up has expired. Please start again.', 401);
+    return $r;
+}
+/** Email the sign-up's code, or, when the address already has an account, tell its owner (with no code). */
+function signup_send(array $r): void {
+    if ((int)$r['sends'] >= MFA_MAX_SENDS) fail('Too many codes sent. Please start again later.', 429);
+    if ($r['code_sent_at'] && strtotime($r['code_sent_at'] . ' UTC') > time() - 30) fail('A code was just sent. Wait half a minute before asking for another.', 429);
+    $code = str_pad((string)random_int(0, 999999), 6, '0', STR_PAD_LEFT);
+    q('UPDATE pending_signups SET code_hash = ?, code_sent_at = ?, sends = sends + 1 WHERE token_hash = ?',
+      [$r['existing_user_id'] ? null : sha($r['token_hash'] . $code), now(), $r['token_hash']]);
+    if ($r['existing_user_id']) {
+        $u = q('SELECT username FROM users WHERE id = ?', [$r['existing_user_id']])->fetch();
+        if ((int)$r['sends'] === 0 && $u) send_mail($r['email'], 'Someone tried to sign up to The Nest with your email',
+            "Hi {$u['username']},\n\nSomeone just tried to create a new account on The Nest with this email address, but you already have one " .
+            "(username: {$u['username']}).\n\nIf that was you, log in instead, or reset your password if you've forgotten it:\n" . site_link('#forgot') .
+            "\n\nIf it wasn't you, you can ignore this email. Nothing was changed.\n");
+        return;
+    }
+    send_mail($r['email'], "Your code for The Nest: $code",
+        "Hi {$r['username']},\n\nTo finish creating your account on The Nest, enter this code:\n\n    $code\n\n" .
+        "It works for 30 minutes. If you didn't try to create an account, you can ignore this email.\n");
+}
+
+/** The emailed code is right: make the account, then set up two-step login (no session until that's done). */
+function a_register_verify(): array {
+    $r = signup_row(str('token', 100));
+    throttle('signupcode:' . strtolower($r['email']), 10, 30, 900);
+    $code = clean_code(str('code', 40));
+    $ok = preg_match('/^[0-9]{6}$/', $code) && $r['code_hash'] && hash_equals($r['code_hash'], sha($r['token_hash'] . $code));
+    if (!$ok) {
+        note_attempt('signupcode:' . strtolower($r['email']));
+        if ((int)$r['attempts'] + 1 >= MFA_MAX_TRIES) {
+            q('DELETE FROM pending_signups WHERE token_hash = ?', [$r['token_hash']]);
+            fail('Too many wrong codes. Please start again.', 401);
+        }
+        q('UPDATE pending_signups SET attempts = attempts + 1 WHERE token_hash = ?', [$r['token_hash']]);
+        fail('That code is not right. Check it and try again.', 400);
+    }
+    q('DELETE FROM pending_signups WHERE token_hash = ?', [$r['token_hash']]);
+    if (q('SELECT 1 FROM users WHERE username = ? OR email = ?', [$r['username'], $r['email']])->fetch()) {
+        fail('Someone took that username while you were confirming your email. Please start again with another.', 409);
+    }
     q('INSERT INTO users (username, email, pass_hash, role, is_admin, created_at) VALUES (?,?,?,?,0,?)',
-      [$username, $email, hash_password($pw), 'player', now()]);
+      [$r['username'], $r['email'], $r['pass_hash'], 'player', now()]);
     $id = (int)db()->lastInsertId();
-    audit('register', $id, $username);
-    mail_admins_new_account($username, $email);
-    // No session yet: the new account sets up its second factor first (mfa.php).
+    audit('register', $id, $r['username']);
+    mail_admins_new_account($r['username'], $r['email']);
+    q('DELETE FROM pending_signups WHERE email = ?', [$r['email']]);
     return mfa_gate(q('SELECT * FROM users WHERE id = ?', [$id])->fetch());
+}
+
+function a_register_resend(): array {
+    signup_send(signup_row(str('token', 100)));
+    return [];
 }
 
 function a_login(): array {
@@ -263,6 +333,7 @@ function a_account_update(): array {
         $email = valid_email($email);
         if (q('SELECT 1 FROM users WHERE email = ? AND id <> ?', [$email, $s['id']])->fetch()) fail('Another account already uses that email.', 409);
         q('UPDATE users SET email = ? WHERE id = ?', [$email, $s['id']]);
+        q('DELETE FROM password_resets WHERE user_id = ?', [$s['id']]);   // links sent to the old address stop working
         audit('email_changed', $s['id']);
         // Tell the old address, so a hijacked account doesn't go unnoticed.
         send_mail($s['email'], 'Your email on The Nest was changed',
@@ -273,6 +344,7 @@ function a_account_update(): array {
         q('UPDATE users SET pass_hash = ? WHERE id = ?', [hash_password(valid_password($newPw, $s['username'], (string)($email ?: $s['email']))), $s['id']]);
         // A new password signs out every other device.
         q('DELETE FROM sessions WHERE user_id = ? AND token_hash <> ?', [$s['id'], $s['token_hash']]);
+        q('DELETE FROM password_resets WHERE user_id = ?', [$s['id']]);   // and so does any reset link still out there
         audit('password_changed', $s['id']);
         send_mail(is_string($email) && $email !== '' ? $email : $s['email'], 'Your password for The Nest was changed',
             "Hi {$s['username']},\n\nThe password on your account on The Nest was just changed, and your other devices were logged out.\n" .
@@ -515,11 +587,27 @@ function a_share_get(): array {
     $s = need_login();
     $c = own_character($s, record_id());
     $has = (bool)q('SELECT 1 FROM share_links WHERE character_id = ?', [$c['id']])->fetch();
-    $refs = q('SELECT a.id, a.created_at, u.username FROM character_access a JOIN users u ON u.id = a.ref_user_id
-               WHERE a.character_id = ? ORDER BY a.created_at', [$c['id']])->fetchAll();
+    $refs = q('SELECT a.id, a.created_at, u.username, (g.access_id IS NOT NULL) AS can_claim FROM character_access a JOIN users u ON u.id = a.ref_user_id
+               LEFT JOIN control_grants g ON g.access_id = a.id WHERE a.character_id = ? ORDER BY a.created_at', [$c['id']])->fetchAll();
     return ['hasLink' => $has, 'refs' => array_map(function ($r) {
-        return ['accessId' => (int)$r['id'], 'username' => $r['username'], 'since' => $r['created_at'] . 'Z'];
+        return ['accessId' => (int)$r['id'], 'username' => $r['username'], 'since' => $r['created_at'] . 'Z', 'canTakeControl' => (bool)$r['can_claim']];
     }, $refs)];
+}
+
+/** Let one Ref with access take control of the crow themselves (control.claim), or stop letting them. Off by default. */
+function a_share_allow_control(): array {
+    $s = need_login();
+    $aid = (int)(body()['accessId'] ?? 0);
+    $row = q('SELECT a.id, a.character_id FROM character_access a JOIN characters c ON c.id = a.character_id
+              WHERE a.id = ? AND c.user_id = ?', [$aid, $s['id']])->fetch();
+    if (!$row) fail('That Ref no longer has access.', 404);
+    if (!empty(body()['allow'])) {
+        q('INSERT IGNORE INTO control_grants (access_id, created_at) VALUES (?,?)', [$aid, now()]);
+        audit('control_grant_on', $s['id'], 'access ' . $aid);
+    } elseif (q('DELETE FROM control_grants WHERE access_id = ?', [$aid])->rowCount()) {
+        audit('control_grant_off', $s['id'], 'access ' . $aid);
+    }
+    return [];
 }
 
 function a_share_create(): array {
@@ -848,11 +936,17 @@ function a_control_take(): array {
  * A Ref takes control of a crow that's in play (or sitting out) in one of their own campaigns, as if its player
  * had handed it to them: say the player can't make a session. The Ref then opens, edits, and plays the whole
  * sheet. The player is told and can take it back as usual; anyone it was handed to before loses it and is told.
+ * Only if the player allowed this Ref to (control_grants, from the Share panel).
  * The id is the Ref's link to the character (character_access), as in the Ref Screen's party.
  */
 function a_control_claim(): array {
     $s = need_ref('Only Refs can take control of a crow in their campaign.');
     $r = access_row($s, record_id());
+    // The Ref writes their own campaigns, so being in a party proves nothing: the player has to allow it.
+    if (!q('SELECT 1 FROM control_grants WHERE access_id = ?', [$r['access_id']])->fetch()) {
+        fail($r['owner'] . ' hasn\'t let you take control of ' . ($r['name'] !== '' ? $r['name'] : 'this crow') .
+             '. They can allow it from the crow\'s Share panel in My characters, or hand it to you with Delegate Control.', 403);
+    }
     $campaign = null;
     foreach (q('SELECT name, data FROM campaigns WHERE user_id = ? ORDER BY updated_at DESC', [$s['id']])->fetchAll() as $camp) {
         $party = json_decode($camp['data'], true)['party'] ?? null;
@@ -1473,6 +1567,8 @@ const ACTIONS = [
     // name => [method, handler, needs csrf]
     'me' => ['GET', 'a_me', false],
     'register' => ['POST', 'a_register', false],
+    'register.verify' => ['POST', 'a_register_verify', false],
+    'register.resend' => ['POST', 'a_register_resend', false],
     'login' => ['POST', 'a_login', false],
     'forgot' => ['POST', 'a_forgot', false],
     'reset' => ['POST', 'a_reset', false],
@@ -1500,6 +1596,7 @@ const ACTIONS = [
     'share.create' => ['POST', 'a_share_create', true],
     'share.disable' => ['POST', 'a_share_disable', true],
     'share.revoke' => ['POST', 'a_share_revoke', true],
+    'share.allowControl' => ['POST', 'a_share_allow_control', true],
     'control.get' => ['GET', 'a_control_get', false],
     'control.give' => ['POST', 'a_control_give', true],
     'control.take' => ['POST', 'a_control_take', true],

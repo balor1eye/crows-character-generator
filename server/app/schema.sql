@@ -105,6 +105,14 @@ CREATE TABLE IF NOT EXISTS character_access (
   CONSTRAINT fk_access_ref FOREIGN KEY (ref_user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- A player letting one Ref with access take control of the character (control.claim) without being handed it.
+-- Off unless the player ticks it in the Share panel; goes with the access.
+CREATE TABLE IF NOT EXISTS control_grants (
+  access_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  created_at DATETIME NOT NULL,
+  CONSTRAINT fk_grant_access FOREIGN KEY (access_id) REFERENCES character_access(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- A player handing one of their characters to someone else to play (another player, or the Ref), e.g. for a
 -- session they can't make. That user can open, edit, and play it, and act with it in fights, until the owner
 -- takes it back (or they hand it back). One at a time; the owner keeps full access throughout.
@@ -191,6 +199,23 @@ CREATE TABLE IF NOT EXISTS mfa_recovery (
   used_at DATETIME NULL,
   KEY k_user (user_id),
   CONSTRAINT fk_recovery_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A sign-up waiting for its email to be confirmed with an emailed code; the account is made only then. When the
+-- email already has an account, existing_user_id is set and no code is sent (that address is told instead), so the
+-- answer to register never shows whether an email is in use.
+CREATE TABLE IF NOT EXISTS pending_signups (
+  token_hash CHAR(64) NOT NULL PRIMARY KEY,
+  username VARCHAR(32) NOT NULL,
+  email VARCHAR(190) NOT NULL,
+  pass_hash VARCHAR(255) NOT NULL,
+  existing_user_id INT UNSIGNED NULL,
+  code_hash CHAR(64) NULL,
+  code_sent_at DATETIME NULL,
+  sends TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  attempts TINYINT UNSIGNED NOT NULL DEFAULT 0,
+  expires_at DATETIME NOT NULL,
+  KEY k_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
 -- A login (or setup) waiting for its second step: made after a correct password, before any session exists.

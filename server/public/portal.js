@@ -193,11 +193,35 @@
           field('Password again', input('password', 'password2', { autocomplete: 'new-password' }))
         ], 'Create account', function (v) {
           if (v.password !== v.password2) throw new Error('The two passwords don\'t match.');
-          return api('POST', 'register', { username: v.username, email: v.email, password: v.password }).then(afterPassword);
+          return api('POST', 'register', { username: v.username, email: v.email, password: v.password }).then(function (j) { viewSignupVerify(j.verify); });
         }),
         el('div', { class: 'links' }, [a('I already have an account', '#login', '')])
       ])
     ])]);
+  }
+  /* Sign-up, step two: the code emailed to the new address. The account is made once it's entered. */
+  function viewSignupVerify(c) {
+    var f = form([
+      el('p', { class: 'muted', text: 'We emailed a 6-digit code to ' + c.email + '. It works for 30 minutes; check your spam folder if it\u2019s not there.' }),
+      el('label', { class: 'field' }, ['Code', codeInput({ placeholder: '123456' })])
+    ], 'Create account', function (v) {
+      return api('POST', 'register.verify', { token: c.token, code: v.code }).then(afterPassword, function (e) {
+        if (e.status === 401) { toast(e.message); go('register'); return; }
+        throw e;
+      });
+    });
+    show([el('div', { class: 'narrow' }, [el('div', { class: 'card' }, [
+      el('h1', { text: 'Check your email' }), f,
+      el('div', { class: 'links' }, [
+        btn('Send a new code', function () {
+          api('POST', 'register.resend', { token: c.token }).then(function () { toast('A new code is on its way.'); }, function (e) { toast(e.message); });
+        }, 'btn-small btn-ghost'),
+        el('a', { href: '#register', text: 'Start over', onclick: function (e) { e.preventDefault(); go('register'); } }),
+        a('I already have an account', '#login', '')
+      ]),
+      el('p', { class: 'fine', text: 'If that email already has an account, no code is sent; that address is told instead. Log in or reset your password.' })
+    ])])]);
+    var i = f.querySelector('input'); if (i) i.focus();
   }
 
   function viewForgot() {
@@ -651,7 +675,16 @@
       panel.appendChild(linkBox);
       panel.appendChild(el('p', { class: 'fine', text: j.refs.length ? 'Refs with access:' : 'No Ref has added this crow yet.' }));
       if (j.refs.length) panel.appendChild(el('ul', { class: 'access' }, j.refs.map(function (r) {
-        return el('li', null, [el('span', { text: r.username + ' · since ' + new Date(r.since).toLocaleDateString() }),
+        var claim = el('input', { type: 'checkbox', checked: r.canTakeControl ? true : null, onchange: function () {
+          var c = this;
+          api('POST', 'share.allowControl', { accessId: r.accessId, allow: c.checked }).then(function () {
+            r.canTakeControl = c.checked;
+            toast(c.checked ? r.username + ' can now take control of ' + (it.name || 'this crow') + '.' : r.username + ' can no longer take control.');
+          }, function (e) { c.checked = !c.checked; toast(e.message); });
+        } });
+        return el('li', null, [el('div', null, [el('span', { text: r.username + ' · since ' + new Date(r.since).toLocaleDateString() }),
+          el('label', { class: 'check-row fine', title: 'Lets this Ref open, edit, and play the whole sheet themselves, say for a session you’ll miss. You’re told when they do, and can take it back.' },
+            [claim, ' Can take control of the whole sheet'])]),
           btn('Remove', function () {
             if (!confirm('Take away ' + r.username + '\u2019s access to ' + (it.name || 'this crow') + '?')) return;
             api('POST', 'share.revoke', { accessId: r.accessId }).then(function () { toast('Removed.'); load(); }, function (e) { toast(e.message); });
