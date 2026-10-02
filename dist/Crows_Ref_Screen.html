@@ -4935,6 +4935,8 @@ CROWS.NAME_IDEAS = {
         if (tauntOn(x)) { o.tauntBy = x.taunt.by; o.tauntName = x.taunt.name; }
         if (x.hidden) o.hidden = true;
         if (x.squeeze) o.squeeze = true;
+        var art = b && !pc && x.showArt && REF.ART.creatures[b.n];
+        if (art) o.art = art.file;
         if (pc || x.kind === 'ally' || c.showSt) { o.st = x.st; o.stMax = x.stMax; o.ad = x.ad; o.adMax = x.adMax; }
         if (pc) { var p = pcOf(x); o.wounds = x.wounds; o.link = p && p.link || null; o.done = !!c.round && x.done === c.round; o.rxLeft = rxLeft(x); }
         else o.acted = !!c.round && x.acted === c.round;
@@ -5270,7 +5272,11 @@ CROWS.NAME_IDEAS = {
       }).concat([['hidden', 'Hidden', 'Hidden: edge on its attacks; any aggressive action reveals it'], ['squeeze', 'Squeezing', 'Squeezing through a tight space: speed halved, attacks against it get +1']].map(function (k) {
         return el('button', { type: 'button', class: 'cond st8' + (c[k[0]] ? ' on' : ''), title: k[2], 'aria-pressed': c[k[0]] ? 'true' : 'false', text: k[1],
           onclick: function () { c[k[0]] = !c[k[0]]; save(); render(); } });
-      })))
+      }))),
+      b && c.kind === 'foe' && REF.ART.creatures[b.n] ? el('div', { class: 'conds' }, [
+        el('button', { type: 'button', class: 'cond st8' + (c.showArt ? ' on' : ''), 'aria-pressed': c.showArt ? 'true' : 'false', text: c.showArt ? 'Art shown' : 'Show art',
+          title: c.showArt ? 'The players’ Play pages show ' + c.name + '’s art. Click to hide it' : 'Hidden from the players. Click to show ' + c.name + '’s art on the Play pages of the crows in this fight',
+          onclick: function () { c.showArt = !c.showArt; log('', c.name + '’s art is ' + (c.showArt ? 'shown to' : 'hidden from') + ' the players.'); save(); render(); } })]) : null
     ].concat(tags));
     var atks = null;
     if (b && c.kind !== 'pc') {

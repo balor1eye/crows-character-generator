@@ -395,6 +395,7 @@
     var nums = typeof x.st === 'number' ? 'Stamina ' + x.st + '/' + x.stMax + (x.adMax ? ' · AD ' + x.ad + '/' + x.adMax : '') + (x.wounds ? ' · ' + x.wounds + ' wound' + (x.wounds === 1 ? '' : 's') : '') : '';
     var hitsMe = m && (x.tgt === m.id || x.tgt2 === m.id);
     return el('div', { class: 'cbt-row k-' + x.kind + (x.dead ? ' dead' : '') + (on || also ? ' on' : '') + (mine ? ' me' : '') }, [
+      x.art ? el('a', { class: 'cbt-art', href: x.art, target: '_blank', rel: 'noopener', title: 'View ' + x.name + ' full size' }, [el('img', { src: x.art, alt: x.name, loading: 'lazy' })]) : null,
       el('div', { class: 'cbt-who' }, [
         el('b', { text: x.name + (mine ? ' (you)' : '') }),
         el('div', { class: 'fine', text: [x.type, x.size, nums].filter(Boolean).join(' · ') })]),

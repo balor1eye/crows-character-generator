@@ -400,6 +400,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
 .cbt-row.me { background: color-mix(in srgb, var(--ok) 10%, var(--slot)); }
 .cbt-row.dead { opacity: .55; }
 .cbt-row.dead .cbt-who b { text-decoration: line-through; }
+.cbt-art img { display: block; width: 4.5rem; height: 4.5rem; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 .cbt-who { flex: 1 1 160px; min-width: 0; }
 .cbt-tags { display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; }
 .chip.warn { background: var(--warn); color: #fff; }

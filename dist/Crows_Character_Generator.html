@@ -449,6 +449,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
 .cbt-row.me { background: color-mix(in srgb, var(--ok) 10%, var(--slot)); }
 .cbt-row.dead { opacity: .55; }
 .cbt-row.dead .cbt-who b { text-decoration: line-through; }
+.cbt-art img { display: block; width: 4.5rem; height: 4.5rem; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 .cbt-who { flex: 1 1 160px; min-width: 0; }
 .cbt-tags { display: flex; gap: .3rem; flex-wrap: wrap; align-items: center; }
 .chip.warn { background: var(--warn); color: #fff; }
@@ -11489,6 +11490,7 @@ var CROWS_TRAIT_TREES = [
     var nums = typeof x.st === 'number' ? 'Stamina ' + x.st + '/' + x.stMax + (x.adMax ? ' · AD ' + x.ad + '/' + x.adMax : '') + (x.wounds ? ' · ' + x.wounds + ' wound' + (x.wounds === 1 ? '' : 's') : '') : '';
     var hitsMe = m && (x.tgt === m.id || x.tgt2 === m.id);
     return el('div', { class: 'cbt-row k-' + x.kind + (x.dead ? ' dead' : '') + (on || also ? ' on' : '') + (mine ? ' me' : '') }, [
+      x.art ? el('a', { class: 'cbt-art', href: x.art, target: '_blank', rel: 'noopener', title: 'View ' + x.name + ' full size' }, [el('img', { src: x.art, alt: x.name, loading: 'lazy' })]) : null,
       el('div', { class: 'cbt-who' }, [
         el('b', { text: x.name + (mine ? ' (you)' : '') }),
         el('div', { class: 'fine', text: [x.type, x.size, nums].filter(Boolean).join(' · ') })]),
