@@ -452,7 +452,7 @@
       var panel = el('div', { class: 'share-panel', hidden: true });
       var btns = opts.buttons(it).concat(opts.manage && kind === 'characters' ? [
         btn('Share', function () { if (panel.hidden) sharePanel(it, panel); else panel.hidden = true; }, 'btn-small btn-ghost', 'Send your Ref a link to this character'),
-        btn('Hand over', function () { if (panel.hidden) controlPanel(it, panel, load); else panel.hidden = true; }, 'btn-small btn-ghost',
+        btn('Delegate Control', function () { if (panel.hidden) controlPanel(it, panel, load); else panel.hidden = true; }, 'btn-small btn-ghost',
           'Let another player or your Ref play this crow, and take it back when you like')
       ] : []).concat(opts.manage && kind === 'campaigns' ? [
         btn('Rename', function () { if (panel.hidden) renamePanel(it, panel, load); else panel.hidden = true; }, 'btn-small btn-ghost', 'Change this campaign\'s name')
@@ -542,7 +542,7 @@
     var crow = it.name || 'this crow';
     function draw(j) {
       panel.innerHTML = '';
-      panel.appendChild(el('h3', { text: 'Hand over ' + crow }));
+      panel.appendChild(el('h3', { text: 'Delegate control of ' + crow }));
       if (j.controller) {
         panel.appendChild(el('p', { text: j.controller.username + ' has control of ' + crow + ' (since ' + new Date(j.controller.since).toLocaleDateString() +
           '). They can open, edit, and play it, and act with it in fights. You still can too.' }));
@@ -568,7 +568,7 @@
       var typed = field(pick ? 'Their username' : 'Hand to', who, !pick && j.refs.length ? 'Refs with access: ' + j.refs.join(', ') : null);
       typed.hidden = !!pick;
       kids.push(typed);
-      panel.appendChild(form(kids, 'Hand over', function (v) {
+      panel.appendChild(form(kids, 'Delegate control', function (v) {
         return api('POST', 'control.give', { id: it.id, username: v.pick || v.username }).then(function (r) {
           toast(r.controller.username + ' can now play ' + crow + '.'); reload();
         });

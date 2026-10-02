@@ -27,7 +27,7 @@ Accounts, a home page, and server-side saves for the two apps, hosted on the cPa
   XP the Ref Screen awards, its history, and total XP when it's applied). The server applies just those fields,
   and only if they haven't changed underneath (log and XP history entries from both sides are combined).
   The player sees which Refs have access and can remove any of them, or turn the link off or replace it.
-- **Handing a crow to someone else:** **Hand over** on a character in My characters gives control of it to another
+- **Handing a crow to someone else:** **Delegate Control** on a character in My characters gives control of it to another
   account (another player, or the Ref), say for a session the player will miss. If the crow is in a campaign, the
   player picks its Ref or one of the other players there (crows in play or sitting out) from a list; "Someone
   else…" (or no campaign) means typing a username, with Refs with access suggested. It shows up under **Handed to you** on their My characters and Play pages, and they can edit and play

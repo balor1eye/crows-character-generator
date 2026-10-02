@@ -775,7 +775,7 @@ function control_changed(int $characterId): void {
 }
 
 /**
- * The owner's Hand over panel: who has control, the Refs with access, and the campaigns the crow is in with
+ * The owner's Delegate Control panel: who has control, the Refs with access, and the campaigns the crow is in with
  * their Ref and the other players there now (crows in play or sitting out), the likely people to hand it to.
  * Only usernames go back, nothing else of the Ref's campaign.
  */

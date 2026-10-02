@@ -1215,7 +1215,7 @@ REF.QUICK = [
     chip.querySelector('.txt').textContent = (owner ? owner + '’s crow · ' : controller ? 'Handed to ' + controller + ' · ' : '') + text;
     chip.title = title || (linkId ? 'Ref view: you can change the vitals, equipment, notes, and XP'
       : owner ? owner + ' handed you this crow to play. They can take it back at any time.'
-      : controller ? controller + ' can play this crow too until you take it back (My characters, Hand over).'
+      : controller ? controller + ' can play this crow too until you take it back (My characters, Delegate Control).'
       : user ? 'Account: ' + user.username : '');
   }
   function closeBar() { if (bar) { bar.remove(); bar = null; } }
