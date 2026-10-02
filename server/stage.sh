@@ -22,6 +22,7 @@ cp "$ROOT/dist/Crows_Ref_Screen.html" "$OUT/$APP/"
 cp -r "$ROOT/server/public/." "$OUT/public_html/$WEB/"
 cp "$ROOT/src/theme.js" "$ROOT/src/shared/dom.js" "$ROOT/src/shared/tokens.css" "$OUT/public_html/$WEB/"   # shared with the apps, which inline them
 cp "$ROOT/dist/Crows_Character_Generator.html" "$OUT/public_html/$WEB/"
+cp -r "$ROOT/dist/art" "$OUT/public_html/$WEB/art"   # Ref Screen pictures; ref.php serves from the same URL folder
 [ "$APP" = crows-app ] && rm "$OUT/$APP/seed_test.php"   # test-only tool
 python3 "$ROOT/server/csp.py" "$OUT/public_html/$WEB" "$OUT/$APP"
 echo "staged $OUT ($WEB, $APP)"

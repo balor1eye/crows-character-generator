@@ -113,7 +113,7 @@ A separate, self-contained app for running sessions and keeping the campaign bet
 on the accounts site (Ref accounts only), or offline as
 **`dist/Crows_Ref_Screen.html`** (one file, works offline, autosaves in the browser; **Save campaign /
 Load campaign** writes a `.json` file). The tabs come in three groups: **Run** (Session, Encounters, Travel),
-**Campaign** (Party, Village, World), and **Reference** (Bestiary, Tables, Rules). The sidebar keeps the timer, the dice,
+**Campaign** (Party, Village, World), and **Reference** (Bestiary, Maps, Tables, Rules). The sidebar keeps the timer, the dice,
 and the session log (the last 14 entries, or Show all, with a box for notes).
 
 - **Session**: Start session and End session (ending one fills in the XP award from the players' claims, with the greed
@@ -130,7 +130,7 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
   character generator's save files), inviting players, XP awards with the greed bonus, hirelings, and a ledger for
   loans, credits, and bets.
 - **World**: places (with the Dungeons book's locations), NPCs, campaign notes, and archived session logs.
-- **Bestiary**, **Tables** (every rollable table), and a searchable **Rules** reference.
+- **Bestiary** (cards for Blood Creatures and Undead show a thumbnail of the MCDM art; click it for the full-size picture), **Maps** (Cornath, Floating Manor, Blood Library, plus the dungeon entrance art, in a zoomable pop-up; the pictures are in `dist/art/`, made by `ref/build/make_art.py`; the single-file copy shows only the thumbnails), **Tables** (every rollable table), and a searchable **Rules** reference.
 
 Source is in `ref/src/`; rebuild with `python ref/build/build.py` (plain Python 3, no packages). The build reads
 `docs/CROWS_PT2_RULES.md` for the Rules tab, so the built file contains that text, and writes to `dist/`.

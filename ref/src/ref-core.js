@@ -22,7 +22,7 @@
   var allClaims = f('allClaims'), applyAct = f('applyAct'), byId = f('byId'), counterAct = f('counterAct'),
       counterDamage = f('counterDamage'), dropFromFallen = f('dropFromFallen'), endDT = f('endDT'), feed = f('feed'), fxItems = f('fxItems'),
       heal = f('heal'), liveChanged = f('liveChanged'), newRound = f('newRound'), pendingText = f('pendingText'),
-      releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderEncounters = f('renderEncounters'),
+      releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderMaps = f('renderMaps'), renderEncounters = f('renderEncounters'),
       renderParty = f('renderParty'), renderRules = f('renderRules'), renderSession = f('renderSession'),
       renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
       renderWorld = f('renderWorld'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
@@ -34,7 +34,7 @@
   // The tabs in their groups, shown with the group's name in the tab bar: [group, [[tab id, label], ...]].
   var TAB_GROUPS = [['Run', [['session', 'Session'], ['encounters', 'Encounters'], ['travel', 'Travel']]],
     ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World']]],
-    ['Reference', [['bestiary', 'Bestiary'], ['tables', 'Tables'], ['rules', 'Rules']]]];
+    ['Reference', [['bestiary', 'Bestiary'], ['maps', 'Maps'], ['tables', 'Tables'], ['rules', 'Rules']]]];
   var TABS = TAB_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
   var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge' };
   var EB_LABELS = [[-2, 'DB'], [-1, 'Bane'], [0, '—'], [1, 'Edge'], [2, 'DE']];
@@ -295,7 +295,7 @@
     renderTabbar();
     renderSide();
     if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
-    ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, world: renderWorld, bestiary: renderBestiary, tables: renderTables, rules: renderRules })[tab]();
+    ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, world: renderWorld, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
     tick();
   }
 

@@ -87,7 +87,10 @@
   }
   function beastCard(b) {
     var n = { k: 1 };
-    return el('div', { class: 'beast t-' + b.t.split(' ')[0] }, [
+    var art = REF.ART.creatures[b.n];
+    return el('div', { class: 'beast t-' + b.t.split(' ')[0] + (art ? ' has-art' : '') }, [
+      art ? el('button', { type: 'button', class: 'b-art', title: 'View ' + b.n + ' art', 'aria-label': 'View ' + b.n + ' art', onclick: function () { lightbox(b.n, [{ label: '', file: art.file }], art.thumb); } },
+        [el('img', { src: art.thumb, alt: b.n, loading: 'lazy' })]) : null,
       el('div', { class: 'b-head' }, [el('span', { class: 'b-name', text: b.n }), el('span', { class: 'chip', text: b.t + ' · P' + b.p })]),
       el('div', { class: 'b-stats', text: SIZES[b.sz] + ' · Stamina ' + b.st + (b.ad ? ' · AD ' + b.ad : '') + ' · Speed ' + b.spd + (b.sl ? ' · ' + b.sl + ' slots' : '') + (b.rx > 1 ? ' · ' + b.rx + ' reactions' : '') }),
       el('div', { class: 'b-stats', text: 'A ' + signed(b.c[0]) + ' · M ' + signed(b.c[1]) + ' · S ' + signed(b.c[2]) }),
@@ -98,6 +101,46 @@
         btn('Add to combat', function () { addCombatant(b.n, clamp(n.k, 1, 30), 'foe'); log('', 'Added ' + n.k + ' × ' + b.n + ' to combat.'); toast('Added ' + n.k + ' × ' + b.n + '.'); render(); }, 'btn-small'),
         b.t === 'Animal' ? el('span', { class: 'fine', text: 'Pet price ' + fmt(REF.PET_PRICES[Math.min(10, b.p)]) + ' gc' }) : null])
     ]);
+  }
+
+  // ------------------------------------------------------------------ Image pop-up and Maps tab
+  /* Full-size viewer. views = [{ label, file }]; more than one gets switch buttons. Shows `thumb` (if given) until the file loads, and keeps it if the
+     file isn't there (the single-file copy has no art folder). Maps open to fit the screen; click the picture to switch between fit and full size. */
+  function lightbox(title, views, thumb) {
+    var old = $('lightbox'); if (old) old.remove();
+    var cur = 0, img = el('img', { class: 'lb-img', alt: title }), msg = el('p', { class: 'lb-msg' }), sw = el('div', { class: 'seg' }),
+        wrap = el('div', { class: 'lb-wrap' }, [img]), fit = true;
+    function close() { box.remove(); document.removeEventListener('keydown', onKey); }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    function show(i) {
+      cur = i; msg.textContent = ''; fit = true; wrap.classList.add('fit');
+      img.onerror = function () { msg.textContent = thumb ? 'The full-size file isn\'t available here (open the Ref Screen from the site to get it). Showing the small version.' : 'The picture isn\'t available here (open the Ref Screen from the site to get it).'; if (thumb) img.src = thumb; };
+      if (thumb) img.src = thumb;
+      var big = new Image(); big.onload = function () { if (cur === i) img.src = big.src; }; big.onerror = img.onerror; big.src = views[i].file;
+      Array.prototype.forEach.call(sw.children, function (b, j) { b.classList.toggle('on', j === i); });
+    }
+    img.onclick = function () { fit = !fit; wrap.classList.toggle('fit', fit); };
+    views.forEach(function (v, i) { if (views.length > 1) sw.appendChild(el('button', { type: 'button', text: v.label, onclick: function () { show(i); } })); });
+    var box = el('div', { id: 'lightbox', class: 'lightbox', role: 'dialog', 'aria-modal': 'true', 'aria-label': title, onclick: function (e) { if (e.target === box) close(); } }, [
+      el('div', { class: 'lb-bar' }, [el('b', { text: title }), views.length > 1 ? sw : null, el('span', { class: 'fine', text: 'Click the picture to zoom' }),
+        el('a', { class: 'btn btn-small', href: views[0].file, target: '_blank', rel: 'noopener', text: 'Open in a tab', onclick: function () { this.href = views[cur].file; } }),
+        btn('Close', close, 'btn-small')]), msg, wrap]);
+    document.body.appendChild(box); document.addEventListener('keydown', onKey); show(0);
+  }
+  function renderMaps() {
+    var ART = REF.ART;
+    card('sec-maps', el('h2', null, ['Maps', el('small', { text: 'tap a map to open it full size' })]), [
+      el('div', { class: 'map-list' }, ART.maps.map(function (m) {
+        return el('button', { type: 'button', class: 'map-tile', onclick: function () { lightbox(m.title, m.variants, m.thumb); } }, [
+          el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }),
+          el('span', { class: 'b-name', text: m.title }),
+          el('span', { class: 'fine', text: (m.note || '') + (m.variants.length > 1 ? ' ' + m.variants.map(function (v) { return v.label; }).join(' / ') : '') })]);
+      })),
+      ART.extras.length ? el('h3', { text: 'Entrances' }) : null,
+      ART.extras.length ? el('div', { class: 'map-list' }, ART.extras.map(function (x) {
+        return el('button', { type: 'button', class: 'map-tile', onclick: function () { lightbox(x.title, [{ label: '', file: x.file }], x.thumb); } }, [
+          el('img', { src: x.thumb, alt: x.title, loading: 'lazy' }), el('span', { class: 'b-name', text: x.title })]);
+      })) : null]);
   }
 
   // ------------------------------------------------------------------ Tables tab
@@ -228,6 +271,6 @@
     $('rules-count').textContent = q ? (hits ? plural(hits, 'match') + ' (whole sections shown when a heading matches)' : 'No matches.') : '';
   }
 
-  A.add({ renderWorld: renderWorld, randomNPC: randomNPC, renderBestiary: renderBestiary, beastCard: beastCard, renderTables: renderTables,
+  A.add({ renderWorld: renderWorld, randomNPC: randomNPC, renderBestiary: renderBestiary, renderMaps: renderMaps, beastCard: beastCard, renderTables: renderTables,
       parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
 })();

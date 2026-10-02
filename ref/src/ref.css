@@ -366,3 +366,22 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .claims li .btn { margin-left: .25rem; }
 .rest-choices { border: 1px solid var(--line); border-radius: 8px; padding: .5rem .7rem; margin-top: .6rem; font-size: .9rem; }
 .rest-choices ul { margin: .3rem 0 0; padding-left: 1.2rem; }
+
+/* Creature art on bestiary cards, the image pop-up, and the Maps tab */
+.beast.has-art { display: grid; grid-template-columns: 76px 1fr; column-gap: .6rem; align-content: start; }
+.beast.has-art > :not(.b-art) { grid-column: 2; }
+.beast .b-art { grid-column: 1; grid-row: 1 / span 4; padding: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--slot); cursor: zoom-in; align-self: start; }
+.beast .b-art img { display: block; width: 100%; height: auto; }
+.lightbox { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .86); display: flex; flex-direction: column; padding: .5rem; gap: .4rem; }
+.lb-bar { display: flex; flex-wrap: wrap; align-items: center; gap: .5rem .8rem; color: #fff; }
+.lb-bar .fine { color: #ccc; }
+.lb-msg { margin: 0; color: #f3d9a0; font-size: .85rem; }
+.lb-msg:empty { display: none; }
+.lb-wrap { flex: 1; min-height: 0; overflow: auto; text-align: center; }
+.lb-wrap .lb-img { cursor: zoom-in; max-width: none; }
+.lb-wrap.fit .lb-img { max-width: 100%; max-height: 100%; width: auto; height: auto; object-fit: contain; }
+.lb-wrap.fit { display: flex; align-items: center; justify-content: center; overflow: hidden; }
+.lb-wrap:not(.fit) .lb-img { cursor: zoom-out; }
+.map-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(220px, 1fr)); gap: .7rem; margin-top: .6rem; }
+.map-tile { display: flex; flex-direction: column; gap: .25rem; text-align: left; padding: .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--slot); color: var(--ink); font: inherit; cursor: pointer; }
+.map-tile img { width: 100%; height: 150px; object-fit: contain; background: rgba(0, 0, 0, .08); border-radius: 4px; }
