@@ -8943,6 +8943,7 @@ var CROWS_TRAIT_TREES = [
     });
     s.play = normalizePlay(s.play);
     if (typeof s.art !== 'string' || !/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(s.art) || s.art.length > 200000) delete s.art;
+    if (!s.art || typeof s.artSm !== 'string' || !/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(s.artSm) || s.artSm.length > 30000) delete s.artSm;
     // Older server copies turned an empty {} into []; named keys on an array would be dropped when saved.
     if (!s.esAlloc || typeof s.esAlloc !== 'object' || Array.isArray(s.esAlloc)) s.esAlloc = {};
     s.prosperity = typeof s.prosperity === 'number' && isFinite(s.prosperity) ? Math.max(-10, Math.min(10, Math.round(s.prosperity))) : 0;
@@ -9726,7 +9727,7 @@ var CROWS_TRAIT_TREES = [
     text('in-conn-name', 'connName'); text('in-conn-rel', 'connRel'); text('in-notes', 'notes');
     // Character art: shrunk to a small JPEG kept in the save itself, so it follows the sheet to the Ref.
     $('btn-art').addEventListener('click', function () { $('in-art').click(); });
-    $('btn-art-clear').addEventListener('click', function () { delete state.art; render(); save(); });
+    $('btn-art-clear').addEventListener('click', function () { delete state.art; delete state.artSm; render(); save(); });
     $('in-art').addEventListener('change', function () {
       var file = this.files && this.files[0]; this.value = ''; if (!file) return;
       var url = URL.createObjectURL(file), img = new Image();
@@ -9736,7 +9737,10 @@ var CROWS_TRAIT_TREES = [
         c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
         g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
         URL.revokeObjectURL(url);
-        state.art = c.toDataURL('image/jpeg', .8); render(); save();
+        state.art = c.toDataURL('image/jpeg', .8);
+        var k2 = Math.min(1, 128 / Math.max(c.width, c.height)), s = document.createElement('canvas'), g2 = s.getContext('2d');   // tiny copy the Ref shares with the other players
+        s.width = Math.max(1, Math.round(c.width * k2)); s.height = Math.max(1, Math.round(c.height * k2)); g2.drawImage(c, 0, 0, s.width, s.height);
+        state.artSm = s.toDataURL('image/jpeg', .7); render(); save();
       };
       img.src = url;
     });
@@ -11515,7 +11519,8 @@ var CROWS_TRAIT_TREES = [
     var nums = typeof x.st === 'number' ? 'Stamina ' + x.st + '/' + x.stMax + (x.adMax ? ' · AD ' + x.ad + '/' + x.adMax : '') + (x.wounds ? ' · ' + x.wounds + ' wound' + (x.wounds === 1 ? '' : 's') : '') : '';
     var hitsMe = m && (x.tgt === m.id || x.tgt2 === m.id);
     return el('div', { class: 'cbt-row k-' + x.kind + (x.dead ? ' dead' : '') + (on || also ? ' on' : '') + (mine ? ' me' : '') }, [
-      x.art ? el('a', { class: 'cbt-art', href: x.art, target: '_blank', rel: 'noopener', title: 'View ' + x.name + ' full size' }, [el('img', { src: x.art, alt: x.name, loading: 'lazy' })]) : null,
+      x.art && x.kind === 'pc' ? el('span', { class: 'cbt-art' }, [el('img', { src: x.art, alt: x.name })]) :
+        x.art ? el('a', { class: 'cbt-art', href: x.art, target: '_blank', rel: 'noopener', title: 'View ' + x.name + ' full size' }, [el('img', { src: x.art, alt: x.name, loading: 'lazy' })]) : null,
       el('div', { class: 'cbt-who' }, [
         el('b', { text: x.name + (mine ? ' (you)' : '') }),
         el('div', { class: 'fine', text: [x.type, x.size, nums].filter(Boolean).join(' · ') })]),

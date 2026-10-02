@@ -50,6 +50,7 @@
         return c && (play.claimsAnswered || []).indexOf(c.id) < 0;
       }) };
     if (typeof s.art === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(s.art) && s.art.length <= 200000) pc.art = s.art;
+    if (pc.art && typeof s.artSm === 'string' && /^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(s.artSm) && s.artSm.length <= 30000) pc.artSm = s.artSm;
     return pc;
   }
 

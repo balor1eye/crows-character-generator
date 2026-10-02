@@ -314,7 +314,7 @@
     text('in-conn-name', 'connName'); text('in-conn-rel', 'connRel'); text('in-notes', 'notes');
     // Character art: shrunk to a small JPEG kept in the save itself, so it follows the sheet to the Ref.
     $('btn-art').addEventListener('click', function () { $('in-art').click(); });
-    $('btn-art-clear').addEventListener('click', function () { delete state.art; render(); save(); });
+    $('btn-art-clear').addEventListener('click', function () { delete state.art; delete state.artSm; render(); save(); });
     $('in-art').addEventListener('change', function () {
       var file = this.files && this.files[0]; this.value = ''; if (!file) return;
       var url = URL.createObjectURL(file), img = new Image();
@@ -324,7 +324,10 @@
         c.width = Math.max(1, Math.round(img.naturalWidth * k)); c.height = Math.max(1, Math.round(img.naturalHeight * k));
         g.fillStyle = '#fff'; g.fillRect(0, 0, c.width, c.height); g.drawImage(img, 0, 0, c.width, c.height);
         URL.revokeObjectURL(url);
-        state.art = c.toDataURL('image/jpeg', .8); render(); save();
+        state.art = c.toDataURL('image/jpeg', .8);
+        var k2 = Math.min(1, 128 / Math.max(c.width, c.height)), s = document.createElement('canvas'), g2 = s.getContext('2d');   // tiny copy the Ref shares with the other players
+        s.width = Math.max(1, Math.round(c.width * k2)); s.height = Math.max(1, Math.round(c.height * k2)); g2.drawImage(c, 0, 0, s.width, s.height);
+        state.artSm = s.toDataURL('image/jpeg', .7); render(); save();
       };
       img.src = url;
     });

@@ -214,6 +214,7 @@
     });
     s.play = normalizePlay(s.play);
     if (typeof s.art !== 'string' || !/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(s.art) || s.art.length > 200000) delete s.art;
+    if (!s.art || typeof s.artSm !== 'string' || !/^data:image\/jpeg;base64,[A-Za-z0-9+\/=]+$/.test(s.artSm) || s.artSm.length > 30000) delete s.artSm;
     // Older server copies turned an empty {} into []; named keys on an array would be dropped when saved.
     if (!s.esAlloc || typeof s.esAlloc !== 'object' || Array.isArray(s.esAlloc)) s.esAlloc = {};
     s.prosperity = typeof s.prosperity === 'number' && isFinite(s.prosperity) ? Math.max(-10, Math.min(10, Math.round(s.prosperity))) : 0;

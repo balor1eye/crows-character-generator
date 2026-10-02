@@ -554,7 +554,7 @@
         var art = b && !pc && x.showArt && REF.ART.creatures[b.n];
         if (art) o.art = art.file;
         if (pc || x.kind === 'ally' || c.showSt) { o.st = x.st; o.stMax = x.stMax; o.ad = x.ad; o.adMax = x.adMax; }
-        if (pc) { var p = pcOf(x); o.wounds = x.wounds; o.link = p && p.link || null; o.done = !!c.round && x.done === c.round; o.rxLeft = rxLeft(x); }
+        if (pc) { var p = pcOf(x); if (p && p.artSm) o.art = p.artSm; o.wounds = x.wounds; o.link = p && p.link || null; o.done = !!c.round && x.done === c.round; o.rxLeft = rxLeft(x); }
         else o.acted = !!c.round && x.acted === c.round;
         var holds = (x.items || []).filter(function (it) { return !it.hidden; });
         if (!pc && holds.length) o.holds = holds.map(itemName);
