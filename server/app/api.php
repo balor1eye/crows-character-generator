@@ -10,6 +10,7 @@ declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/mfa.php';
 require __DIR__ . '/discord.php';
+require __DIR__ . '/chat.php';
 
 final class ApiError extends Exception {
     public int $status;
@@ -141,9 +142,9 @@ function send_mail(string $to, string $subject, string $text): bool {
 function site_link(string $path = ''): string { return rtrim(config()['site_url'], '/') . '/' . $path; }
 
 // Optional emails, each of which the user can turn off on their Account page (email_prefs; no row = all on).
-const EMAIL_PREFS = ['joinDecisions' => 'join_decisions', 'newAccounts' => 'new_accounts'];
+const EMAIL_PREFS = ['joinDecisions' => 'join_decisions', 'newAccounts' => 'new_accounts', 'joinRequests' => 'join_requests', 'controlChanges' => 'control_changes', 'chatAlerts' => 'chat_alerts'];
 function email_prefs(int $userId): array {
-    $r = q('SELECT join_decisions, new_accounts FROM email_prefs WHERE user_id = ?', [$userId])->fetch();
+    $r = q('SELECT ' . implode(', ', EMAIL_PREFS) . ' FROM email_prefs WHERE user_id = ?', [$userId])->fetch();
     $out = [];
     foreach (EMAIL_PREFS as $k => $col) $out[$k] = $r ? (bool)$r[$col] : true;
     return $out;
@@ -363,7 +364,8 @@ function a_account_set_email_prefs(): array {
     $s = need_login();
     $cur = email_prefs($s['id']);
     foreach (EMAIL_PREFS as $k => $col) if (array_key_exists($k, body())) $cur[$k] = (bool)body()[$k];
-    q('REPLACE INTO email_prefs (user_id, join_decisions, new_accounts) VALUES (?,?,?)', [$s['id'], (int)$cur['joinDecisions'], (int)$cur['newAccounts']]);
+    q('REPLACE INTO email_prefs (user_id, ' . implode(', ', EMAIL_PREFS) . ') VALUES (?' . str_repeat(',?', count(EMAIL_PREFS)) . ')',
+      array_merge([$s['id']], array_map(fn($k) => (int)$cur[$k], array_keys(EMAIL_PREFS))));
     return ['prefs' => $cur];
 }
 
@@ -1200,7 +1202,22 @@ function a_join_request(): array {
     q('INSERT INTO join_requests (campaign_id, character_id, created_at) VALUES (?,?,?)', [$p['id'], $c['id'], now()]);
     audit('join_requested', (int)$p['user_id'], 'campaign ' . $p['id'] . ', character ' . $c['id'], $s['id']);
     requests_signal((int)$p['id']);
+    mail_ref_join_request($p, $s, $c);
     return [];
+}
+/** Tell the campaign's Ref (if they want it) that a player is waiting to be let in. Never fails the request. */
+function mail_ref_join_request(array $camp, array $player, array $crow): void {
+    try {
+        $rid = (int)$camp['user_id'];
+        if (!wants_email($rid, 'joinRequests')) return;
+        $ref = q('SELECT username, email FROM users WHERE id = ?', [$rid])->fetch();
+        if (!$ref) return;
+        $crowName = $crow['name'] !== '' ? $crow['name'] : 'a crow';
+        $campName = ($camp['name'] ?? '') !== '' ? $camp['name'] : 'your campaign';
+        send_mail($ref['email'], "{$player['username']} wants to join $campName",
+            "Hi {$ref['username']},\n\n{$player['username']} asked to bring $crowName into $campName. " .
+            "Accept or decline the request on your Ref Screen:\n" . site_link('#campaigns') . "\n" . prefs_footer());
+    } catch (Throwable $e) { error_log('crows request mail: ' . $e->getMessage()); }
 }
 
 function a_join_cancel(): array {
@@ -1295,6 +1312,25 @@ function notify(int $userId, string $kind, array $detail): void {
         q('INSERT INTO notifications (user_id, kind, detail, created_at) VALUES (?,?,?,?)', [$userId, $kind, enc($detail), now()]);
         signal('notes', $userId, (int)db()->lastInsertId());
     } catch (Throwable $e) { error_log('crows notify: ' . $e->getMessage()); }   // never fails the action itself
+    if (strpos($kind, 'control_') === 0) mail_control_change($userId, $kind, $detail);
+}
+/** Email about a change of who controls a crow (handed over, taken back, claimed by a Ref), unless switched off. */
+function mail_control_change(int $userId, string $kind, array $d): void {
+    try {
+        if (!wants_email($userId, 'controlChanges')) return;
+        $u = q('SELECT username, email FROM users WHERE id = ?', [$userId])->fetch();
+        if (!$u) return;
+        $crow = ($d['character'] ?? '') !== '' ? $d['character'] : 'a crow';
+        $msg = [
+            'control_given' => ($d['owner'] ?? '') . " handed you $crow to play. It's under Handed to you in Crows until they take it back.",
+            'control_taken' => ($d['owner'] ?? '') . " took back control of $crow.",
+            'control_returned' => ($d['by'] ?? '') . " handed $crow back to you.",
+            'control_claimed' => ($d['by'] ?? '') . ' (Ref of ' . ($d['campaign'] ?? 'your campaign') . ") took control of $crow to play it. " .
+                "If it's yours, use Take back control under Delegate Control in Crows.",
+        ][$kind] ?? null;
+        if ($msg === null) return;
+        send_mail($u['email'], "Control of $crow changed", "Hi {$u['username']},\n\n$msg\n\n" . site_link('#home') . "\n" . prefs_footer());
+    } catch (Throwable $e) { error_log('crows control mail: ' . $e->getMessage()); }
 }
 function notify_decision(array $ref, array $r, bool $accepted): void {
     $pid = (int)$r['player_id'];
@@ -1780,6 +1816,10 @@ const ACTIONS = [
     'art.list' => ['GET', 'a_art_list', false],
     'art.save' => ['POST', 'a_art_save', true],
     'art.delete' => ['POST', 'a_art_delete', true],
+    'chat.campaigns' => ['GET', 'a_chat_campaigns', false],
+    'chat.list' => ['GET', 'a_chat_list', false],
+    'chat.send' => ['POST', 'a_chat_send', true],
+    'chat.delete' => ['POST', 'a_chat_delete', true],
     'notes.list' => ['GET', 'a_notes_list', false],
     'notes.dismiss' => ['POST', 'a_notes_dismiss', true],
     'admin.users' => ['GET', 'a_admin_users', false],

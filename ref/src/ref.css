@@ -387,3 +387,24 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .map-tile img { width: 100%; height: 150px; object-fit: contain; background: rgba(0, 0, 0, .08); border-radius: 4px; }
 .cbt-art { padding: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--slot); cursor: zoom-in; flex: none; }
 .cbt-art img { display: block; width: 3.5rem; height: 3.5rem; object-fit: cover; }
+
+/* Preferences and Tabletop Mode */
+.pref-mode { border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: 6px; padding: .6rem .8rem; background: var(--slot); }
+.pref-mode.on { border-left-color: var(--accent); }
+.pref-main { font-size: 1.05rem; }
+.pref-points { margin: .3rem 0 0; padding-left: 1.2rem; font-size: .88rem; color: var(--muted); }
+.pref-points li { margin: .15rem 0; }
+.pref-group { border: 1px solid var(--line); border-radius: 6px; margin: .7rem 0 0; padding: .3rem .7rem .6rem; }
+.pref-group legend { font-weight: 700; padding: 0 .3rem; }
+.pref-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .4rem .9rem; }
+.pref-item { display: flex; gap: .5rem; align-items: flex-start; cursor: pointer; }
+.pref-item input { margin-top: .25rem; flex: none; }
+.pref-item span { display: flex; flex-direction: column; }
+.tt-status { margin-top: .6rem; }
+.tt-roll { margin-top: .4rem; padding: .4rem .6rem; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 6px; background: var(--slot); }
+.tt-board { display: grid; gap: .45rem; margin-top: .6rem; }
+.tt-row { display: flex; flex-wrap: wrap; gap: .35rem .6rem; align-items: center; border: 1px solid var(--line); border-left: 5px solid var(--accent); border-radius: 6px; padding: .4rem .6rem; background: var(--slot); }
+.tt-row.ally { border-left-color: var(--ok); }
+.tt-name { flex: 1 1 150px; }
+.tt-atks { flex: 1 0 100%; }
+.cbt-ref { margin: .3rem 0 0; padding-left: 1.1rem; font-size: .82rem; color: var(--muted); }

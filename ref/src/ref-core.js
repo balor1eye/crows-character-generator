@@ -23,7 +23,7 @@
       counterDamage = f('counterDamage'), dropFromFallen = f('dropFromFallen'), defendRow = f('defendRow'), endDT = f('endDT'), feed = f('feed'), fxItems = f('fxItems'),
       heal = f('heal'), liveChanged = f('liveChanged'), newRound = f('newRound'), pendingText = f('pendingText'),
       releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderMaps = f('renderMaps'), renderEncounters = f('renderEncounters'),
-      renderParty = f('renderParty'), renderRules = f('renderRules'), renderSession = f('renderSession'),
+      renderParty = f('renderParty'), renderPrefs = f('renderPrefs'), renderRules = f('renderRules'), renderSession = f('renderSession'),
       renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
       renderWorld = f('renderWorld'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -33,11 +33,41 @@
   var TAB_KEY = 'crows-pt2-ref-tab';
   // The tabs in their groups, shown with the group's name in the tab bar: [group, [[tab id, label], ...]].
   var TAB_GROUPS = [['Run', [['session', 'Session'], ['encounters', 'Encounters'], ['travel', 'Travel']]],
-    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World']]],
+    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World'], ['prefs', 'Preferences']]],
     ['Reference', [['bestiary', 'Bestiary'], ['maps', 'Maps'], ['tables', 'Tables'], ['rules', 'Rules']]]];
   var TABS = TAB_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
   var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge' };
   var EB_LABELS = [[-2, 'DB'], [-1, 'Bane'], [0, '—'], [1, 'Edge'], [2, 'DE']];
+  /*
+   * Campaign preferences (state.prefs): Tabletop Mode, and the functions the Ref turned off (prefs.off[key] = true). Everything is on
+   * by default. Each feature hides its tab (tab) or cards (ids); the rest are checked where the feature runs (feat('key')).
+   * [key, label, what it does, group, { tab } or { ids }]
+   */
+  var FEATURES = [
+    ['encounters', 'Encounters tab', 'Encounter rolls, saved encounters, and running an encounter.', 'Tabs', { tab: 'encounters' }],
+    ['travel', 'Travel tab', 'Overland days, pace, weather, travel encounters, and Miasma.', 'Tabs', { tab: 'travel' }],
+    ['village', 'Village tab', 'The village, its institutions, and the crypt.', 'Tabs', { tab: 'village' }],
+    ['world', 'World tab', 'Places, NPCs, notes, and session history.', 'Tabs', { tab: 'world' }],
+    ['bestiary', 'Bestiary tab', 'Creature stat blocks.', 'Tabs', { tab: 'bestiary' }],
+    ['maps', 'Maps tab', 'The maps.', 'Tabs', { tab: 'maps' }],
+    ['tables', 'Tables tab', 'The random tables.', 'Tabs', { tab: 'tables' }],
+    ['rules', 'Rules tab', 'The rules summary.', 'Tabs', { tab: 'rules' }],
+    ['sess', 'Session card', 'Session number and title, Start and End session, Export log.', 'Session tab', { ids: ['sec-sess'] }],
+    ['dt', 'Dungeon turns', 'The turn timer card, encounter checks, and the greed bonus.', 'Session tab', { ids: ['sec-dt'] }],
+    ['combat', 'Combat tracker', 'The Session tab\u2019s tracker for crows, foes, and allies.', 'Session tab', { ids: ['sec-combat'] }],
+    ['rest', 'Resting', 'Rests, Stamina recovery, and the party\u2019s rest choices.', 'Session tab', { ids: ['sec-rest'] }],
+    ['quick', 'Quick Reference', 'The reference list and conditions at the bottom of the Session tab.', 'Session tab', { ids: ['sec-quick'] }],
+    ['status', 'Party status', 'Live vitals tiles for the crows.', 'Party tab', { ids: ['sec-status'] }],
+    ['xp', 'Experience', 'XP awards, claims, and bonuses.', 'Party tab', { ids: ['sec-xp'] }],
+    ['hirelings', 'Hirelings', 'Hired help and their pay.', 'Party tab', { ids: ['sec-hirelings'] }],
+    ['ledger', 'Ledger', 'The party\u2019s money.', 'Party tab', { ids: ['sec-ledger'] }],
+    ['timer', 'Timer in the sidebar', 'The dungeon turn clock and End DT button.', 'Sidebar', { ids: ['side-timer'] }],
+    ['dice', 'Dice in the sidebar', 'Tests, dice, initiative, usage dice, and roll results.', 'Sidebar', { ids: ['side-dice'] }],
+    ['log', 'Log in the sidebar', 'The running log and the note box.', 'Sidebar', { ids: ['side-log'] }],
+    ['sit', 'Battlefield buttons', 'Flanking, cover, darkness, and the other modifiers on a creature\u2019s next roll.', 'Combat', {}],
+    ['items', 'Items on the ground', 'Loose items, and what creatures hold and drop.', 'Combat', {}],
+    ['live', 'Live fight with players', 'Share the fight with the players\u2019 Play pages and take their actions (accounts site).', 'Combat', {}]
+  ];
   var uid = 1;   // state (the campaign) and tab (the open tab) are shared: A.set('state', ...)
   var ui = { logAll: false, dice: null, tables: {}, beastQ: '', beastType: '', rulesQ: '', lastEnc: null, travelEnc: null, alarmFired: false, encSrc: '', encDraft: null, encFilter: 'open', encOpen: {}, encFocus: null, encEnd: null };
 
@@ -84,7 +114,8 @@
         climate: 'Fall & Spring', habitat: 'Forest', nearby: 'Undead', lost: false, miasmaMod: 0, inMiasma: true },
       village: freshVillage(),
       party: [], xpLog: [], hirelings: [], ledger: [], places: [], npcs: [], encounters: [], notes: '', hooks: '', history: [],
-      dice: { mod: 0, net: 0, expr: '3d6', ud: 1 }
+      dice: { mod: 0, net: 0, expr: '3d6', ud: 1 },
+      prefs: { tabletop: false, off: {} }
     };
   }
   function withDefaults(base, s) {
@@ -98,7 +129,7 @@
   }
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
-    if (state.session && state.session.combat) { releaseGrabs(); dropFromFallen(); }
+    if (state.session && state.session.combat && !tabletop()) { releaseGrabs(); dropFromFallen(); }
     if (window.CrowsCloud) { window.CrowsCloud.changed(); liveChanged(); }
   }
   function startNew() { if (window.CrowsCloud) window.CrowsCloud.startNew(); }
@@ -114,6 +145,22 @@
       ['conds', 'used'].forEach(function (k) { if (!c[k] || typeof c[k] !== 'object' || Array.isArray(c[k])) c[k] = {}; });
     });
     return s;
+  }
+
+  // ------------------------------------------------------------------ preferences
+  function feat(key) { return !(state.prefs && state.prefs.off && state.prefs.off[key]); }
+  function tabletop() { return !!(state.prefs && state.prefs.tabletop); }
+  function tabOn(id) { return FEATURES.every(function (x) { return !(x[4].tab === id && !feat(x[0])); }); }
+  /* Hide what the Ref turned off, and show the Tabletop card only in Tabletop Mode. Cards hidden here are marked so they come back. */
+  function applyPrefs() {
+    var want = {};
+    FEATURES.forEach(function (x) { (x[4].ids || []).forEach(function (id) { want[id] = !feat(x[0]); }); });
+    want['sec-table'] = !tabletop();
+    Object.keys(want).forEach(function (id) {
+      var n = $(id); if (!n) return;
+      if (want[id]) { n.hidden = true; n.setAttribute('data-pref', '1'); }
+      else if (n.hasAttribute('data-pref')) { n.removeAttribute('data-pref'); n.hidden = false; }
+    });
   }
 
   // ------------------------------------------------------------------ log
@@ -277,8 +324,8 @@
     var bar = $('tabbar'); bar.innerHTML = '';
     TAB_GROUPS.forEach(function (g) {
       var group = el('div', { class: 'tab-group', role: 'group', 'aria-label': g[0] }, [el('span', { class: 'tab-group-label', 'aria-hidden': 'true', text: g[0] })]);
-      g[1].forEach(function (t) { group.appendChild(tabButton(t)); });
-      bar.appendChild(group);
+      g[1].forEach(function (t) { if (tabOn(t[0])) group.appendChild(tabButton(t)); });
+      if (group.children.length > 1) bar.appendChild(group);
     });
     $('camp-name').textContent = state.name || state.village.name || '';
   }
@@ -292,10 +339,12 @@
   }
   var layoutFitQueued = false;
   function render() {
+    if (!tabOn(tab)) { setTab('session'); return; }
     renderTabbar();
     renderSide();
     if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
-    ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, world: renderWorld, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
+    ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
+    applyPrefs();
     tick();
   }
 
@@ -398,7 +447,7 @@
       shown.length ? list : el('p', { class: 'fine', text: 'Rolls and events appear here.' })]));
   }
 
-  A.add({ clamp: clamp, int: int, nid: nid, lookup: lookup, nowStamp: nowStamp, today: today, beast: beast, rollInText: rollInText, test: test,
+  A.add({ FEATURES: FEATURES, feat: feat, tabletop: tabletop, tabOn: tabOn, applyPrefs: applyPrefs, clamp: clamp, int: int, nid: nid, lookup: lookup, nowStamp: nowStamp, today: today, beast: beast, rollInText: rollInText, test: test,
       testLine: testLine, tierChip: tierChip, freshVillage: freshVillage, freshState: freshState, withDefaults: withDefaults, save: save,
       startNew: startNew, isCampaign: isCampaign, load: load, S: S, repairObjects: repairObjects, log: log, rich: rich, logItem: logItem, inp: inp,
       area: area, sel: sel, chk: chk, field: field, segEB: segEB, btn: btn, card: card, more: more, rowsTable: rowsTable, currentPlace: currentPlace,

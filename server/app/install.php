@@ -6,7 +6,10 @@ require __DIR__ . '/bootstrap.php';
 $sql = file_get_contents(__DIR__ . '/schema.sql');
 foreach (array_filter(array_map('trim', preg_split('/;\s*$/m', preg_replace('/^--.*$/m', '', $sql)))) as $stmt) db()->exec($stmt);
 // Columns added after the first release (CREATE TABLE IF NOT EXISTS leaves existing tables alone).
-foreach ([['characters', 'draft', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER version']] as [$t, $c, $def]) {
+foreach ([['characters', 'draft', 'TINYINT(1) NOT NULL DEFAULT 0 AFTER version'],
+    ['email_prefs', 'join_requests', 'TINYINT(1) NOT NULL DEFAULT 1'],
+    ['email_prefs', 'control_changes', 'TINYINT(1) NOT NULL DEFAULT 1'],
+    ['email_prefs', 'chat_alerts', 'TINYINT(1) NOT NULL DEFAULT 1']] as [$t, $c, $def]) {
     $has = db()->prepare('SELECT COUNT(*) FROM information_schema.COLUMNS WHERE TABLE_SCHEMA = DATABASE() AND TABLE_NAME = ? AND COLUMN_NAME = ?');
     $has->execute([$t, $c]);
     if (!(int)$has->fetchColumn()) db()->exec("ALTER TABLE $t ADD COLUMN $c $def");

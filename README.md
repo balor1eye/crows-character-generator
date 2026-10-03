@@ -55,6 +55,11 @@ left), the greed bonus, Resting, and Encounter signalled.
 - **Village**: set Prosperity in Build > Village; the Caretaker connection heals 3 wounds at 6+.
   Surgical kits add a wound healed to Tend Wounds, and ticking "2+ items here" on a magic item slot
   blocks resting and deals 1d6 wounds at the end of each dungeon turn.
+- **Campaign chat** (accounts site, Chat in the top bar): every campaign has a chat for its Ref and players. Messages are
+  for everyone, or private between a player and the Ref. The Ref can also post an **announcement** (every player gets a
+  notification, it's pinned at the top, and the Ref can tick Also email every player) with one-click templates such as
+  "Session starts in 15 minutes", and can send a private message to one player. Announcements and private messages also
+  pop up on the Play page and Ref Screen, and can be emailed (players can turn chat emails off on their Account page).
 - **Live combat** (accounts site): when the Ref runs a fight with your linked crow in the Ref Screen's combat
   tracker, a **Combat** card appears at the top of Play within a second or two. It offers every option the combat
   rules give at that moment: your turn (an action and a maneuver, or two maneuvers; a crit adds an action; one
@@ -113,7 +118,7 @@ A separate, self-contained app for running sessions and keeping the campaign bet
 on the accounts site (Ref accounts only), or offline as
 **`dist/Crows_Ref_Screen.html`** (one file, works offline, autosaves in the browser; **Save campaign /
 Load campaign** writes a `.json` file). The tabs come in three groups: **Run** (Session, Encounters, Travel),
-**Campaign** (Party, Village, World), and **Reference** (Bestiary, Maps, Tables, Rules). The sidebar keeps the timer, the dice,
+**Campaign** (Party, Village, World, Preferences), and **Reference** (Bestiary, Maps, Tables, Rules). The sidebar keeps the timer, the dice,
 and the session log (the last 14 entries, or Show all, with a box for notes).
 
 - **Session**: Start session and End session (ending one fills in the XP award from the players' claims, with the greed
@@ -130,6 +135,13 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
   character generator's save files), inviting players, XP awards with the greed bonus, hirelings, and a ledger for
   loans, credits, and bets.
 - **World**: places (with the Dungeons book's locations), NPCs, campaign notes, and archived session logs.
+- **Preferences** (Campaign Preferences, saved with the campaign): every function is on by default, and you can untick any tab,
+  card, sidebar panel, or combat helper you don't use to hide it (nothing is deleted; tick it to bring it back).
+  **Tabletop Mode** turns the Ref Screen into a reference and assistant for a game played at a table: the live fight is not shared with
+  or taken from the players' Play pages, but linked crows stay tied to their sheets (live vitals, and your changes land on them). Nothing
+  happens automatically: creatures roll with an optional target and you apply the hit, damage, healing, or conditions yourself. An **At the table** card on the Session tab lists every
+  enemy and ally to hurt, heal, and mark as acted (with its attacks, reactions, and conditions), and each creature in the tracker lists its
+  attacks with tier damage and notes, uses, and traits.
 - **Bestiary** (cards for Blood Creatures and Undead show a thumbnail of the MCDM art; click it for the full-size picture), **Maps** (Cornath, Floating Manor, Blood Library, plus the dungeon entrance art, in a zoomable pop-up; the pictures are in `dist/art/`, made by `ref/build/make_art.py`; the single-file copy shows only the thumbnails). Refs can add their own maps (Maps tab, **Add a map…**) and art for any creature (**Add art** on its card, or **Replace art** in the pop-up); these are kept in the Ref's account, so they follow them to every device (logged out, the offline file keeps them in that browser, and moves them into the account at the next login), **Tables** (every rollable table), and a searchable **Rules** reference.
 
 Source is in `ref/src/`; rebuild with `python ref/build/build.py` (plain Python 3, no packages). The build reads
@@ -167,7 +179,7 @@ src/combat.js                         Play mode's live Combat card (targets, att
 src/layout.js                         rearranging the blocks on a page (both apps), saved to the account
 server/                               the accounts site: PHP API, portal pages, deploy script
 ref/src/                              the Ref Screen: ref-core.js (state, timer, tab bar, sidebar), one file per area (encounters,
-                                      travel, session, combat, village, party, reference), and ref.js (files, start-up)
+                                      travel, session, combat, village, party, reference, prefs), and ref.js (files, start-up)
 ref/test/                             browser tests: combat, layout, and live play between the two apps (see ref/test/README.md)
 src/game-data.js                      backgrounds, expertises, item cards, tables
 src/traits-data.js                    all 23 trait trees + their connection lines (extracted from the book)

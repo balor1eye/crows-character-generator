@@ -97,13 +97,15 @@
     var page = h || (me ? 'home' : 'login');
     if (!me && ['login', 'register', 'forgot'].indexOf(page) < 0) page = 'login';
     if (me && ['login', 'register', 'forgot'].indexOf(page) >= 0) page = 'home';
+    var chatId = /^chat=(\d+)$/.exec(page);
+    if (chatId) { nav(); viewChat(parseInt(chatId[1], 10)); window.scrollTo(0, 0); return; }
     var listed = /^campaign=(\d+)$/.exec(page);
     if (listed) { nav(); viewJoin({ campaign: listed[1] }); window.scrollTo(0, 0); return; }
     if (page === 'campaigns' && !me.canRef) page = 'home';
     if (page === 'admin' && !me.isAdmin) page = 'home';
     nav();
     var views = { login: viewLogin, register: viewRegister, forgot: viewForgot, home: viewHome, characters: viewCharacters,
-      play: viewCharacters, find: viewFind, campaigns: viewCampaigns, account: viewAccount, admin: viewAdmin };
+      play: viewCharacters, find: viewFind, chat: viewChatList, campaigns: viewCampaigns, account: viewAccount, admin: viewAdmin };
     (views[page] || viewHome)();
     window.scrollTo(0, 0);
   }
@@ -120,6 +122,7 @@
     var home = a('Home', '#home', 'btn btn-ghost btn-small');
     if (unread) { home.appendChild(el('span', { class: 'count', text: String(unread), title: unread + ' new' })); home.setAttribute('aria-label', 'Home, ' + unread + ' new'); }
     n.appendChild(home);
+    n.appendChild(a('Chat', '#chat', 'btn btn-ghost btn-small'));
     n.appendChild(a('Account', '#account', 'btn btn-ghost btn-small'));
     n.appendChild(btn('Log out', logout, 'btn-ghost btn-small'));
   }
@@ -413,7 +416,8 @@
     return el('a', { class: 'tile ' + (cls || ''), href: href }, [el('span', { class: 't', text: title }), el('span', { class: 'd', text: desc })]);
   }
   function viewHome() {
-    var tiles = [tile('Find a campaign', 'Search the campaigns Refs have opened to new players, and ask to join with one of your crows.', '#find')];
+    var tiles = [tile('Campaign chat', 'Talk with your Ref and the other players, and read announcements from your Ref.', '#chat'),
+      tile('Find a campaign', 'Search the campaigns Refs have opened to new players, and ask to join with one of your crows.', '#find')];
     if (me.isAdmin) tiles.push(tile('Manage accounts', 'Mark accounts as players or Refs, send reset links, and more.', '#admin', 'admin'));
     var news = el('div');
     var crows = el('div'), camps = me.canRef ? el('div') : null;
@@ -442,6 +446,8 @@
     if (n.kind === 'control_taken') return d.owner + ' took back control of ' + crow + '.';
     if (n.kind === 'control_returned') return d.by + ' handed ' + crow + ' back to you.';
     if (n.kind === 'control_claimed') return d.by + ' (Ref of ' + (d.campaign || 'your campaign') + ') took control of ' + crow + ' to play it. If it\u2019s yours, Take back control under Delegate Control in Crows.';
+    if (n.kind === 'chat_announce') return d.from + ' announced in ' + camp + ': \u201c' + d.text + '\u201d';
+    if (n.kind === 'chat_private') return d.from + ' sent you a private message in ' + camp + ': \u201c' + d.text + '\u201d';
     return null;
   }
   function loadNews(box) {
@@ -460,6 +466,7 @@
           return el('li', { class: ok ? 'yes' : 'no' }, [
             el('div', null, [el('div', { text: noteText(n) }), el('div', { class: 'meta', text: when(n.at) })]),
             el('div', { class: 'btns' }, [
+              n.kind.indexOf('chat_') === 0 ? a('Open chat', '#chat=' + n.detail.campaignId, 'btn btn-small btn-primary') : null,
               open && n.detail.characterId ? a('Play ' + (n.detail.character || 'it'), PLAY + '?id=' + n.detail.characterId, 'btn btn-small btn-primary') : null,
               btn('Dismiss', function () { api('POST', 'notes.dismiss', { id: n.id }).then(function () { loadNews(box); }, function (e) { toast(e.message); }); }, 'btn-small btn-ghost')])
           ]);
@@ -973,7 +980,10 @@
   /* Optional emails, saved as soon as a box is ticked or unticked. */
   function emailCard() {
     var box = el('div', { class: 'card' }, [el('h2', { text: 'Email notifications' }), el('p', { class: 'muted', text: 'Loading…' })]);
-    var opts = [['joinDecisions', 'When a Ref accepts or declines my request to join a campaign']];
+    var opts = [['joinDecisions', 'When a Ref accepts or declines my request to join a campaign'],
+      ['chatAlerts', 'When my Ref sends an announcement, or a private message, in a campaign chat'],
+      ['controlChanges', 'When control of one of my crows is handed over, taken back, or claimed by a Ref']];
+    if (me.canRef) opts.push(['joinRequests', 'When a player asks to join one of my campaigns (Refs)']);
     if (me.isAdmin) opts.push(['newAccounts', 'When someone creates an account (admins)']);
     api('GET', 'account.emailPrefs').then(function (j) {
       box.innerHTML = '';
@@ -988,6 +998,160 @@
       });
     }, function (e) { box.lastChild.textContent = e.message; });
     return box;
+  }
+
+
+  // ---------------------------------------------------------------- chat
+  /* Which campaigns the person can chat in, with what's unread. */
+  function viewChatList() {
+    var list = el('ul', { class: 'rows' }, [el('li', { class: 'empty', text: 'Loading…' })]);
+    show([el('h1', { text: 'Campaign chat' }),
+      el('p', { class: 'muted', text: 'Each campaign has a chat for its Ref and players. Refs can also send announcements to everyone and private messages to one player.' }),
+      el('div', { class: 'card' }, [list])]);
+    api('GET', 'chat.campaigns').then(function (j) {
+      list.innerHTML = '';
+      if (!j.campaigns.length) list.appendChild(el('li', { class: 'empty', text: 'You’re not in a campaign yet. Once a Ref accepts one of your crows (or if you run a campaign), its chat appears here.' }));
+      j.campaigns.forEach(function (c) {
+        list.appendChild(el('li', null, [
+          el('div', null, [
+            el('div', null, [el('strong', { text: c.name }), c.unread ? el('span', { class: 'count', text: String(c.unread), title: c.unread + ' unread' }) : null]),
+            el('div', { class: 'meta', text: (c.isRef ? 'You are the Ref' : 'Ref: ' + c.ref) + ' · ' + c.players + (c.players === 1 ? ' player' : ' players') +
+              (c.last ? ' · ' + c.last.from + ': ' + c.last.text + ' (' + when(c.last.at) + ')' : '') })]),
+          a('Open chat', '#chat=' + c.id, 'btn btn-small btn-primary')]));
+      });
+    }, function (e) { list.innerHTML = ''; list.appendChild(el('li', { class: 'empty', text: e.message })); });
+  }
+
+  var CHAT_TEMPLATES = [
+    ['Session soon', 'Our session starts in 15 minutes. Please get your crow ready!'],
+    ['Session scheduled', 'Next session: [day and time]. Reply here if you can’t make it.'],
+    ['Cancelled', 'Tonight’s session is cancelled. I’ll post the new time here.'],
+    ['Availability', 'Please reply with the days you’re free this week so I can schedule the next session.'],
+    ['Level up', 'You earned experience this session. Please update your crow’s sheet before we play again.']
+  ];
+  function viewChat(id) {
+    var box = el('div', { class: 'chat-log', role: 'log', 'aria-live': 'polite' }, [el('p', { class: 'muted', text: 'Loading…' })]);
+    var pinned = el('div'), head = el('h1', { text: 'Chat' }), sub = el('p', { class: 'muted' });
+    var info = { isRef: false, members: [], ref: '' };
+    var seen = 0, mounted = true, root = null, loading = false, watchUrl = null, shown = {};
+    var mode = 'chat';
+    var text = el('textarea', { class: 'chat-text', rows: 3, maxlength: 2000, placeholder: 'Write a message…', 'aria-label': 'Message' });
+    var to = el('select', { 'aria-label': 'Send privately to' });
+    var mail = el('input', { type: 'checkbox' });
+    var modeBox = el('div', { class: 'chat-modes' }), extra = el('div', { class: 'chat-extra' });
+    var tmpl = el('div', { class: 'chat-tmpl' });
+    var sendBtn = btn('Send', send, 'btn-primary');
+
+    function setMode(m) { mode = m; drawComposer(); }
+    function drawComposer() {
+      var opts = [['chat', 'Everyone']];
+      if (info.isRef) opts.push(['announce', 'Announcement'], ['private', 'Private to a player']);
+      else opts.push(['private', 'Private to ' + info.ref + ' (Ref)']);
+      modeBox.innerHTML = '';
+      opts.forEach(function (o) {
+        var r = el('input', { type: 'radio', name: 'chat-mode', checked: mode === o[0] ? true : null, onchange: function () { setMode(o[0]); } });
+        modeBox.appendChild(el('label', { class: 'chat-mode' }, [r, ' ' + o[1]]));
+      });
+      extra.innerHTML = '';
+      if (mode === 'private' && info.isRef) {
+        to.innerHTML = '';
+        info.members.forEach(function (m) { to.appendChild(el('option', { value: m.username, text: m.username + (m.crows.length ? ' (' + m.crows.join(', ') + ')' : '') })); });
+        extra.appendChild(el('label', { class: 'field' }, ['To', to]));
+      }
+      if (mode === 'announce') extra.appendChild(el('label', { class: 'check-row' }, [mail, ' Also email every player (those who haven’t turned chat emails off)']));
+      if (mode === 'private') extra.appendChild(el('p', { class: 'fine', text: 'Only you and ' + (info.isRef ? 'that player' : info.ref) + ' will see this.' }));
+      if (mode === 'announce') extra.appendChild(el('p', { class: 'fine', text: 'Every player gets a notification, and it’s pinned at the top of the chat.' }));
+      tmpl.innerHTML = '';
+      if (info.isRef) {
+        tmpl.appendChild(el('span', { class: 'fine', text: 'Quick announcements: ' }));
+        CHAT_TEMPLATES.forEach(function (t) {
+          tmpl.appendChild(btn(t[0], function () { mode = 'announce'; drawComposer(); text.value = t[1]; text.focus(); }, 'btn-small btn-ghost', 'Fill in this announcement'));
+        });
+      }
+    }
+
+    function line(m) {
+      var tag = m.kind === 'announce' ? 'Announcement' : m.kind === 'private'
+        ? (m.mine ? 'Private to ' + m.to : info.isRef ? 'Private from ' + m.from : 'Private from ' + m.from) : null;
+      if (info.isRef && m.kind === 'private' && !m.mine) tag = 'Private from ' + m.from;
+      var node = el('div', { class: 'chat-msg ' + m.kind + (m.mine ? ' mine' : ''), 'data-id': m.id }, [
+        el('div', { class: 'chat-meta' }, [el('strong', { text: m.mine ? 'You' : m.from }), tag ? el('span', { class: 'chat-tag', text: tag }) : null,
+          el('span', { class: 'muted', text: ' ' + when(m.at), title: new Date(m.at).toLocaleString() }),
+          (info.isRef || m.mine) ? btn('×', function () {
+            if (!confirm('Remove this message?')) return;
+            api('POST', 'chat.delete', { id: m.id }).then(function () { node.remove(); }, function (e) { toast(e.message); });
+          }, 'btn-small btn-ghost chat-del', 'Remove this message') : null]),
+        el('div', { class: 'chat-body', text: m.text })]);
+      return node;
+    }
+    function add(msgs, initial) {
+      var stick = box.scrollHeight - box.scrollTop - box.clientHeight < 60;
+      if (initial) box.innerHTML = '';
+      msgs.forEach(function (m) { if (shown[m.id]) return; shown[m.id] = true; box.appendChild(line(m)); seen = Math.max(seen, m.id); });
+      if (!box.children.length) box.appendChild(el('p', { class: 'muted chat-empty', text: 'No messages yet. Say hello!' }));
+      else { var e = box.querySelector('.chat-empty'); if (e) e.remove(); }
+      if (initial || stick) box.scrollTop = box.scrollHeight;
+      var last = null;
+      box.querySelectorAll('.chat-msg.announce').forEach(function (n) { last = n; });
+      pinned.innerHTML = '';
+      if (last) pinned.appendChild(el('div', { class: 'chat-pin' }, [el('strong', { text: 'Latest announcement' }),
+        el('div', { class: 'chat-body', text: last.querySelector('.chat-body').textContent }),
+        el('div', { class: 'meta', text: last.querySelector('.chat-meta .muted').textContent })]));
+    }
+    function load(initial) {
+      if (loading || !mounted) return Promise.resolve();
+      loading = true;
+      return api('GET', 'chat.list', undefined, 'campaign=' + id + '&read=1' + (initial ? '' : '&after=' + seen)).then(function (j) {
+        loading = false;
+        if (initial) {
+          info = { isRef: j.isRef, members: j.members, ref: j.campaign.ref };
+          head.textContent = j.campaign.name;
+          sub.textContent = (j.isRef ? 'You are the Ref. ' : 'Ref: ' + j.campaign.ref + '. ') + (j.members.length ? 'Players: ' + j.members.map(function (m) { return m.username; }).join(', ') + '.' : 'No players in this campaign yet.');
+          drawComposer();
+        }
+        watchUrl = j.watch || null;
+        add(j.messages, initial);
+      }, function (e) {
+        loading = false;
+        if (initial) { box.innerHTML = ''; box.appendChild(el('p', { class: 'muted', text: e.message })); mounted = false; }
+      });
+    }
+    function send() {
+      var t = text.value.trim();
+      if (!t) return;
+      var body = { campaign: id, kind: mode, text: t };
+      if (mode === 'private' && info.isRef) body.to = to.value;
+      if (mode === 'announce') body.email = mail.checked;
+      if (mode === 'announce' && !confirm('Send this announcement to every player in the campaign' + (mail.checked ? ', and email it' : '') + '?')) return;
+      sendBtn.disabled = true;
+      api('POST', 'chat.send', body).then(function (j) {
+        sendBtn.disabled = false; text.value = '';
+        if (mode === 'announce') toast('Announcement sent to ' + j.players + (j.players === 1 ? ' player' : ' players') + (body.email ? ' (' + j.emailed + ' emailed).' : '.'));
+        load(false);
+      }, function (e) { sendBtn.disabled = false; toast(e.message); });
+    }
+    text.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+
+    // Watch the chat's change signal (a tiny file), with the API as the fallback.
+    var lastFetch = 0, ticks = 0;
+    function tick() {
+      if (!mounted || !document.body.contains(box) || !/^#chat=/.test(location.hash)) { mounted = false; return; }
+      setTimeout(tick, 2500);
+      ticks++;
+      if (document.hidden) return;
+      if (watchUrl) {
+        fetch(watchUrl, { cache: 'no-store', credentials: 'same-origin' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (t) {
+          if ((parseInt(t, 10) || 0) > seen) load(false);
+          else if (ticks % 12 === 0) load(false);
+        }, function () { /* try again next time */ });
+      } else load(false);
+    }
+
+    show([a('← All chats', '#chat', 'btn btn-small btn-ghost'), head, sub, pinned,
+      el('div', { class: 'card chat' }, [box,
+        el('div', { class: 'chat-compose' }, [modeBox, extra, tmpl, text, el('div', { class: 'btns' }, [sendBtn, el('span', { class: 'fine', text: 'Enter sends, Shift+Enter adds a line.' })])])])]);
+    root = box;
+    load(true).then(function () { setTimeout(tick, 2500); });
   }
 
   // ---------------------------------------------------------------- admin

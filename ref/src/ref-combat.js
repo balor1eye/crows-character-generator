@@ -7,10 +7,10 @@
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
   var activePCs = f('activePCs'), beast = f('beast'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
-      clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
-      int = f('int'), lightbox = f('lightbox'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
+      clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), feat = f('feat'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
+      int = f('int'), lightbox = f('lightbox'), linkOn = f('linkOn'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
       rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), sheetOp = f('sheetOp'),
-      test = f('test'), testLine = f('testLine');
+      tabletop = f('tabletop'), test = f('test'), testLine = f('testLine');
   var $ = A.$, clone = A.clone, d = A.d, d100 = A.d100, el = A.el, netEdges = A.netEdges, pick = A.pick, plural = A.plural, Rules = A.Rules,
       signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -101,7 +101,7 @@
       else fate = b && b.t === 'Human' ? ' — at 0 Stamina: a lone human flees; a group reduced by half flees.' : ' — at 0 Stamina: animals flee.';
     }
     // A linked crow whose sheet isn't loaded here yet gets the hit itself when it loads (its own armor decides); others get the change.
-    if (p && p.link && cloudOn()) sheetOp(p, { hit: amount, piercing: !!piercing, from: opts.from || '' });
+    if (p && p.link && linkOn()) sheetOp(p, { hit: amount, piercing: !!piercing, from: opts.from || '' });
     else if (c.kind === 'pc') syncPC(c, st0, w0);
     log('', '**' + c.name + '** takes ' + total + (piercing ? ' piercing' : '') + ' damage (' + (parts.join(', ') || 'no effect') + ')' + fate);
     // Players see where a foe's damage went only when the Ref shows them foes' Stamina.
@@ -133,7 +133,7 @@
   }
   /* Keep linked crows in the tracker in step with their sheets (the player may drink a potion, stand up, change armor). */
   setInterval(function () {
-    if (!state || !cloudOn() || window.CrowsCloud.typing) return;
+    if (!state || !linkOn() || window.CrowsCloud.typing) return;
     var changed = false;
     S().combat.list.forEach(function (x) { if (x.kind === 'pc' && pullVitals(x)) changed = true; });
     if (changed) { save(); render(); }
@@ -340,7 +340,7 @@
   function pend(act, by) {
     if (!act.items || !act.items.length) return;
     if (!act.id) { act.id = 'h' + nid(); act.round = S().combat.round; if (by) act.from = by.id; (S().combat.acts = S().combat.acts || []).push(act); S().combat.acts = S().combat.acts.slice(-30); }
-    if (!act.items.some(function (f) { return f.damage > 0; })) applyAct(act);
+    if (!tabletop() && !act.items.some(function (f) { return f.damage > 0; })) applyAct(act);   // Tabletop Mode: the Ref applies everything
   }
   /* A hit that is still waiting, for each crow it is aimed at: [{ id, who, label, items: [{ to, damage, piercing, conds, grab }], defended }]. */
   function pendingHits() {
@@ -577,6 +577,7 @@
   /* The fight as the players see it ({ active: false } when there's none), with the session. */
   function publicCombat() {
     var c = S().combat, run = runningEnc();
+    if (!liveOn()) return { active: false };
     if (!c.list.length) return { active: false, session: publicSession() };
     return { active: true, session: publicSession(), round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
       list: c.list.map(function (x) {
@@ -613,6 +614,8 @@
       feed: (c.feed || []).slice(-25) };
   }
   /* Called from save(): publish the fight soon after it changes. */
+  /* The fight is shared with the players unless this is a Tabletop Mode campaign or the Ref turned it off. */
+  function liveOn() { return !tabletop() && feat('live'); }
   function liveChanged() {
     if (live.off || !cloudOn() || !window.CrowsCloud.recordId) return;
     clearTimeout(live.timer);
@@ -644,7 +647,7 @@
   /* Bring in the actions players sent since the last one handled here. */
   function fetchActions() {
     var cid = window.CrowsCloud.recordId;
-    if (!cid || live.fetching) return;
+    if (!cid || live.fetching || !liveOn()) return;
     live.fetching = true;
     return window.CrowsCloud.api('GET', 'combat.actions', 'campaign=' + cid + '&after=' + (S().combat.lastAct || 0)).then(function (j) {
       if (window.CrowsCloud.recordId !== cid) return;
@@ -818,7 +821,7 @@
   }
   /* Under the combat tracker: who sees the fight, the players' latest actions, open reaction prompts, and assists. */
   function livePanel() {
-    if (!cloudOn()) return null;
+    if (!cloudOn() || !liveOn()) return null;
     var c = S().combat, crows = c.list.filter(function (x) { var p = pcOf(x); return p && p.link; }).length, acts = (c.acts || []).slice(-8).reverse();
     var open = (c.prompts || []).filter(function (p) { return !p.done && p.round === c.round; });
     return el('div', { class: 'live-box' }, [
@@ -844,6 +847,7 @@
   function friends(n) { return n === 1 ? '1 crow or ally' : n + ' crows and allies'; }
   /* The Session tab's combat card: the tracker, or while an encounter is running (its tracker is on the Encounters tab), a summary. */
   function renderCombat() {
+    renderTable();
     var c = S().combat, living = c.list.filter(function (x) { return !x.dead && x.kind === 'foe'; }), run = runningEnc();
     var head = el('h2', null, ['Combat', el('small', { text: living.length ? plural(living.length, 'foe') + ' standing' : 'tracker' })]);
     if (!run) { card('sec-combat', head, combatUI(false)); return; }
@@ -852,6 +856,16 @@
         ' \u00b7 ' + (c.round ? 'round ' + c.round + ', ' : 'not started, ') + plural(living.length, 'foe') + ' standing, ' +
         friends(c.list.filter(function (x) { return !x.dead && x.kind !== 'foe'; }).length) + '.']),
       btn('Go to the fight', function () { setTab('encounters'); }, 'btn-small btn-primary', 'The fight\u2019s tracker is on the Encounters tab, with the encounter')])]);
+  }
+  /* Start the next round: roll who acts first (1d10, 6+ is the crows and allies). */
+  function nextRound() {
+    var c = S().combat; c.round = (c.round || 0) + 1;
+    var r = d(10), crows = r >= 6; c.first = crows ? 'crows' : 'foes'; newRound(c);
+    ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (crows ? 'crows and allies act first' : 'enemies act first') };
+    var sur = c.round === 1 && c.surprise !== 'none' ? ' ' + (c.surprise === 'crows' ? 'The crows and their allies are' : 'The foes are') + ' surprised: no turn this round, and attacks against them get +1.' : '';
+    log('', '**Round ' + c.round + '.** Initiative 1d10 = ' + r + ' → ' + (crows ? 'crows and allies first.' : 'enemies first.') + sur);
+    feed('**Round ' + c.round + '.** ' + (crows ? 'Crows and allies act first.' : 'Enemies act first.') + sur);
+    save(); render();
   }
   /* The combat tracker's controls and list, for the Session tab and for a running encounter (inRun). */
   function combatUI(inRun) {
@@ -867,10 +881,7 @@
     return [
       el('div', { class: 'round-box' }, [
         el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: 'Round' }), el('div', { class: 'val', text: String(c.round || '—') })]),
-        btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', function () { c.round = (c.round || 0) + 1; var r = d(10); c.first = r >= 6 ? 'crows' : 'foes'; newRound(c); ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (r >= 6 ? 'crows and allies act first' : 'enemies act first') };
-          var sur = c.round === 1 && c.surprise !== 'none' ? ' ' + (c.surprise === 'crows' ? 'The crows and their allies are' : 'The foes are') + ' surprised: no turn this round, and attacks against them get +1.' : '';
-          log('', '**Round ' + c.round + '.** Initiative 1d10 = ' + r + ' → ' + (r >= 6 ? 'crows and allies first.' : 'enemies first.') + sur);
-          feed('**Round ' + c.round + '.** ' + (r >= 6 ? 'Crows and allies act first.' : 'Enemies act first.') + sur); save(); render(); }, 'btn-primary'),
+        btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', nextRound, 'btn-primary'),
         btn('Add party', addPartyToCombat),
         btn('Clear dead', function () { c.list = c.list.filter(function (x) { return !x.dead; }); save(); render(); }, 'btn-ghost'),
         inRun ? null : btn('End combat', function () {
@@ -883,7 +894,7 @@
       ]),
       el('div', { class: 'row', style: 'margin-top:.6rem' }, [field('Add creature', select, 'grow'), field('How many', count), field('Side', side),
         btn('Add', function () { addCombatant(select.value, int(count.value, 1), side.value); log('', 'Added ' + int(count.value, 1) + ' × ' + select.value + ' to combat.'); render(); })]),
-      el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next creature roll:' }),
+      !feat('sit') ? null : el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next creature roll:' }),
         sitBtn('flank', 'Flanking', 'An ally of the attacker is on the opposite side of the target: edge on melee attacks'),
         sitBtn('high', 'High ground', '1+ square above the target: edge on attacks'),
         sitBtn('cover', 'Cover', 'The target is half behind something solid: bane on attacks (not for attacks that ignore cover)'),
@@ -893,17 +904,18 @@
         sitBtn('charge', 'Charged 4+', 'It moved 4+ squares before attacking: a charging creature (big cat, wildcat, deer) deals its charge damage'),
         el('label', { class: 'fine', title: 'Squares beyond the attack’s range: -2 each' }, ['Beyond range ', el('input', { type: 'number', class: 'tiny', min: 0, max: 10, value: sit.far || '', 'aria-label': 'Squares beyond range',
           onchange: function () { sit.far = clamp(int(this.value, 0), 0, 10); } })])]),
-      el('p', { class: 'fine', text: 'Pick each creature’s target (⚄ picks one at random) and its attacks and maneuvers go at it. Its own conditions (weakened, blessed, prone, hidden, taunted) and the target’s (surprised, prone, grabbed, squeezing, unconscious) apply automatically, with the edge/bane set in the Dice panel and the battlefield buttons above (they reset after each roll). ' +
+      tabletop() ? tableStatus() : null,
+      el('p', { class: 'fine', text: tabletop() ? TABLETOP_NOTE : 'Pick each creature’s target (⚄ picks one at random) and its attacks and maneuvers go at it. Its own conditions (weakened, blessed, prone, hidden, taunted) and the target’s (surprised, prone, grabbed, squeezing, unconscious) apply automatically, with the edge/bane set in the Dice panel and the battlefield buttons above (they reset after each roll). ' +
         'A hit deals its damage and tier effects (weakened, prone, grabbed...) through AD, Stamina, and wounds, onto a crow’s own sheet (its worn armor and parry weapons absorb first), and can be undone from the Dice panel. A melee miss lets the target counter: a crow’s player is asked on their Play page.' }),
       el('div', { class: 'combat-list' }, c.list.length ? c.list.map(combatRow) : [el('p', { class: 'hint', text: 'No one in combat. Add creatures here, from the Bestiary, or from an encounter roll.' })]),
-      itemsPanel(),
+      feat('items') ? itemsPanel() : null,
       livePanel()
     ];
   }
   function combatRow(c) {
     var b = beast(c.cref), cb = S().combat, amt = el('input', { type: 'number', class: 'tiny', min: 0, max: 200, value: '', placeholder: 'dmg', 'aria-label': 'Amount' });
     function amount() { return clamp(int(amt.value, 0), 0, 999); }
-    var slots = slotsOf(c), linked = c.kind === 'pc' && pcOf(c) && pcOf(c).link && cloudOn(), g = byId(c.grabbedBy), holds = grabbing(c);
+    var slots = slotsOf(c), linked = c.kind === 'pc' && pcOf(c) && pcOf(c).link && linkOn(), g = byId(c.grabbedBy), holds = grabbing(c);
     var pcArt = c.kind === 'pc' && pcOf(c) && pcOf(c).art, art = pcArt ? { file: pcArt, thumb: pcArt } : b && c.kind !== 'pc' && REF.ART.creatures[b.n];
     var head = el('div', { class: 'cbt-top' }, [
       art ? el('button', { type: 'button', class: 'cbt-art', title: 'View ' + c.name + ' art', 'aria-label': 'View ' + c.name + ' art', onclick: function () { lightbox(c.name, [{ label: '', file: art.file }], art.thumb); } },
@@ -970,8 +982,50 @@
         })), ' /' + u[2]]);
       })));
     }
-    return el('div', { class: 'cbt ' + (c.kind === 'pc' ? 'pc' : c.kind === 'ally' ? 'ally' : '') + (c.dead ? ' dead' : '') }, [head, mid, atks,
+    var ref = tabletop() && b && c.kind !== 'pc' ? el('ul', { class: 'cbt-ref' }, b.atk.map(function (a) {
+      return el('li', null, [el('b', { text: a[0] }), ' ' + signed(a[1]) + ' ' + a[2] + ' · tier 2: ' + a[3] + ', tier 3: ' + a[4] + (a[5] ? ' — ' + a[5] : '')]);
+    })) : null;
+    return el('div', { class: 'cbt ' + (c.kind === 'pc' ? 'pc' : c.kind === 'ally' ? 'ally' : '') + (c.dead ? ' dead' : '') }, [head, mid, atks, ref,
       b && b.x && c.kind !== 'pc' ? el('div', { class: 'cbt-x', text: b.x }) : null]);
+  }
+  // ------------------------------------------------------------------ Tabletop Mode
+  var TABLETOP_NOTE = 'Tabletop Mode: the players act at the table, so nothing is sent to their screens. Linked crows still show their live vitals from their sheets. ' +
+    'Roll for the creatures here (a target is optional: the result says what it does), then press Apply, or use Damage, Heal, and the condition buttons, to change a crow or creature. Nothing is dealt, ended, or dropped on its own. ' +
+    'Read each creature\u2019s abilities under it, and keep its Stamina, conditions, reactions, and uses.';
+  /* Who acts first this round, how many foes have acted, and the last roll. */
+  function tableStatus() {
+    var c = S().combat, foes = c.list.filter(function (x) { return x.kind === 'foe' && !x.dead; }), n = foes.filter(function (x) { return c.round && x.acted === c.round; }).length, r = ui.dice;
+    return el('div', { class: 'tt-status' }, [
+      el('div', { class: 'row center' }, [
+        c.round ? el('span', { class: 'chip accent', text: c.first === 'crows' ? 'Crows and allies act first' : 'Enemies act first' }) : el('span', { class: 'fine', text: 'Start combat to roll who acts first.' }),
+        c.round && foes.length ? el('span', { class: 'chip' + (n === foes.length ? ' ok' : ''), text: n + ' of ' + foes.length + ' foes have acted' }) : null]),
+      r ? el('div', { class: 'tt-roll' }, [el('b', { text: r.label }), r.r ? ' \u00b7 ' + testLine(r.r) + ' \u2192 tier ' + r.r.tier + (r.dmg ? ' \u00b7 ' + r.dmg : '') : ' \u00b7 ' + (r.text || ''),
+        r.note ? el('div', { class: 'fine', text: r.note }) : null]) : null
+    ]);
+  }
+  /* The Session tab's "At the table" card (Tabletop Mode): every creature standing in one compact list, to hit, hurt, and mark acted. */
+  function renderTable() {
+    if (!tabletop()) return;
+    var c = S().combat, up = c.list.filter(function (x) { return x.kind !== 'pc' && !x.dead; }), crows = c.list.filter(function (x) { return x.kind === 'pc'; });
+    var rows = up.map(function (x) {
+      var b = beast(x.cref), amt = el('input', { type: 'number', class: 'tiny', min: 0, max: 200, value: '', placeholder: 'dmg', 'aria-label': 'Damage to ' + x.name });
+      return el('div', { class: 'tt-row ' + (x.kind === 'ally' ? 'ally' : '') }, [
+        el('b', { class: 'tt-name', text: x.name }),
+        el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Stam' }), btnPM('\u2212', function () { x.st = Math.max(0, x.st - 1); save(); render(); }), el('b', { text: String(x.st) }), el('span', { class: 'of', text: '/' + x.stMax }),
+          btnPM('+', function () { x.st = Math.min(x.stMax, x.st + 1); save(); render(); })]),
+        x.adMax ? el('span', { class: 'chip', text: 'AD ' + x.ad + '/' + x.adMax }) : null,
+        amt, btn('Hurt', function () { var n = clamp(int(amt.value, 0), 0, 999); if (n) damage(x, n, false); }, 'btn-small', 'Damage through AD, then Stamina'),
+        c.round ? el('button', { type: 'button', class: 'cond' + (x.acted === c.round ? ' on' : ''), 'aria-pressed': x.acted === c.round ? 'true' : 'false', text: x.acted === c.round ? 'acted \u2713' : 'acted',
+          onclick: function () { x.acted = x.acted === c.round ? 0 : c.round; save(); render(); } }) : null,
+        el('span', { class: 'chip' + (rxLeft(x) > 0 ? '' : ' warn'), title: 'Reactions left this round', text: 'rxn ' + Math.max(0, rxLeft(x)) + '/' + rxMax(x) })
+      ].concat(Object.keys(x.conds || {}).filter(function (k) { return x.conds[k]; }).map(function (k) { return el('span', { class: 'chip warn', text: k }); }))
+        .concat(b ? [el('div', { class: 'fine tt-atks', text: b.atk.map(function (a) { return a[0] + ' ' + signed(a[1]) + ' ' + a[2] + ' ' + a[3] + '/' + a[4]; }).join(' \u00b7 ') })] : []));
+    });
+    card('sec-table', el('h2', null, ['At the table', el('small', { text: 'enemies and allies, round ' + (c.round || '\u2014') })]), [
+      el('div', { class: 'row center' }, [btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', nextRound, 'btn-primary'),
+        crows.length ? el('span', { class: 'fine', text: 'Crows in the tracker: ' + crows.map(function (x) { return x.name; }).join(', ') + '.' }) : btn('Add party', addPartyToCombat, 'btn-ghost', 'Put the active crows into the tracker, to see them in the list')]),
+      rows.length ? el('div', { class: 'tt-board' }, rows) : el('p', { class: 'hint', text: 'No enemies yet. Add creatures in the Combat card below, from the Bestiary, or from an encounter roll.' })
+    ]);
   }
   function btnPM(t, fn) { return el('button', { type: 'button', class: 'pm', text: t, onclick: fn, 'aria-label': t === '+' ? 'increase' : 'decrease' }); }
 
@@ -984,6 +1038,6 @@
       itemsText: itemsText, newItem: newItem, onGround: onGround, itemNews: itemNews, putDown: putDown, creaturePickUp: creaturePickUp,
       creatureDrop: creatureDrop, dropFromFallen: dropFromFallen, groundText: groundText, itemsPanel: itemsPanel, pcOf: pcOf, healthWord: healthWord,
       publicSession: publicSession, publicCombat: publicCombat, restChoice: restChoice, restChoiceText: restChoiceText, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,
-      doomOptions: doomOptions, livePanel: livePanel, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
+      doomOptions: doomOptions, livePanel: livePanel, liveOn: liveOn, nextRound: nextRound, tableStatus: tableStatus, renderTable: renderTable, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
       SIZE_ORDER: SIZE_ORDER, live: live, dropQueued: dropQueued, MANEUVER_NOTES: MANEUVER_NOTES });
 })();

@@ -437,6 +437,27 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .cbt-art { padding: 0; border: 1px solid var(--line); border-radius: 6px; overflow: hidden; background: var(--slot); cursor: zoom-in; flex: none; }
 .cbt-art img { display: block; width: 3.5rem; height: 3.5rem; object-fit: cover; }
 
+/* Preferences and Tabletop Mode */
+.pref-mode { border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: 6px; padding: .6rem .8rem; background: var(--slot); }
+.pref-mode.on { border-left-color: var(--accent); }
+.pref-main { font-size: 1.05rem; }
+.pref-points { margin: .3rem 0 0; padding-left: 1.2rem; font-size: .88rem; color: var(--muted); }
+.pref-points li { margin: .15rem 0; }
+.pref-group { border: 1px solid var(--line); border-radius: 6px; margin: .7rem 0 0; padding: .3rem .7rem .6rem; }
+.pref-group legend { font-weight: 700; padding: 0 .3rem; }
+.pref-list { display: grid; grid-template-columns: repeat(auto-fill, minmax(240px, 1fr)); gap: .4rem .9rem; }
+.pref-item { display: flex; gap: .5rem; align-items: flex-start; cursor: pointer; }
+.pref-item input { margin-top: .25rem; flex: none; }
+.pref-item span { display: flex; flex-direction: column; }
+.tt-status { margin-top: .6rem; }
+.tt-roll { margin-top: .4rem; padding: .4rem .6rem; border: 1px solid var(--line); border-left: 4px solid var(--accent); border-radius: 6px; background: var(--slot); }
+.tt-board { display: grid; gap: .45rem; margin-top: .6rem; }
+.tt-row { display: flex; flex-wrap: wrap; gap: .35rem .6rem; align-items: center; border: 1px solid var(--line); border-left: 5px solid var(--accent); border-radius: 6px; padding: .4rem .6rem; background: var(--slot); }
+.tt-row.ally { border-left-color: var(--ok); }
+.tt-name { flex: 1 1 150px; }
+.tt-atks { flex: 1 0 100%; }
+.cbt-ref { margin: .3rem 0 0; padding-left: 1.1rem; font-size: .82rem; color: var(--muted); }
+
 </style>
 <script>
 /*
@@ -509,6 +530,7 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
   <div class="pages">
     <div class="page" id="page-session">
       <section class="card" id="sec-sess"></section>
+      <section class="card" id="sec-table" hidden></section>
       <section class="card" id="sec-dt"></section>
       <section class="card" id="sec-combat"></section>
       <section class="card" id="sec-rest"></section>
@@ -543,6 +565,10 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
       <section class="card" id="sec-npcs"></section>
       <section class="card" id="sec-notes"></section>
       <section class="card" id="sec-history"></section>
+    </div>
+    <div class="page" id="page-prefs">
+      <section class="card" id="sec-prefs-mode"></section>
+      <section class="card" id="sec-prefs-feat"></section>
     </div>
     <div class="page" id="page-bestiary">
       <section class="card" id="sec-bestiary"></section>
@@ -2261,6 +2287,8 @@ CROWS.NAME_IDEAS = {
     if (n.kind === 'control_taken') return d.owner + ' took back control of ' + crow + '.';
     if (n.kind === 'control_returned') return d.by + ' handed ' + crow + ' back to you.';
     if (n.kind === 'control_claimed') return d.by + ' (Ref of ' + (d.campaign || 'your campaign') + ') took control of ' + crow + '.';
+    if (n.kind === 'chat_announce') return d.from + ' announced in ' + (d.campaign || 'your campaign') + ': ' + d.text;
+    if (n.kind === 'chat_private') return d.from + ' sent you a private message in ' + (d.campaign || 'a campaign') + ': ' + d.text;
     return null;
   }
   function showNote(n) {
@@ -2281,6 +2309,12 @@ CROWS.NAME_IDEAS = {
     function dismiss() { box.remove(); call('POST', 'notes.dismiss', '', { id: n.id }).then(null, function () { /* shown again next time */ }); }
     if ((n.kind === 'join_accepted' || n.kind === 'control_given') && n.detail && n.detail.characterId && cfg.kind === 'characters' && !(rec && rec.id === n.detail.characterId)) {
       add('Open ' + (n.detail.character || 'that crow'), 'btn-primary', function () { dismiss(); location.href = 'play?id=' + n.detail.characterId; });
+    }
+    if (n.kind.indexOf('chat_') === 0 && n.detail && n.detail.campaignId) {
+      add('Open chat', 'btn-primary', function () {
+        dismiss();
+        if (!(window.CrowsChat && window.CrowsChat.open(n.detail.campaignId))) location.href = './#chat=' + n.detail.campaignId;
+      });
     }
     add('OK', '', dismiss);
     box.appendChild(row);
@@ -2540,6 +2574,8 @@ CROWS.NAME_IDEAS = {
     get controller() { return controller; },
     /* The id of the open record in the account, once it has one. */
     get recordId() { return rec && !linkId ? rec.id : null; },
+    /* What this page keeps in the account: 'characters' (Character Generator, Play) or 'campaigns' (Ref Screen). */
+    get kind() { return cfg ? cfg.kind : null; },
     /* True once the accounts server has answered (logged in or not). */
     get server() { return server; },
     /*
@@ -2668,6 +2704,256 @@ CROWS.NAME_IDEAS = {
     api: function (method, action, query, body) { return call(method, action, query, body); }
   };
   window.CrowsCloud = Cloud;
+})();
+
+</script>
+<script>
+/*
+ * Campaign chat panel for the Play page and the Ref Screen (window.CrowsChat): a Chat button in the corner that opens a
+ * panel over the page, so a table can talk without leaving the sheet or the fight. Same chat as the accounts site's
+ * Chat page (server/app/chat.php): messages for everyone, private ones between a player and the Ref, and the Ref's
+ * announcements. Only shown to someone logged in with a campaign to chat in. Needs CrowsDom and CrowsCloud.
+ */
+(function () {
+  'use strict';
+  var Dom = window.CrowsDom, Cloud = window.CrowsCloud;
+  if (!Dom || !Cloud) return;
+  var el = Dom.el, btn = Dom.btn;
+  var KEY = 'crows-chat-campaign', BADGE_POLL = 60000, LIVE_POLL = 2500;
+  var TEMPLATES = [
+    ['Session soon', 'Our session starts in 15 minutes. Please get your crow ready!'],
+    ['Session scheduled', 'Next session: [day and time]. Reply here if you can’t make it.'],
+    ['Cancelled', 'Tonight’s session is cancelled. I’ll post the new time here.'],
+    ['Availability', 'Please reply with the days you’re free this week so I can schedule the next session.']
+  ];
+
+  var started = false, camps = [], cur = null, isOpen = false, info = { isRef: false, members: [], ref: '' };
+  var seen = 0, shown = {}, loading = false, watchUrl = null, ticks = 0, mode = 'chat', timer = null;
+  var fab, badge, panel, select, log, pinned, text, to, mail, modeBox, extra, tmpl, sendBtn, sub;
+
+  function api(method, action, query, body) { return Cloud.api(method, action, query, body); }
+  function when(iso) {
+    var d = new Date(iso), s = (Date.now() - d.getTime()) / 1000;
+    if (isNaN(s)) return '';
+    if (s < 60) return 'just now';
+    if (s < 3600) return Math.floor(s / 60) + ' min ago';
+    if (s < 86400) return Math.floor(s / 3600) + ' h ago';
+    return d.toLocaleDateString();
+  }
+  function remembered() { try { return parseInt(localStorage.getItem(KEY), 10) || null; } catch (e) { return null; } }
+  function remember(id) { try { localStorage.setItem(KEY, String(id)); } catch (e) { /* ignore */ } }
+
+  function styles() {
+    if (document.getElementById('chat-styles')) return;
+    var css = '.chat-fab{position:fixed;left:14px;bottom:14px;z-index:60;box-shadow:var(--shadow)}' +
+      '.chat-fab .count{display:inline-block;min-width:1.2rem;margin-left:.35rem;padding:0 .3rem;border-radius:999px;background:var(--accent);color:#fff;font-size:.72rem;font-weight:700;text-align:center}' +
+      '.chat-panel{position:fixed;left:14px;bottom:60px;z-index:61;width:min(400px,calc(100vw - 28px));max-height:min(620px,calc(100vh - 80px));display:flex;flex-direction:column;' +
+      'background:var(--card);color:var(--ink);border:1px solid var(--line);border-radius:var(--radius);box-shadow:0 6px 24px rgba(0,0,0,.3);font:14px var(--font)}' +
+      '.chat-panel[hidden]{display:none}' +
+      '.chat-head{display:flex;gap:.5rem;align-items:center;padding:.5rem .7rem;border-bottom:1px solid var(--line)}' +
+      '.chat-head select{flex:1;min-width:0;padding:.3rem;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink);font:inherit}' +
+      '.chat-head strong{flex:1}' +
+      '.chat-sub{padding:.2rem .7rem;font-size:.78rem;color:var(--muted)}' +
+      '.chat-pin{margin:.4rem .7rem 0;padding:.35rem .6rem;border:1px solid var(--accent);border-left-width:5px;border-radius:8px;background:var(--soft);font-size:.85rem;max-height:6.5em;overflow:auto}' +
+      '.chat-pin .chat-body{margin-top:.1rem}' +
+      '.chat-log{flex:1;min-height:160px;overflow-y:auto;padding:.5rem .7rem;display:flex;flex-direction:column;gap:.4rem}' +
+      '.chat-msg{max-width:88%;padding:.3rem .6rem;border-radius:10px;background:var(--soft);border:1px solid var(--line);align-self:flex-start}' +
+      '.chat-msg.mine{align-self:flex-end}.chat-msg.announce{align-self:stretch;max-width:none;border-left:4px solid var(--accent)}.chat-msg.private{border-style:dashed}' +
+      '.chat-meta{display:flex;gap:.35rem;align-items:center;flex-wrap:wrap;font-size:.75rem;color:var(--muted)}.chat-meta strong{color:var(--ink)}' +
+      '.chat-tag{font-size:.65rem;font-weight:700;padding:0 .45rem;border-radius:999px;border:1px solid var(--accent);color:var(--accent)}' +
+      '.chat-del{margin-left:auto;min-height:0!important;padding:0 .4rem!important}' +
+      '.chat-body{white-space:pre-wrap;overflow-wrap:anywhere}' +
+      '.chat-compose{padding:.5rem .7rem;border-top:1px solid var(--line);display:grid;gap:.35rem}' +
+      '.chat-modes{display:flex;gap:.8rem;flex-wrap:wrap;font-size:.85rem}.chat-modes label{display:inline-flex;gap:.25rem;align-items:center}' +
+      '.chat-compose textarea,.chat-compose select{width:100%;padding:.4rem .5rem;border:1px solid var(--line);border-radius:6px;background:var(--paper);color:var(--ink);font:inherit}' +
+      '.chat-compose textarea{resize:vertical;min-height:3.2em}' +
+      '.chat-tmpl{display:flex;gap:.3rem;flex-wrap:wrap}.chat-note{font-size:.78rem;color:var(--muted)}' +
+      '.chat-row{display:flex;gap:.6rem;align-items:center}' +
+      '@media print{.chat-fab,.chat-panel{display:none!important}}';
+    var s = document.createElement('style'); s.id = 'chat-styles'; s.textContent = css; document.head.appendChild(s);
+  }
+
+  // ---------------------------------------------------------------- unread badge on the button
+  function setBadge(n) { badge.textContent = n ? String(n) : ''; badge.hidden = !n; fab.setAttribute('aria-label', 'Chat' + (n ? ', ' + n + ' unread' : '')); }
+  function refreshCampaigns() {
+    return api('GET', 'chat.campaigns').then(function (j) {
+      camps = j.campaigns;
+      if (!camps.length) { if (fab) { fab.hidden = true; } if (isOpen) toggle(false); return; }
+      if (fab) fab.hidden = false;
+      setBadge(camps.reduce(function (n, c) { return n + (c.id === cur && isOpen ? 0 : c.unread); }, 0));
+      if (isOpen) drawSelect();
+    }, function () { /* not logged in, or no chat on this server: nothing to show */ });
+  }
+  function pick() {
+    var want = Cloud.kind === 'campaigns' ? Cloud.recordId : null, ids = camps.map(function (c) { return c.id; });
+    if (cur && ids.indexOf(cur) >= 0) return cur;
+    if (want && ids.indexOf(want) >= 0 && camps.some(function (c) { return c.id === want && c.isRef; })) return want;
+    var r = remembered();
+    if (r && ids.indexOf(r) >= 0) return r;
+    var u = camps.filter(function (c) { return c.unread; })[0];
+    return (u || camps[0]).id;
+  }
+
+  // ---------------------------------------------------------------- the panel
+  function drawSelect() {
+    select.innerHTML = '';
+    camps.forEach(function (c) { select.appendChild(el('option', { value: c.id, text: c.name + (c.unread && c.id !== cur ? ' (' + c.unread + ')' : ''), selected: c.id === cur ? true : null })); });
+    select.hidden = camps.length < 2;
+    head.querySelector('strong').hidden = camps.length >= 2;
+    head.querySelector('strong').textContent = (camps.filter(function (c) { return c.id === cur; })[0] || { name: 'Chat' }).name;
+  }
+  var head;
+  function build() {
+    styles();
+    fab = btn('', function () { toggle(!isOpen); }, 'chat-fab btn-small', 'Chat with your Ref and players');
+    fab.hidden = true;
+    fab.appendChild(document.createTextNode('💬 Chat'));
+    badge = el('span', { class: 'count', hidden: true }); fab.appendChild(badge);
+    select = el('select', { 'aria-label': 'Campaign', onchange: function () { switchTo(parseInt(this.value, 10)); } });
+    head = el('div', { class: 'chat-head' }, [el('strong', { text: 'Chat' }), select,
+      btn('×', function () { toggle(false); }, 'btn-small btn-ghost', 'Close chat')]);
+    sub = el('div', { class: 'chat-sub' });
+    pinned = el('div');
+    log = el('div', { class: 'chat-log', role: 'log', 'aria-live': 'polite' });
+    text = el('textarea', { rows: 2, maxlength: 2000, placeholder: 'Write a message…', 'aria-label': 'Message' });
+    text.addEventListener('keydown', function (e) { if (e.key === 'Enter' && !e.shiftKey && !e.isComposing) { e.preventDefault(); send(); } });
+    to = el('select', { 'aria-label': 'Send privately to' });
+    mail = el('input', { type: 'checkbox' });
+    modeBox = el('div', { class: 'chat-modes' }); extra = el('div'); tmpl = el('div', { class: 'chat-tmpl' });
+    sendBtn = btn('Send', send, 'btn-primary btn-small');
+    panel = el('div', { class: 'chat-panel', role: 'dialog', 'aria-label': 'Campaign chat', hidden: true }, [head, sub, pinned, log,
+      el('div', { class: 'chat-compose' }, [modeBox, extra, tmpl, text, el('div', { class: 'chat-row' }, [sendBtn, el('span', { class: 'chat-note', text: 'Enter sends' })])])]);
+    document.body.appendChild(fab); document.body.appendChild(panel);
+    document.addEventListener('keydown', function (e) { if (e.key === 'Escape' && isOpen && panel.contains(document.activeElement)) toggle(false); });
+  }
+  function toggle(open) {
+    isOpen = open; panel.hidden = !open;
+    clearTimeout(timer);
+    if (!open) { setBadge(camps.reduce(function (n, c) { return n + c.unread; }, 0)); return; }
+    cur = pick(); drawSelect(); switchTo(cur);
+    setTimeout(function () { text.focus(); }, 50);
+  }
+  function switchTo(id) {
+    cur = id; remember(id); seen = 0; shown = {}; watchUrl = null; mode = 'chat'; ticks = 0;
+    log.innerHTML = ''; log.appendChild(el('p', { class: 'chat-note', text: 'Loading…' }));
+    drawSelect(); load(true);
+    clearTimeout(timer); timer = setTimeout(tick, LIVE_POLL);
+  }
+
+  function setMode(m) { mode = m; drawComposer(); }
+  function drawComposer() {
+    var opts = [['chat', 'Everyone']];
+    if (info.isRef) opts.push(['announce', 'Announcement'], ['private', 'Private']);
+    else opts.push(['private', 'Private to Ref']);
+    modeBox.innerHTML = '';
+    opts.forEach(function (o) {
+      modeBox.appendChild(el('label', null, [el('input', { type: 'radio', name: 'chat-mode', checked: mode === o[0] ? true : null, onchange: function () { setMode(o[0]); } }), ' ' + o[1]]));
+    });
+    extra.innerHTML = '';
+    if (mode === 'private' && info.isRef) {
+      to.innerHTML = '';
+      info.members.forEach(function (m) { to.appendChild(el('option', { value: m.username, text: m.username + (m.crows.length ? ' (' + m.crows.join(', ') + ')' : '') })); });
+      extra.appendChild(to);
+    }
+    if (mode === 'announce') extra.appendChild(el('label', { class: 'chat-note' }, [mail, ' Also email every player']));
+    if (mode === 'private') extra.appendChild(el('div', { class: 'chat-note', text: 'Only you and ' + (info.isRef ? 'that player' : info.ref) + ' see this.' }));
+    tmpl.innerHTML = '';
+    if (info.isRef) TEMPLATES.forEach(function (t) {
+      tmpl.appendChild(btn(t[0], function () { mode = 'announce'; drawComposer(); text.value = t[1]; text.focus(); }, 'btn-small btn-ghost', 'Fill in this announcement'));
+    });
+  }
+
+  function line(m) {
+    var tag = m.kind === 'announce' ? 'Announcement' : m.kind === 'private' ? (m.mine ? 'Private to ' + m.to : 'Private from ' + m.from) : null;
+    var node = el('div', { class: 'chat-msg ' + m.kind + (m.mine ? ' mine' : '') }, [
+      el('div', { class: 'chat-meta' }, [el('strong', { text: m.mine ? 'You' : m.from }), tag ? el('span', { class: 'chat-tag', text: tag }) : null,
+        el('span', { text: when(m.at), title: new Date(m.at).toLocaleString() }),
+        (info.isRef || m.mine) ? btn('×', function () {
+          if (!confirm('Remove this message?')) return;
+          api('POST', 'chat.delete', '', { id: m.id }).then(function () { node.remove(); }, function (e) { Dom.toast(e.message); });
+        }, 'btn-small btn-ghost chat-del', 'Remove this message') : null]),
+      el('div', { class: 'chat-body', text: m.text })]);
+    node._m = m;
+    return node;
+  }
+  function add(msgs, initial) {
+    var stick = log.scrollHeight - log.scrollTop - log.clientHeight < 60;
+    if (initial) log.innerHTML = '';
+    msgs.forEach(function (m) { if (shown[m.id]) return; shown[m.id] = true; log.appendChild(line(m)); seen = Math.max(seen, m.id); });
+    var e = log.querySelector('.chat-empty'); if (e) e.remove();
+    if (!log.children.length) log.appendChild(el('p', { class: 'chat-note chat-empty', text: 'No messages yet. Say hello!' }));
+    if (initial || stick) log.scrollTop = log.scrollHeight;
+    var last = null;
+    Array.prototype.forEach.call(log.querySelectorAll('.chat-msg.announce'), function (n) { last = n; });
+    pinned.innerHTML = '';
+    if (last) pinned.appendChild(el('div', { class: 'chat-pin' }, [el('strong', { text: 'Announcement' }), el('div', { class: 'chat-body', text: last._m.text })]));
+  }
+  function load(initial) {
+    if (loading || !isOpen) return Promise.resolve();
+    loading = true;
+    var id = cur;
+    return api('GET', 'chat.list', 'campaign=' + id + '&read=1' + (initial ? '' : '&after=' + seen)).then(function (j) {
+      loading = false;
+      if (id !== cur) return;
+      if (initial) {
+        info = { isRef: j.isRef, members: j.members, ref: j.campaign.ref };
+        sub.textContent = (j.isRef ? 'You are the Ref. ' : 'Ref: ' + j.campaign.ref + '. ') + (j.members.length ? 'Players: ' + j.members.map(function (m) { return m.username; }).join(', ') : 'No players yet');
+        drawComposer();
+      }
+      watchUrl = j.watch || null;
+      add(j.messages, initial);
+      camps.forEach(function (c) { if (c.id === id) c.unread = 0; });
+      setBadge(camps.reduce(function (n, c) { return n + c.unread; }, 0));
+    }, function (e) {
+      loading = false;
+      if (initial) { log.innerHTML = ''; log.appendChild(el('p', { class: 'chat-note', text: e.message })); }
+    });
+  }
+  function send() {
+    var t = text.value.trim();
+    if (!t) return;
+    var body = { campaign: cur, kind: mode, text: t };
+    if (mode === 'private' && info.isRef) body.to = to.value;
+    if (mode === 'announce') {
+      body.email = mail.checked;
+      if (!confirm('Send this announcement to every player in the campaign' + (body.email ? ', and email it' : '') + '?')) return;
+    }
+    sendBtn.disabled = true;
+    api('POST', 'chat.send', '', body).then(function (j) {
+      sendBtn.disabled = false; text.value = '';
+      if (body.kind === 'announce') Dom.toast('Announcement sent to ' + Dom.plural(j.players, 'player') + (body.email ? ' (' + j.emailed + ' emailed).' : '.'));
+      load(false);
+    }, function (e) { sendBtn.disabled = false; Dom.toast(e.message); });
+  }
+  function tick() {
+    if (!isOpen) return;
+    timer = setTimeout(tick, LIVE_POLL);
+    ticks++;
+    if (document.hidden) return;
+    if (watchUrl) {
+      fetch(watchUrl, { cache: 'no-store', credentials: 'same-origin' }).then(function (r) { return r.ok ? r.text() : ''; }).then(function (t) {
+        if ((parseInt(t, 10) || 0) > seen || ticks % 12 === 0) load(false);
+      }, function () { /* next time */ });
+    } else load(false);
+  }
+
+  function start(user) {
+    if (started || !user) return;
+    started = true;
+    build();
+    refreshCampaigns();
+    setInterval(function () { if (!document.hidden && !isOpen) refreshCampaigns(); }, BADGE_POLL);
+  }
+  Cloud.afterMe(start);
+  window.CrowsChat = {
+    /* Open the panel (on a campaign, if it's one of this person's). */
+    open: function (campaignId) {
+      if (!started) return false;
+      var go = function () { if (campaignId) cur = campaignId; toggle(true); };
+      if (camps.length) go(); else refreshCampaigns().then(go);
+      return true;
+    }
+  };
 })();
 
 </script>
@@ -3136,7 +3422,7 @@ CROWS.NAME_IDEAS = {
       counterDamage = f('counterDamage'), dropFromFallen = f('dropFromFallen'), defendRow = f('defendRow'), endDT = f('endDT'), feed = f('feed'), fxItems = f('fxItems'),
       heal = f('heal'), liveChanged = f('liveChanged'), newRound = f('newRound'), pendingText = f('pendingText'),
       releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderMaps = f('renderMaps'), renderEncounters = f('renderEncounters'),
-      renderParty = f('renderParty'), renderRules = f('renderRules'), renderSession = f('renderSession'),
+      renderParty = f('renderParty'), renderPrefs = f('renderPrefs'), renderRules = f('renderRules'), renderSession = f('renderSession'),
       renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
       renderWorld = f('renderWorld'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -3146,11 +3432,41 @@ CROWS.NAME_IDEAS = {
   var TAB_KEY = 'crows-pt2-ref-tab';
   // The tabs in their groups, shown with the group's name in the tab bar: [group, [[tab id, label], ...]].
   var TAB_GROUPS = [['Run', [['session', 'Session'], ['encounters', 'Encounters'], ['travel', 'Travel']]],
-    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World']]],
+    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World'], ['prefs', 'Preferences']]],
     ['Reference', [['bestiary', 'Bestiary'], ['maps', 'Maps'], ['tables', 'Tables'], ['rules', 'Rules']]]];
   var TABS = TAB_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
   var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge' };
   var EB_LABELS = [[-2, 'DB'], [-1, 'Bane'], [0, '—'], [1, 'Edge'], [2, 'DE']];
+  /*
+   * Campaign preferences (state.prefs): Tabletop Mode, and the functions the Ref turned off (prefs.off[key] = true). Everything is on
+   * by default. Each feature hides its tab (tab) or cards (ids); the rest are checked where the feature runs (feat('key')).
+   * [key, label, what it does, group, { tab } or { ids }]
+   */
+  var FEATURES = [
+    ['encounters', 'Encounters tab', 'Encounter rolls, saved encounters, and running an encounter.', 'Tabs', { tab: 'encounters' }],
+    ['travel', 'Travel tab', 'Overland days, pace, weather, travel encounters, and Miasma.', 'Tabs', { tab: 'travel' }],
+    ['village', 'Village tab', 'The village, its institutions, and the crypt.', 'Tabs', { tab: 'village' }],
+    ['world', 'World tab', 'Places, NPCs, notes, and session history.', 'Tabs', { tab: 'world' }],
+    ['bestiary', 'Bestiary tab', 'Creature stat blocks.', 'Tabs', { tab: 'bestiary' }],
+    ['maps', 'Maps tab', 'The maps.', 'Tabs', { tab: 'maps' }],
+    ['tables', 'Tables tab', 'The random tables.', 'Tabs', { tab: 'tables' }],
+    ['rules', 'Rules tab', 'The rules summary.', 'Tabs', { tab: 'rules' }],
+    ['sess', 'Session card', 'Session number and title, Start and End session, Export log.', 'Session tab', { ids: ['sec-sess'] }],
+    ['dt', 'Dungeon turns', 'The turn timer card, encounter checks, and the greed bonus.', 'Session tab', { ids: ['sec-dt'] }],
+    ['combat', 'Combat tracker', 'The Session tab\u2019s tracker for crows, foes, and allies.', 'Session tab', { ids: ['sec-combat'] }],
+    ['rest', 'Resting', 'Rests, Stamina recovery, and the party\u2019s rest choices.', 'Session tab', { ids: ['sec-rest'] }],
+    ['quick', 'Quick Reference', 'The reference list and conditions at the bottom of the Session tab.', 'Session tab', { ids: ['sec-quick'] }],
+    ['status', 'Party status', 'Live vitals tiles for the crows.', 'Party tab', { ids: ['sec-status'] }],
+    ['xp', 'Experience', 'XP awards, claims, and bonuses.', 'Party tab', { ids: ['sec-xp'] }],
+    ['hirelings', 'Hirelings', 'Hired help and their pay.', 'Party tab', { ids: ['sec-hirelings'] }],
+    ['ledger', 'Ledger', 'The party\u2019s money.', 'Party tab', { ids: ['sec-ledger'] }],
+    ['timer', 'Timer in the sidebar', 'The dungeon turn clock and End DT button.', 'Sidebar', { ids: ['side-timer'] }],
+    ['dice', 'Dice in the sidebar', 'Tests, dice, initiative, usage dice, and roll results.', 'Sidebar', { ids: ['side-dice'] }],
+    ['log', 'Log in the sidebar', 'The running log and the note box.', 'Sidebar', { ids: ['side-log'] }],
+    ['sit', 'Battlefield buttons', 'Flanking, cover, darkness, and the other modifiers on a creature\u2019s next roll.', 'Combat', {}],
+    ['items', 'Items on the ground', 'Loose items, and what creatures hold and drop.', 'Combat', {}],
+    ['live', 'Live fight with players', 'Share the fight with the players\u2019 Play pages and take their actions (accounts site).', 'Combat', {}]
+  ];
   var uid = 1;   // state (the campaign) and tab (the open tab) are shared: A.set('state', ...)
   var ui = { logAll: false, dice: null, tables: {}, beastQ: '', beastType: '', rulesQ: '', lastEnc: null, travelEnc: null, alarmFired: false, encSrc: '', encDraft: null, encFilter: 'open', encOpen: {}, encFocus: null, encEnd: null };
 
@@ -3197,7 +3513,8 @@ CROWS.NAME_IDEAS = {
         climate: 'Fall & Spring', habitat: 'Forest', nearby: 'Undead', lost: false, miasmaMod: 0, inMiasma: true },
       village: freshVillage(),
       party: [], xpLog: [], hirelings: [], ledger: [], places: [], npcs: [], encounters: [], notes: '', hooks: '', history: [],
-      dice: { mod: 0, net: 0, expr: '3d6', ud: 1 }
+      dice: { mod: 0, net: 0, expr: '3d6', ud: 1 },
+      prefs: { tabletop: false, off: {} }
     };
   }
   function withDefaults(base, s) {
@@ -3211,7 +3528,7 @@ CROWS.NAME_IDEAS = {
   }
   function save() {
     try { localStorage.setItem(STORAGE_KEY, JSON.stringify(state)); } catch (e) { /* storage unavailable */ }
-    if (state.session && state.session.combat) { releaseGrabs(); dropFromFallen(); }
+    if (state.session && state.session.combat && !tabletop()) { releaseGrabs(); dropFromFallen(); }
     if (window.CrowsCloud) { window.CrowsCloud.changed(); liveChanged(); }
   }
   function startNew() { if (window.CrowsCloud) window.CrowsCloud.startNew(); }
@@ -3227,6 +3544,22 @@ CROWS.NAME_IDEAS = {
       ['conds', 'used'].forEach(function (k) { if (!c[k] || typeof c[k] !== 'object' || Array.isArray(c[k])) c[k] = {}; });
     });
     return s;
+  }
+
+  // ------------------------------------------------------------------ preferences
+  function feat(key) { return !(state.prefs && state.prefs.off && state.prefs.off[key]); }
+  function tabletop() { return !!(state.prefs && state.prefs.tabletop); }
+  function tabOn(id) { return FEATURES.every(function (x) { return !(x[4].tab === id && !feat(x[0])); }); }
+  /* Hide what the Ref turned off, and show the Tabletop card only in Tabletop Mode. Cards hidden here are marked so they come back. */
+  function applyPrefs() {
+    var want = {};
+    FEATURES.forEach(function (x) { (x[4].ids || []).forEach(function (id) { want[id] = !feat(x[0]); }); });
+    want['sec-table'] = !tabletop();
+    Object.keys(want).forEach(function (id) {
+      var n = $(id); if (!n) return;
+      if (want[id]) { n.hidden = true; n.setAttribute('data-pref', '1'); }
+      else if (n.hasAttribute('data-pref')) { n.removeAttribute('data-pref'); n.hidden = false; }
+    });
   }
 
   // ------------------------------------------------------------------ log
@@ -3390,8 +3723,8 @@ CROWS.NAME_IDEAS = {
     var bar = $('tabbar'); bar.innerHTML = '';
     TAB_GROUPS.forEach(function (g) {
       var group = el('div', { class: 'tab-group', role: 'group', 'aria-label': g[0] }, [el('span', { class: 'tab-group-label', 'aria-hidden': 'true', text: g[0] })]);
-      g[1].forEach(function (t) { group.appendChild(tabButton(t)); });
-      bar.appendChild(group);
+      g[1].forEach(function (t) { if (tabOn(t[0])) group.appendChild(tabButton(t)); });
+      if (group.children.length > 1) bar.appendChild(group);
     });
     $('camp-name').textContent = state.name || state.village.name || '';
   }
@@ -3405,10 +3738,12 @@ CROWS.NAME_IDEAS = {
   }
   var layoutFitQueued = false;
   function render() {
+    if (!tabOn(tab)) { setTab('session'); return; }
     renderTabbar();
     renderSide();
     if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
-    ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, world: renderWorld, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
+    ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
+    applyPrefs();
     tick();
   }
 
@@ -3511,7 +3846,7 @@ CROWS.NAME_IDEAS = {
       shown.length ? list : el('p', { class: 'fine', text: 'Rolls and events appear here.' })]));
   }
 
-  A.add({ clamp: clamp, int: int, nid: nid, lookup: lookup, nowStamp: nowStamp, today: today, beast: beast, rollInText: rollInText, test: test,
+  A.add({ FEATURES: FEATURES, feat: feat, tabletop: tabletop, tabOn: tabOn, applyPrefs: applyPrefs, clamp: clamp, int: int, nid: nid, lookup: lookup, nowStamp: nowStamp, today: today, beast: beast, rollInText: rollInText, test: test,
       testLine: testLine, tierChip: tierChip, freshVillage: freshVillage, freshState: freshState, withDefaults: withDefaults, save: save,
       startNew: startNew, isCampaign: isCampaign, load: load, S: S, repairObjects: repairObjects, log: log, rich: rich, logItem: logItem, inp: inp,
       area: area, sel: sel, chk: chk, field: field, segEB: segEB, btn: btn, card: card, more: more, rowsTable: rowsTable, currentPlace: currentPlace,
@@ -4394,10 +4729,10 @@ CROWS.NAME_IDEAS = {
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
   var activePCs = f('activePCs'), beast = f('beast'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
-      clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
-      int = f('int'), lightbox = f('lightbox'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
+      clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), feat = f('feat'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
+      int = f('int'), lightbox = f('lightbox'), linkOn = f('linkOn'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
       rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), sheetOp = f('sheetOp'),
-      test = f('test'), testLine = f('testLine');
+      tabletop = f('tabletop'), test = f('test'), testLine = f('testLine');
   var $ = A.$, clone = A.clone, d = A.d, d100 = A.d100, el = A.el, netEdges = A.netEdges, pick = A.pick, plural = A.plural, Rules = A.Rules,
       signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -4488,7 +4823,7 @@ CROWS.NAME_IDEAS = {
       else fate = b && b.t === 'Human' ? ' — at 0 Stamina: a lone human flees; a group reduced by half flees.' : ' — at 0 Stamina: animals flee.';
     }
     // A linked crow whose sheet isn't loaded here yet gets the hit itself when it loads (its own armor decides); others get the change.
-    if (p && p.link && cloudOn()) sheetOp(p, { hit: amount, piercing: !!piercing, from: opts.from || '' });
+    if (p && p.link && linkOn()) sheetOp(p, { hit: amount, piercing: !!piercing, from: opts.from || '' });
     else if (c.kind === 'pc') syncPC(c, st0, w0);
     log('', '**' + c.name + '** takes ' + total + (piercing ? ' piercing' : '') + ' damage (' + (parts.join(', ') || 'no effect') + ')' + fate);
     // Players see where a foe's damage went only when the Ref shows them foes' Stamina.
@@ -4520,7 +4855,7 @@ CROWS.NAME_IDEAS = {
   }
   /* Keep linked crows in the tracker in step with their sheets (the player may drink a potion, stand up, change armor). */
   setInterval(function () {
-    if (!state || !cloudOn() || window.CrowsCloud.typing) return;
+    if (!state || !linkOn() || window.CrowsCloud.typing) return;
     var changed = false;
     S().combat.list.forEach(function (x) { if (x.kind === 'pc' && pullVitals(x)) changed = true; });
     if (changed) { save(); render(); }
@@ -4727,7 +5062,7 @@ CROWS.NAME_IDEAS = {
   function pend(act, by) {
     if (!act.items || !act.items.length) return;
     if (!act.id) { act.id = 'h' + nid(); act.round = S().combat.round; if (by) act.from = by.id; (S().combat.acts = S().combat.acts || []).push(act); S().combat.acts = S().combat.acts.slice(-30); }
-    if (!act.items.some(function (f) { return f.damage > 0; })) applyAct(act);
+    if (!tabletop() && !act.items.some(function (f) { return f.damage > 0; })) applyAct(act);   // Tabletop Mode: the Ref applies everything
   }
   /* A hit that is still waiting, for each crow it is aimed at: [{ id, who, label, items: [{ to, damage, piercing, conds, grab }], defended }]. */
   function pendingHits() {
@@ -4964,6 +5299,7 @@ CROWS.NAME_IDEAS = {
   /* The fight as the players see it ({ active: false } when there's none), with the session. */
   function publicCombat() {
     var c = S().combat, run = runningEnc();
+    if (!liveOn()) return { active: false };
     if (!c.list.length) return { active: false, session: publicSession() };
     return { active: true, session: publicSession(), round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
       list: c.list.map(function (x) {
@@ -5000,6 +5336,8 @@ CROWS.NAME_IDEAS = {
       feed: (c.feed || []).slice(-25) };
   }
   /* Called from save(): publish the fight soon after it changes. */
+  /* The fight is shared with the players unless this is a Tabletop Mode campaign or the Ref turned it off. */
+  function liveOn() { return !tabletop() && feat('live'); }
   function liveChanged() {
     if (live.off || !cloudOn() || !window.CrowsCloud.recordId) return;
     clearTimeout(live.timer);
@@ -5031,7 +5369,7 @@ CROWS.NAME_IDEAS = {
   /* Bring in the actions players sent since the last one handled here. */
   function fetchActions() {
     var cid = window.CrowsCloud.recordId;
-    if (!cid || live.fetching) return;
+    if (!cid || live.fetching || !liveOn()) return;
     live.fetching = true;
     return window.CrowsCloud.api('GET', 'combat.actions', 'campaign=' + cid + '&after=' + (S().combat.lastAct || 0)).then(function (j) {
       if (window.CrowsCloud.recordId !== cid) return;
@@ -5205,7 +5543,7 @@ CROWS.NAME_IDEAS = {
   }
   /* Under the combat tracker: who sees the fight, the players' latest actions, open reaction prompts, and assists. */
   function livePanel() {
-    if (!cloudOn()) return null;
+    if (!cloudOn() || !liveOn()) return null;
     var c = S().combat, crows = c.list.filter(function (x) { var p = pcOf(x); return p && p.link; }).length, acts = (c.acts || []).slice(-8).reverse();
     var open = (c.prompts || []).filter(function (p) { return !p.done && p.round === c.round; });
     return el('div', { class: 'live-box' }, [
@@ -5231,6 +5569,7 @@ CROWS.NAME_IDEAS = {
   function friends(n) { return n === 1 ? '1 crow or ally' : n + ' crows and allies'; }
   /* The Session tab's combat card: the tracker, or while an encounter is running (its tracker is on the Encounters tab), a summary. */
   function renderCombat() {
+    renderTable();
     var c = S().combat, living = c.list.filter(function (x) { return !x.dead && x.kind === 'foe'; }), run = runningEnc();
     var head = el('h2', null, ['Combat', el('small', { text: living.length ? plural(living.length, 'foe') + ' standing' : 'tracker' })]);
     if (!run) { card('sec-combat', head, combatUI(false)); return; }
@@ -5239,6 +5578,16 @@ CROWS.NAME_IDEAS = {
         ' \u00b7 ' + (c.round ? 'round ' + c.round + ', ' : 'not started, ') + plural(living.length, 'foe') + ' standing, ' +
         friends(c.list.filter(function (x) { return !x.dead && x.kind !== 'foe'; }).length) + '.']),
       btn('Go to the fight', function () { setTab('encounters'); }, 'btn-small btn-primary', 'The fight\u2019s tracker is on the Encounters tab, with the encounter')])]);
+  }
+  /* Start the next round: roll who acts first (1d10, 6+ is the crows and allies). */
+  function nextRound() {
+    var c = S().combat; c.round = (c.round || 0) + 1;
+    var r = d(10), crows = r >= 6; c.first = crows ? 'crows' : 'foes'; newRound(c);
+    ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (crows ? 'crows and allies act first' : 'enemies act first') };
+    var sur = c.round === 1 && c.surprise !== 'none' ? ' ' + (c.surprise === 'crows' ? 'The crows and their allies are' : 'The foes are') + ' surprised: no turn this round, and attacks against them get +1.' : '';
+    log('', '**Round ' + c.round + '.** Initiative 1d10 = ' + r + ' → ' + (crows ? 'crows and allies first.' : 'enemies first.') + sur);
+    feed('**Round ' + c.round + '.** ' + (crows ? 'Crows and allies act first.' : 'Enemies act first.') + sur);
+    save(); render();
   }
   /* The combat tracker's controls and list, for the Session tab and for a running encounter (inRun). */
   function combatUI(inRun) {
@@ -5254,10 +5603,7 @@ CROWS.NAME_IDEAS = {
     return [
       el('div', { class: 'round-box' }, [
         el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: 'Round' }), el('div', { class: 'val', text: String(c.round || '—') })]),
-        btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', function () { c.round = (c.round || 0) + 1; var r = d(10); c.first = r >= 6 ? 'crows' : 'foes'; newRound(c); ui.dice = { label: 'Initiative (round ' + c.round + ')', text: '1d10 = ' + r + ': ' + (r >= 6 ? 'crows and allies act first' : 'enemies act first') };
-          var sur = c.round === 1 && c.surprise !== 'none' ? ' ' + (c.surprise === 'crows' ? 'The crows and their allies are' : 'The foes are') + ' surprised: no turn this round, and attacks against them get +1.' : '';
-          log('', '**Round ' + c.round + '.** Initiative 1d10 = ' + r + ' → ' + (r >= 6 ? 'crows and allies first.' : 'enemies first.') + sur);
-          feed('**Round ' + c.round + '.** ' + (r >= 6 ? 'Crows and allies act first.' : 'Enemies act first.') + sur); save(); render(); }, 'btn-primary'),
+        btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', nextRound, 'btn-primary'),
         btn('Add party', addPartyToCombat),
         btn('Clear dead', function () { c.list = c.list.filter(function (x) { return !x.dead; }); save(); render(); }, 'btn-ghost'),
         inRun ? null : btn('End combat', function () {
@@ -5270,7 +5616,7 @@ CROWS.NAME_IDEAS = {
       ]),
       el('div', { class: 'row', style: 'margin-top:.6rem' }, [field('Add creature', select, 'grow'), field('How many', count), field('Side', side),
         btn('Add', function () { addCombatant(select.value, int(count.value, 1), side.value); log('', 'Added ' + int(count.value, 1) + ' × ' + select.value + ' to combat.'); render(); })]),
-      el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next creature roll:' }),
+      !feat('sit') ? null : el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next creature roll:' }),
         sitBtn('flank', 'Flanking', 'An ally of the attacker is on the opposite side of the target: edge on melee attacks'),
         sitBtn('high', 'High ground', '1+ square above the target: edge on attacks'),
         sitBtn('cover', 'Cover', 'The target is half behind something solid: bane on attacks (not for attacks that ignore cover)'),
@@ -5280,17 +5626,18 @@ CROWS.NAME_IDEAS = {
         sitBtn('charge', 'Charged 4+', 'It moved 4+ squares before attacking: a charging creature (big cat, wildcat, deer) deals its charge damage'),
         el('label', { class: 'fine', title: 'Squares beyond the attack’s range: -2 each' }, ['Beyond range ', el('input', { type: 'number', class: 'tiny', min: 0, max: 10, value: sit.far || '', 'aria-label': 'Squares beyond range',
           onchange: function () { sit.far = clamp(int(this.value, 0), 0, 10); } })])]),
-      el('p', { class: 'fine', text: 'Pick each creature’s target (⚄ picks one at random) and its attacks and maneuvers go at it. Its own conditions (weakened, blessed, prone, hidden, taunted) and the target’s (surprised, prone, grabbed, squeezing, unconscious) apply automatically, with the edge/bane set in the Dice panel and the battlefield buttons above (they reset after each roll). ' +
+      tabletop() ? tableStatus() : null,
+      el('p', { class: 'fine', text: tabletop() ? TABLETOP_NOTE : 'Pick each creature’s target (⚄ picks one at random) and its attacks and maneuvers go at it. Its own conditions (weakened, blessed, prone, hidden, taunted) and the target’s (surprised, prone, grabbed, squeezing, unconscious) apply automatically, with the edge/bane set in the Dice panel and the battlefield buttons above (they reset after each roll). ' +
         'A hit deals its damage and tier effects (weakened, prone, grabbed...) through AD, Stamina, and wounds, onto a crow’s own sheet (its worn armor and parry weapons absorb first), and can be undone from the Dice panel. A melee miss lets the target counter: a crow’s player is asked on their Play page.' }),
       el('div', { class: 'combat-list' }, c.list.length ? c.list.map(combatRow) : [el('p', { class: 'hint', text: 'No one in combat. Add creatures here, from the Bestiary, or from an encounter roll.' })]),
-      itemsPanel(),
+      feat('items') ? itemsPanel() : null,
       livePanel()
     ];
   }
   function combatRow(c) {
     var b = beast(c.cref), cb = S().combat, amt = el('input', { type: 'number', class: 'tiny', min: 0, max: 200, value: '', placeholder: 'dmg', 'aria-label': 'Amount' });
     function amount() { return clamp(int(amt.value, 0), 0, 999); }
-    var slots = slotsOf(c), linked = c.kind === 'pc' && pcOf(c) && pcOf(c).link && cloudOn(), g = byId(c.grabbedBy), holds = grabbing(c);
+    var slots = slotsOf(c), linked = c.kind === 'pc' && pcOf(c) && pcOf(c).link && linkOn(), g = byId(c.grabbedBy), holds = grabbing(c);
     var pcArt = c.kind === 'pc' && pcOf(c) && pcOf(c).art, art = pcArt ? { file: pcArt, thumb: pcArt } : b && c.kind !== 'pc' && REF.ART.creatures[b.n];
     var head = el('div', { class: 'cbt-top' }, [
       art ? el('button', { type: 'button', class: 'cbt-art', title: 'View ' + c.name + ' art', 'aria-label': 'View ' + c.name + ' art', onclick: function () { lightbox(c.name, [{ label: '', file: art.file }], art.thumb); } },
@@ -5357,8 +5704,50 @@ CROWS.NAME_IDEAS = {
         })), ' /' + u[2]]);
       })));
     }
-    return el('div', { class: 'cbt ' + (c.kind === 'pc' ? 'pc' : c.kind === 'ally' ? 'ally' : '') + (c.dead ? ' dead' : '') }, [head, mid, atks,
+    var ref = tabletop() && b && c.kind !== 'pc' ? el('ul', { class: 'cbt-ref' }, b.atk.map(function (a) {
+      return el('li', null, [el('b', { text: a[0] }), ' ' + signed(a[1]) + ' ' + a[2] + ' · tier 2: ' + a[3] + ', tier 3: ' + a[4] + (a[5] ? ' — ' + a[5] : '')]);
+    })) : null;
+    return el('div', { class: 'cbt ' + (c.kind === 'pc' ? 'pc' : c.kind === 'ally' ? 'ally' : '') + (c.dead ? ' dead' : '') }, [head, mid, atks, ref,
       b && b.x && c.kind !== 'pc' ? el('div', { class: 'cbt-x', text: b.x }) : null]);
+  }
+  // ------------------------------------------------------------------ Tabletop Mode
+  var TABLETOP_NOTE = 'Tabletop Mode: the players act at the table, so nothing is sent to their screens. Linked crows still show their live vitals from their sheets. ' +
+    'Roll for the creatures here (a target is optional: the result says what it does), then press Apply, or use Damage, Heal, and the condition buttons, to change a crow or creature. Nothing is dealt, ended, or dropped on its own. ' +
+    'Read each creature\u2019s abilities under it, and keep its Stamina, conditions, reactions, and uses.';
+  /* Who acts first this round, how many foes have acted, and the last roll. */
+  function tableStatus() {
+    var c = S().combat, foes = c.list.filter(function (x) { return x.kind === 'foe' && !x.dead; }), n = foes.filter(function (x) { return c.round && x.acted === c.round; }).length, r = ui.dice;
+    return el('div', { class: 'tt-status' }, [
+      el('div', { class: 'row center' }, [
+        c.round ? el('span', { class: 'chip accent', text: c.first === 'crows' ? 'Crows and allies act first' : 'Enemies act first' }) : el('span', { class: 'fine', text: 'Start combat to roll who acts first.' }),
+        c.round && foes.length ? el('span', { class: 'chip' + (n === foes.length ? ' ok' : ''), text: n + ' of ' + foes.length + ' foes have acted' }) : null]),
+      r ? el('div', { class: 'tt-roll' }, [el('b', { text: r.label }), r.r ? ' \u00b7 ' + testLine(r.r) + ' \u2192 tier ' + r.r.tier + (r.dmg ? ' \u00b7 ' + r.dmg : '') : ' \u00b7 ' + (r.text || ''),
+        r.note ? el('div', { class: 'fine', text: r.note }) : null]) : null
+    ]);
+  }
+  /* The Session tab's "At the table" card (Tabletop Mode): every creature standing in one compact list, to hit, hurt, and mark acted. */
+  function renderTable() {
+    if (!tabletop()) return;
+    var c = S().combat, up = c.list.filter(function (x) { return x.kind !== 'pc' && !x.dead; }), crows = c.list.filter(function (x) { return x.kind === 'pc'; });
+    var rows = up.map(function (x) {
+      var b = beast(x.cref), amt = el('input', { type: 'number', class: 'tiny', min: 0, max: 200, value: '', placeholder: 'dmg', 'aria-label': 'Damage to ' + x.name });
+      return el('div', { class: 'tt-row ' + (x.kind === 'ally' ? 'ally' : '') }, [
+        el('b', { class: 'tt-name', text: x.name }),
+        el('span', { class: 'pool' }, [el('span', { class: 'lbl', text: 'Stam' }), btnPM('\u2212', function () { x.st = Math.max(0, x.st - 1); save(); render(); }), el('b', { text: String(x.st) }), el('span', { class: 'of', text: '/' + x.stMax }),
+          btnPM('+', function () { x.st = Math.min(x.stMax, x.st + 1); save(); render(); })]),
+        x.adMax ? el('span', { class: 'chip', text: 'AD ' + x.ad + '/' + x.adMax }) : null,
+        amt, btn('Hurt', function () { var n = clamp(int(amt.value, 0), 0, 999); if (n) damage(x, n, false); }, 'btn-small', 'Damage through AD, then Stamina'),
+        c.round ? el('button', { type: 'button', class: 'cond' + (x.acted === c.round ? ' on' : ''), 'aria-pressed': x.acted === c.round ? 'true' : 'false', text: x.acted === c.round ? 'acted \u2713' : 'acted',
+          onclick: function () { x.acted = x.acted === c.round ? 0 : c.round; save(); render(); } }) : null,
+        el('span', { class: 'chip' + (rxLeft(x) > 0 ? '' : ' warn'), title: 'Reactions left this round', text: 'rxn ' + Math.max(0, rxLeft(x)) + '/' + rxMax(x) })
+      ].concat(Object.keys(x.conds || {}).filter(function (k) { return x.conds[k]; }).map(function (k) { return el('span', { class: 'chip warn', text: k }); }))
+        .concat(b ? [el('div', { class: 'fine tt-atks', text: b.atk.map(function (a) { return a[0] + ' ' + signed(a[1]) + ' ' + a[2] + ' ' + a[3] + '/' + a[4]; }).join(' \u00b7 ') })] : []));
+    });
+    card('sec-table', el('h2', null, ['At the table', el('small', { text: 'enemies and allies, round ' + (c.round || '\u2014') })]), [
+      el('div', { class: 'row center' }, [btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', nextRound, 'btn-primary'),
+        crows.length ? el('span', { class: 'fine', text: 'Crows in the tracker: ' + crows.map(function (x) { return x.name; }).join(', ') + '.' }) : btn('Add party', addPartyToCombat, 'btn-ghost', 'Put the active crows into the tracker, to see them in the list')]),
+      rows.length ? el('div', { class: 'tt-board' }, rows) : el('p', { class: 'hint', text: 'No enemies yet. Add creatures in the Combat card below, from the Bestiary, or from an encounter roll.' })
+    ]);
   }
   function btnPM(t, fn) { return el('button', { type: 'button', class: 'pm', text: t, onclick: fn, 'aria-label': t === '+' ? 'increase' : 'decrease' }); }
 
@@ -5371,7 +5760,7 @@ CROWS.NAME_IDEAS = {
       itemsText: itemsText, newItem: newItem, onGround: onGround, itemNews: itemNews, putDown: putDown, creaturePickUp: creaturePickUp,
       creatureDrop: creatureDrop, dropFromFallen: dropFromFallen, groundText: groundText, itemsPanel: itemsPanel, pcOf: pcOf, healthWord: healthWord,
       publicSession: publicSession, publicCombat: publicCombat, restChoice: restChoice, restChoiceText: restChoiceText, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,
-      doomOptions: doomOptions, livePanel: livePanel, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
+      doomOptions: doomOptions, livePanel: livePanel, liveOn: liveOn, nextRound: nextRound, tableStatus: tableStatus, renderTable: renderTable, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
       SIZE_ORDER: SIZE_ORDER, live: live, dropQueued: dropQueued, MANEUVER_NOTES: MANEUVER_NOTES });
 })();
 
@@ -5589,6 +5978,8 @@ CROWS.NAME_IDEAS = {
    * Needs the Ref to be logged in on the hosted site.
    */
   function cloudOn() { return !!(window.CrowsCloud && window.CrowsCloud.active); }
+  /* Crows tied to the players' sheets: live in Tabletop Mode too, where the Ref still reads them and applies changes by hand. */
+  function linkOn() { return cloudOn(); }
   function linkToken(text) { var m = /(?:share=|addlink=)?([0-9a-f]{64})/.exec(String(text || '').trim()); return m ? m[1] : null; }
   /*
    * Add or refresh a linked crow from the server's copy (link.get, or link.save's answer). Ref-side bookkeeping (status, AD,
@@ -5682,7 +6073,7 @@ CROWS.NAME_IDEAS = {
     if (o.cond) { p.conds = p.conds || {}; Object.keys(o.cond).forEach(function (k) { if (o.cond[k]) p.conds[k] = true; else delete p.conds[k]; }); }
   }
   /* A linked crow's character as this screen has it (with the Ref's unsaved changes), or null if it isn't loaded. */
-  function sheetOf(p) { var sh = p && p.link && cloudOn() ? sheets[p.link] : null; return sh ? sh.local : null; }
+  function sheetOf(p) { var sh = p && p.link && linkOn() ? sheets[p.link] : null; return sh ? sh.local : null; }
   /* A copy of a saved character, ready for the sheet math. */
   function prepared(data) {
     var c = clone(data);
@@ -5705,7 +6096,7 @@ CROWS.NAME_IDEAS = {
     p.claims = c.play.xpClaims.filter(function (x) { return x && c.play.claimsAnswered.indexOf(x.id) < 0; });
   }
   function sheetOp(p, o) {
-    if (!p.link || !cloudOn()) { applyOp(p, o); return; }
+    if (!p.link || !linkOn()) { applyOp(p, o); return; }
     (p.owed = p.owed || []).push(o);
     var c = sheetOf(p);
     if (!c) { applyOp(p, o); return; }   // made on the sheet once it's loaded (linkPC)
@@ -6111,7 +6502,7 @@ CROWS.NAME_IDEAS = {
     ]);
   }
 
-  A.add({ importCharacter: importCharacter, pcFromSave: pcFromSave, cloudOn: cloudOn, linkToken: linkToken, linkPC: linkPC, watchLinked: watchLinked,
+  A.add({ importCharacter: importCharacter, pcFromSave: pcFromSave, cloudOn: cloudOn, linkOn: linkOn, linkToken: linkToken, linkPC: linkPC, watchLinked: watchLinked,
       addFromLink: addFromLink, refreshLinked: refreshLinked, unlinkPC: unlinkPC, applyOp: applyOp, sheetOf: sheetOf, prepared: prepared,
       applyToSheet: applyToSheet, replay: replay, fromSheet: fromSheet, sheetOp: sheetOp, queueSave: queueSave, sendSheet: sendSheet, openSheet: openSheet, takeControl: takeControl, takeBtn: takeBtn, newPC: newPC, loadInvites: loadInvites,
       answerRequest: answerRequest, setListing: setListing, listBox: listBox, renderInvite: renderInvite, statusPCs: statusPCs,
@@ -6519,6 +6910,63 @@ CROWS.NAME_IDEAS = {
 
   A.add({ renderWorld: renderWorld, randomNPC: randomNPC, renderBestiary: renderBestiary, renderMaps: renderMaps, beastCard: beastCard, renderTables: renderTables, lightbox: lightbox,
       parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
+})();
+
+</script>
+<script>
+/*
+ * Ref Screen: the Preferences tab: Tabletop Mode, and turning individual functions off. The preferences are state.prefs
+ * ({ tabletop, off: { feature: true } }), part of the campaign and saved with it; ref-core.js has the feature list and hides
+ * what is off. See ref-core.js.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsRefApp, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var btn = f('btn'), card = f('card'), feat = f('feat'), log = f('log'), render = f('render'), save = f('save'), tabletop = f('tabletop');
+  var el = A.el, FEATURES = A.FEATURES, plural = A.plural, toast = A.toast;
+  var state = A.state; A.share('state', function (v) { state = v; });
+
+  var GROUPS = ['Tabs', 'Session tab', 'Party tab', 'Sidebar', 'Combat'];
+  /* What Tabletop Mode changes, for the card. */
+  var TABLETOP_POINTS = [
+    'The live fight is off: nothing is shared with the players’ Play pages, and nothing they send arrives. Sheets stay linked, so you see the crows’ vitals live and your changes still go onto their sheets.',
+    'Nothing happens on its own: you press Apply on a hit, Damage or Heal, or a condition, and grabs, dropped items, and effects wait for you.',
+    'Creatures roll for the table: pick an attack and the result (tier and damage) is shown. A target is optional; with one, its hit waits for you to apply.',
+    'The Session tab gets an At the table card: every enemy and ally in one list to hurt, heal, and mark as having acted, with its attacks in view.',
+    'Each creature in the tracker lists its attacks with their tier damage and notes, uses, reactions, and traits.',
+    'Everything else (the timer, encounters, travel, rests, the log, the dice) works as before, and you can turn any of it off below.'
+  ];
+
+  function renderPrefs() {
+    var tt = tabletop(), off = Object.keys(state.prefs.off).filter(function (k) { return state.prefs.off[k]; }).length;
+    card('sec-prefs-mode', el('h2', null, ['Campaign Preferences', el('small', { text: 'how this campaign is run' })]), [
+      el('div', { class: 'pref-mode' + (tt ? ' on' : '') }, [
+        el('label', { class: 'check pref-main' }, [el('input', { type: 'checkbox', checked: tt, id: 'pref-tabletop', onchange: function () {
+          state.prefs.tabletop = this.checked;
+          log('', '**Tabletop Mode ' + (this.checked ? 'on' : 'off') + '.**');
+          save(); render(); toast(this.checked ? 'Tabletop Mode is on.' : 'Tabletop Mode is off: crows and players are linked again.');
+        } }), el('b', { text: ' Tabletop Mode' })]),
+        el('p', { class: 'hint', text: 'A reference and assistant for running the game at a table, in person or on a call, where the players handle their own crows. It keeps track of the enemies and their abilities and leaves most actions to happen live.' }),
+        el('ul', { class: 'pref-points' }, TABLETOP_POINTS.map(function (t) { return el('li', { text: t }); }))
+      ])
+    ]);
+    card('sec-prefs-feat', el('h2', null, ['Functions', el('small', { text: off ? plural(off, 'function') + ' turned off' : 'everything is on' })]), [
+      el('p', { class: 'hint', text: 'Everything is on by default. Untick what you don’t use and it disappears from the screen. Nothing is deleted: your data stays, and ticking a function brings it back.' }),
+      off ? btn('Turn everything on', function () { state.prefs.off = {}; save(); render(); }, 'btn-small') : null
+    ].concat(GROUPS.map(function (g) {
+      var items = FEATURES.filter(function (x) { return x[3] === g; });
+      return el('fieldset', { class: 'pref-group' }, [el('legend', { text: g }), el('div', { class: 'pref-list' }, items.map(function (x) {
+        var box = el('input', { type: 'checkbox', checked: feat(x[0]), 'data-feature': x[0], onchange: function () {
+          if (this.checked) delete state.prefs.off[x[0]]; else state.prefs.off[x[0]] = true;
+          save(); render();
+        } });
+        return el('label', { class: 'pref-item' }, [box, el('span', null, [el('b', { text: x[1] }), el('span', { class: 'fine', text: x[2] })])]);
+      }))]);
+    })));
+  }
+
+  A.add({ renderPrefs: renderPrefs });
 })();
 
 </script>

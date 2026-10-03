@@ -63,6 +63,8 @@
    * Needs the Ref to be logged in on the hosted site.
    */
   function cloudOn() { return !!(window.CrowsCloud && window.CrowsCloud.active); }
+  /* Crows tied to the players' sheets: live in Tabletop Mode too, where the Ref still reads them and applies changes by hand. */
+  function linkOn() { return cloudOn(); }
   function linkToken(text) { var m = /(?:share=|addlink=)?([0-9a-f]{64})/.exec(String(text || '').trim()); return m ? m[1] : null; }
   /*
    * Add or refresh a linked crow from the server's copy (link.get, or link.save's answer). Ref-side bookkeeping (status, AD,
@@ -156,7 +158,7 @@
     if (o.cond) { p.conds = p.conds || {}; Object.keys(o.cond).forEach(function (k) { if (o.cond[k]) p.conds[k] = true; else delete p.conds[k]; }); }
   }
   /* A linked crow's character as this screen has it (with the Ref's unsaved changes), or null if it isn't loaded. */
-  function sheetOf(p) { var sh = p && p.link && cloudOn() ? sheets[p.link] : null; return sh ? sh.local : null; }
+  function sheetOf(p) { var sh = p && p.link && linkOn() ? sheets[p.link] : null; return sh ? sh.local : null; }
   /* A copy of a saved character, ready for the sheet math. */
   function prepared(data) {
     var c = clone(data);
@@ -179,7 +181,7 @@
     p.claims = c.play.xpClaims.filter(function (x) { return x && c.play.claimsAnswered.indexOf(x.id) < 0; });
   }
   function sheetOp(p, o) {
-    if (!p.link || !cloudOn()) { applyOp(p, o); return; }
+    if (!p.link || !linkOn()) { applyOp(p, o); return; }
     (p.owed = p.owed || []).push(o);
     var c = sheetOf(p);
     if (!c) { applyOp(p, o); return; }   // made on the sheet once it's loaded (linkPC)
@@ -585,7 +587,7 @@
     ]);
   }
 
-  A.add({ importCharacter: importCharacter, pcFromSave: pcFromSave, cloudOn: cloudOn, linkToken: linkToken, linkPC: linkPC, watchLinked: watchLinked,
+  A.add({ importCharacter: importCharacter, pcFromSave: pcFromSave, cloudOn: cloudOn, linkOn: linkOn, linkToken: linkToken, linkPC: linkPC, watchLinked: watchLinked,
       addFromLink: addFromLink, refreshLinked: refreshLinked, unlinkPC: unlinkPC, applyOp: applyOp, sheetOf: sheetOf, prepared: prepared,
       applyToSheet: applyToSheet, replay: replay, fromSheet: fromSheet, sheetOp: sheetOp, queueSave: queueSave, sendSheet: sendSheet, openSheet: openSheet, takeControl: takeControl, takeBtn: takeBtn, newPC: newPC, loadInvites: loadInvites,
       answerRequest: answerRequest, setListing: setListing, listBox: listBox, renderInvite: renderInvite, statusPCs: statusPCs,

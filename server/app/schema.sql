@@ -172,11 +172,14 @@ CREATE TABLE IF NOT EXISTS notifications (
   CONSTRAINT fk_notes_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Which emails a user wants. No row means the defaults (all on). new_accounts only matters for admins.
+-- Which emails a user wants. No row means the defaults (all on). new_accounts only matters for admins, join_requests for Refs.
 CREATE TABLE IF NOT EXISTS email_prefs (
   user_id INT UNSIGNED NOT NULL PRIMARY KEY,
   join_decisions TINYINT(1) NOT NULL DEFAULT 1,
   new_accounts TINYINT(1) NOT NULL DEFAULT 1,
+  join_requests TINYINT(1) NOT NULL DEFAULT 1,
+  control_changes TINYINT(1) NOT NULL DEFAULT 1,
+  chat_alerts TINYINT(1) NOT NULL DEFAULT 1,
   CONSTRAINT fk_prefs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
@@ -310,4 +313,30 @@ CREATE TABLE IF NOT EXISTS oauth_states (
   user_id INT UNSIGNED NULL,
   expires_at DATETIME NOT NULL,
   KEY k_expires (expires_at)
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Campaign chat (see chat.php). 'chat' is for everyone in the campaign, 'announce' is the Ref's notice to all players,
+-- and 'private' passes between the Ref and one player (to_user_id is who it was sent to). The newest 2000 per campaign are kept.
+CREATE TABLE IF NOT EXISTS chat_messages (
+  id INT UNSIGNED NOT NULL AUTO_INCREMENT PRIMARY KEY,
+  campaign_id INT UNSIGNED NOT NULL,
+  sender_id INT UNSIGNED NOT NULL,
+  kind ENUM('chat','announce','private') NOT NULL DEFAULT 'chat',
+  to_user_id INT UNSIGNED NULL,
+  body TEXT NOT NULL,
+  created_at DATETIME NOT NULL,
+  KEY k_campaign (campaign_id, id),
+  KEY k_sender (sender_id, created_at),
+  CONSTRAINT fk_chat_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE,
+  CONSTRAINT fk_chat_sender FOREIGN KEY (sender_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- The newest message each user has seen in each campaign's chat (for unread counts).
+CREATE TABLE IF NOT EXISTS chat_reads (
+  user_id INT UNSIGNED NOT NULL,
+  campaign_id INT UNSIGNED NOT NULL,
+  last_id INT UNSIGNED NOT NULL DEFAULT 0,
+  PRIMARY KEY (user_id, campaign_id),
+  CONSTRAINT fk_chatread_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE,
+  CONSTRAINT fk_chatread_campaign FOREIGN KEY (campaign_id) REFERENCES campaigns(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;

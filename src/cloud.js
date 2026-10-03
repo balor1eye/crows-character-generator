@@ -245,6 +245,8 @@
     if (n.kind === 'control_taken') return d.owner + ' took back control of ' + crow + '.';
     if (n.kind === 'control_returned') return d.by + ' handed ' + crow + ' back to you.';
     if (n.kind === 'control_claimed') return d.by + ' (Ref of ' + (d.campaign || 'your campaign') + ') took control of ' + crow + '.';
+    if (n.kind === 'chat_announce') return d.from + ' announced in ' + (d.campaign || 'your campaign') + ': ' + d.text;
+    if (n.kind === 'chat_private') return d.from + ' sent you a private message in ' + (d.campaign || 'a campaign') + ': ' + d.text;
     return null;
   }
   function showNote(n) {
@@ -265,6 +267,12 @@
     function dismiss() { box.remove(); call('POST', 'notes.dismiss', '', { id: n.id }).then(null, function () { /* shown again next time */ }); }
     if ((n.kind === 'join_accepted' || n.kind === 'control_given') && n.detail && n.detail.characterId && cfg.kind === 'characters' && !(rec && rec.id === n.detail.characterId)) {
       add('Open ' + (n.detail.character || 'that crow'), 'btn-primary', function () { dismiss(); location.href = 'play?id=' + n.detail.characterId; });
+    }
+    if (n.kind.indexOf('chat_') === 0 && n.detail && n.detail.campaignId) {
+      add('Open chat', 'btn-primary', function () {
+        dismiss();
+        if (!(window.CrowsChat && window.CrowsChat.open(n.detail.campaignId))) location.href = './#chat=' + n.detail.campaignId;
+      });
     }
     add('OK', '', dismiss);
     box.appendChild(row);
@@ -524,6 +532,8 @@
     get controller() { return controller; },
     /* The id of the open record in the account, once it has one. */
     get recordId() { return rec && !linkId ? rec.id : null; },
+    /* What this page keeps in the account: 'characters' (Character Generator, Play) or 'campaigns' (Ref Screen). */
+    get kind() { return cfg ? cfg.kind : null; },
     /* True once the accounts server has answered (logged in or not). */
     get server() { return server; },
     /*

@@ -359,6 +359,45 @@ def smoke():
     check("ending the fight takes it off the player's page", p1.get("combat.mine", id=ch["id"])["combat"] is None)
     fails("acting after the fight is over", 409, lambda: p1.post("combat.act", {"id": ch["id"], "campaign": camp["id"], "action": {"type": "done"}}))
 
+    # campaign chat
+    cid = camp["id"]
+    check("Ref and both players see the campaign's chat", all(any(c["id"] == cid for c in u.get("chat.campaigns")["campaigns"]) for u in (ref, p1, p2)))
+    fails("someone outside the campaign can't read its chat", 404, lambda: admin.get("chat.list", campaign=cid))
+    fails("or write in it", 404, lambda: admin.post("chat.send", {"campaign": cid, "text": "hi"}))
+    check("the chat lists the players", {m["username"] for m in ref.get("chat.list", campaign=cid)["members"]} == {"test_player", "test_player2"})
+    m1 = p1.post("chat.send", {"campaign": cid, "text": "Hello table"})["id"]
+    check("everyone sees an open message", all(any(m["text"] == "Hello table" for m in u.get("chat.list", campaign=cid)["messages"]) for u in (ref, p2)))
+    check("a player has no unread of their own message", [c for c in p1.get("chat.campaigns")["campaigns"] if c["id"] == cid][0]["unread"] == 0)
+    check("others do", [c for c in p2.get("chat.campaigns")["campaigns"] if c["id"] == cid][0]["unread"] >= 1)
+    p2.get("chat.list", campaign=cid, read=1)
+    check("reading clears the unread count", [c for c in p2.get("chat.campaigns")["campaigns"] if c["id"] == cid][0]["unread"] == 0)
+    fails("players can't announce", 403, lambda: p1.post("chat.send", {"campaign": cid, "kind": "announce", "text": "x"}))
+    fails("empty messages are refused", 400, lambda: p1.post("chat.send", {"campaign": cid, "text": "   "}))
+    pm = p1.post("chat.send", {"campaign": cid, "kind": "private", "text": "Secret for the Ref"})["id"]
+    check("a player's private message reaches the Ref only", any(m["id"] == pm for m in ref.get("chat.list", campaign=cid)["messages"])
+          and all(m["id"] != pm for m in p2.get("chat.list", campaign=cid)["messages"]))
+    check("the Ref gets a notification of it", any(n["kind"] == "chat_private" and n["detail"]["from"] == "test_player" for n in ref.get("notes.list")["items"]))
+    fails("the Ref must say which player", 400, lambda: ref.post("chat.send", {"campaign": cid, "kind": "private", "text": "x"}))
+    rp = ref.post("chat.send", {"campaign": cid, "kind": "private", "to": "test_player2", "text": "Just for you"})["id"]
+    check("the Ref's private message reaches that player only", any(m["id"] == rp for m in p2.get("chat.list", campaign=cid)["messages"])
+          and all(m["id"] != rp for m in p1.get("chat.list", campaign=cid)["messages"]))
+    an = ref.post("chat.send", {"campaign": cid, "kind": "announce", "text": "Session Friday", "email": True})
+    check("an announcement goes to every player", an["players"] == 2)
+    check("with a notification each", all(any(n["kind"] == "chat_announce" and n["detail"]["text"] == "Session Friday" for n in u.get("notes.list")["items"]) for u in (p1, p2)))
+    check("and an email each", an["emailed"] == 2)
+    p1.get("chat.list", campaign=cid, read=1)
+    check("looking at the chat clears its notifications", not any(n["kind"].startswith("chat_") and n["detail"]["campaignId"] == cid for n in p1.get("notes.list")["items"]))
+    check("only newer messages come back with after", [m["id"] for m in p1.get("chat.list", campaign=cid, after=an["id"] - 1)["messages"]] == [an["id"]])
+    fails("players can't remove others' messages", 403, lambda: p2.post("chat.delete", {"id": m1}))
+    p1.post("chat.delete", {"id": m1})
+    ref.post("chat.delete", {"id": pm})
+    check("the Ref and senders can remove messages", all(m["id"] not in (m1, pm) for m in ref.get("chat.list", campaign=cid)["messages"]))
+    for pref in ("chatAlerts",):
+        p2.post("account.setEmailPrefs", {pref: False})
+    check("a player can turn chat emails off", p2.get("account.emailPrefs")["prefs"]["chatAlerts"] is False)
+    check("and then isn't emailed", ref.post("chat.send", {"campaign": cid, "kind": "announce", "text": "Again", "email": True})["emailed"] == 1)
+    p2.post("account.setEmailPrefs", {"chatAlerts": True})
+
     # page layouts (how each user arranged the blocks on a page)
     fails("logged out: no layouts", 401, lambda: anon.get("prefs.get"))
     lay = {"preset": "two", "cols": [["play-vitals", "summary"], ["play-attacks", "bad id!"]]}

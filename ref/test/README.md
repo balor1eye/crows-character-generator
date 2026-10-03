@@ -121,6 +121,16 @@ that a creature given the crow as its target hits it only when applied (the play
 python3 ref/test/run_live_combat_test.py            # after server/deploy.sh; --headed shows both browsers
 ```
 
+## Campaign Preferences (`prefs_test.js`, run by `run_prefs_test.py`)
+
+Local build only. Checks that every function is on and Tabletop Mode off by default, that unticking a function hides its tab or card
+(and ticking it brings it back), and that in Tabletop Mode a creature's attack at a crow waits (listed attacks, a roll shown, nothing
+dealt until Apply, nothing published to the players) and Apply then hurts the crow. Preferences are saved with the campaign.
+
+```bash
+python3 ref/test/run_prefs_test.py
+```
+
 ## Rests and XP claims with a player (`run_live_rest_test.py`)
 
 Also on the test instance only, set up the same way. The player's crow starts hurt with an expertise use spent. The
