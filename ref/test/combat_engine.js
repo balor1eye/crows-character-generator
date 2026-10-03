@@ -44,7 +44,9 @@ function target(attacker, victim, second) {
   if (!s) throw new Error('no target picker for ' + attacker);
   s.value = who(victim).id; s.dispatchEvent(new Event('change'));
 }
-function attack(attacker, label, v) { force(v); try { button(label, row(attacker)).click(); } finally { window.Math.random = real; } }
+/* A hit waits until the Ref applies it: press Apply on the result, as the Ref would (when there's damage to deal). */
+function applyHit() { var b = qa('button', q('#side-dice .result')).filter(function (x) { return text(x).indexOf('Apply') === 0; })[0]; if (b) b.click(); }
+function attack(attacker, label, v) { force(v); try { button(label, row(attacker)).click(); } finally { window.Math.random = real; } applyHit(); }
 function cond(name, k) { button(k, q('.conds', row(name))).click(); }
 
 try {
