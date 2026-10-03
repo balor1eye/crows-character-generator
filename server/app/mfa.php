@@ -1,13 +1,12 @@
 <?php
 /*
- * Two-step login (MFA). Every account has a second factor: an authenticator app (TOTP, RFC 6238) or a code
- * emailed at each login, plus ten one-time recovery codes. A new account sets it up while signing up, and
- * an older account without one sets it up at its next login, before it gets a session.
+ * Two-step login (MFA), optional and off by default. An account can turn it on from its Account page: an
+ * authenticator app (TOTP, RFC 6238) or a code emailed at each login, plus ten one-time recovery codes.
  *
- * A correct password (at login, sign-up, or after a password reset) never starts a session by itself. It
- * makes a short-lived challenge instead, whose random token the page holds while the person proves the
- * second factor (or sets one up). Only the token's hash is stored, a challenge allows 5 wrong codes, and
- * codes are also throttled per account. Authenticator secrets are encrypted at rest with a key kept beside
+ * For an account with it on, a correct password (at login or after a password reset) never starts a session
+ * by itself. It makes a short-lived challenge instead, whose random token the page holds while the person
+ * proves the second factor. Accounts without it get their session straight away. Only the token's hash is
+ * stored, a challenge allows 5 wrong codes, and codes are also throttled per account. Authenticator secrets are encrypted at rest with a key kept beside
  * the code (mfa.key, made on first use), and each TOTP step can be used only once.
  * Included by api.php, which supplies q(), fail(), body(), str(), send_mail() and the rest.
  */
@@ -77,16 +76,16 @@ function mask_email(string $e): string {
 function mfa_row(int $userId): ?array { $r = q('SELECT * FROM mfa WHERE user_id = ?', [$userId])->fetch(); return $r ?: null; }
 
 /**
- * After a correct password: what the page does next. With a second factor set up, prove it (an emailed code
- * is sent now); without one, set one up. Either way the answer carries the challenge token, never a session.
+ * After a correct password: what the page does next. With a second factor turned on, prove it (an emailed
+ * code is sent now) and the answer carries the challenge token, not a session. Without one, sign in.
  */
 function mfa_gate(array $u): array {
     q('DELETE FROM mfa_challenges WHERE expires_at < ? OR user_id = ?', [now(), $u['id']]);
     $m = mfa_row((int)$u['id']);
     $tok = token();
     if (!$m) {
-        q('INSERT INTO mfa_challenges (token_hash, user_id, purpose, expires_at) VALUES (?,?,?,?)', [sha($tok), $u['id'], 'setup', now(MFA_SETUP_TTL)]);
-        return ['mfaSetup' => ['token' => $tok, 'username' => $u['username'], 'email' => mask_email($u['email'])]];
+        audit('login', (int)$u['id']);
+        return ['user' => public_user($u), 'csrf' => start_session((int)$u['id'])['csrf']];
     }
     q('INSERT INTO mfa_challenges (token_hash, user_id, purpose, method, expires_at) VALUES (?,?,?,?,?)', [sha($tok), $u['id'], 'login', $m['method'], now(MFA_LOGIN_TTL)]);
     if ($m['method'] === 'email') mfa_send_code(challenge_row($tok), $u);
@@ -244,7 +243,16 @@ function a_account_mfa_recovery(): array {
     audit('mfa_recovery_regenerated', $s['id']);
     return ['recoveryCodes' => mfa_new_recovery($s['id'])];
 }
-/** Admin: someone lost their phone and their recovery codes. They set up a new factor at their next login. */
+/** Account page: turn two-step login off. Needs the password. */
+function a_account_mfa_off(): array {
+    $s = need_login();
+    check_password($s, str('currentPassword', 300));
+    q('DELETE FROM mfa WHERE user_id = ?', [$s['id']]);
+    q('DELETE FROM mfa_recovery WHERE user_id = ?', [$s['id']]);
+    audit('mfa_off', $s['id']);
+    return [];
+}
+/** Admin: someone lost their phone and their recovery codes. Two-step login is off for them until they turn it on again. */
 function a_admin_reset_mfa(): array {
     $a = need_admin();
     $uid = (int)(body()['userId'] ?? 0);
@@ -252,11 +260,11 @@ function a_admin_reset_mfa(): array {
     if (!$u) fail('That account was not found.', 404);
     q('DELETE FROM mfa WHERE user_id = ?', [$uid]);
     q('DELETE FROM mfa_recovery WHERE user_id = ?', [$uid]);
-    q('DELETE FROM sessions WHERE user_id = ?', [$uid]);   // anyone holding a session re-proves the new factor
+    q('DELETE FROM sessions WHERE user_id = ?', [$uid]);   // 
     audit('mfa_reset', $uid, '', $a['id']);
     send_mail($u['email'], 'Your two-step login for The Nest was reset',
         "Hi {$u['username']},\n\nAn admin reset the two-step login on your account on The Nest, and you were logged out everywhere. " .
-        "You'll set up a new authenticator app or emailed codes the next time you log in.\n" .
+        "Two-step login is now off. You can turn it on again on your Account page.\n" .
         "If you didn't ask for this, contact the site admin right away.\n");
     return [];
 }

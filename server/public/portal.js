@@ -8,7 +8,7 @@
 
   var GEN = 'Crows_Character_Generator.html', PLAY = 'play';   // Play is the generator's Play mode at its own address (.htaccess)
   var REF = 'ref.php';
-  var me = null, csrf = null, https = true, unread = 0;   // unread: notifications not yet dismissed
+  var me = null, csrf = null, https = true, unread = 0, discordOn = false;   // unread: notifications not yet dismissed
   var PENDING_SHARE = 'crows-pending-share';
 
   // ---------------------------------------------------------------- helpers
@@ -55,11 +55,37 @@
     go(to && /^(share|join)=[0-9a-f]{64}$/.test(to) ? to : 'home');
   }
 
+  var DISCORD_MSG = {
+    ok: 'Logged in with Discord.', linked: 'Discord is connected to your account.',
+    denied: 'Discord sign-in was cancelled.', expired: 'That Discord sign-in expired. Please try again.',
+    failed: 'Discord didn\u2019t finish signing you in. Please try again.',
+    noemail: 'Discord didn\u2019t share a verified email address, which we need to make an account. Verify your email in Discord, or create an account here instead.',
+    emailused: 'An account here already uses your Discord email. Log in with your password, then connect Discord on your Account page.',
+    taken: 'That Discord account is already connected to another account here.', unavailable: 'Discord sign-in isn\u2019t available right now.'
+  };
+  /* The "Continue with Discord" button for the log-in and sign-up pages (nothing when the site hasn't set it up). */
+  function discordButton() {
+    if (!discordOn) return null;
+    return el('div', { class: 'alt-login' }, [el('p', { class: 'fine', text: 'or' }),
+      btn('Continue with Discord', function () {
+        api('POST', 'discord.start', {}).then(function (j) { location.href = j.url; }, function (e) { toast(e.message); });
+      }, 'btn wide btn-discord')]);
+  }
+
   // ---------------------------------------------------------------- routing
   function route() {
     var h = location.hash.replace(/^#/, '');
     var m = /^reset=([0-9a-f]{64})$/.exec(h);
     if (m) return viewReset(m[1]);
+    var dc = /^discord=(\w+)$/.exec(h);
+    if (dc) {
+      history.replaceState(null, '', location.pathname + (me ? '#home' : '#login'));
+      var said = DISCORD_MSG[dc[1]];
+      if (said) toast(said);
+      if (dc[1] === 'ok' && me) return afterLogin();
+      if (dc[1] === 'linked' && me) { h = 'account'; history.replaceState(null, '', location.pathname + '#account'); }
+      else h = me ? 'home' : 'login';
+    }
     var sh = /^(share|join)=([0-9a-f]{64})$/.exec(h);
     if (sh) {
       if (me) return sh[1] === 'share' ? viewShare(sh[2]) : viewJoin({ token: sh[2] });
@@ -158,6 +184,7 @@
         ], 'Log in', function (v) {
           return api('POST', 'login', { login: v.login, password: v.password }).then(afterPassword);
         }),
+        discordButton(),
         el('div', { class: 'links' }, [a('Create an account', '#register', ''), a('Forgot your password?', '#forgot', '')])
       ]),
       guestCard()
@@ -179,6 +206,7 @@
           if (v.password !== v.password2) throw new Error('The two passwords don\'t match.');
           return api('POST', 'register', { username: v.username, email: v.email, password: v.password }).then(function (j) { viewSignupVerify(j.verify); });
         }),
+        discordButton(),
         el('div', { class: 'links' }, [a('I already have an account', '#login', '')])
       ])
     ])]);
@@ -238,13 +266,13 @@
 
   // ---------------------------------------------------------------- two-step login
   /*
-   * A correct password gets a challenge, not a session: prove the second factor (an authenticator app code, an
-   * emailed code, or a recovery code), or, for an account without one (every new account), set one up first.
+   * Two-step login is optional (turned on from the Account page). For an account that has it on, a correct password
+   * gets a challenge, not a session: prove the second factor (an authenticator app code, an emailed code, or a
+   * recovery code). Other accounts are signed in straight away.
    * These steps aren't routes: reloading the page goes back to logging in, which makes a fresh challenge.
    */
   function afterPassword(j) {
     if (j.mfa) return viewMfaLogin(j.mfa);
-    if (j.mfaSetup) return viewMfaSetup(j.mfaSetup);
     signedIn(j); afterLogin();
   }
   function codeInput(extra) {
@@ -285,8 +313,8 @@
   }
 
   /*
-   * Setting up the second factor: at sign-up, at the first login of an older account, or from the Account page
-   * (opts.change). Pick a method, confirm it with a code, then save the recovery codes.
+   * Setting up the second factor from the Account page (turning it on, or opts.change to switch method).
+   * Pick a method, confirm it with a code, then save the recovery codes.
    */
   function viewMfaSetup(c, opts) {
     opts = opts || {};
@@ -296,16 +324,15 @@
     function step(kids) { box.innerHTML = ''; kids.forEach(function (k) { if (k) box.appendChild(k); }); var i = box.querySelector('input'); if (i) i.focus(); }
     function choose() {
       step([
-        el('h1', { text: opts.change ? 'Change two-step login' : 'Protect your account' }),
-        el('p', { class: 'muted', text: (opts.change ? '' : 'One more step' + (c.username ? ', ' + c.username : '') + '. ') +
-          'Every account on The Nest uses two-step login: after your password, you also enter a code. Pick where your codes come from.' }),
+        el('h1', { text: opts.change ? 'Change two-step login' : 'Turn on two-step login' }),
+        el('p', { class: 'muted', text: 'After your password, you\u2019ll also enter a code. Pick where your codes come from.' }),
         el('div', { class: 'choices' }, [
           el('button', { type: 'button', class: 'choice', onclick: function () { start('totp'); } }, [el('span', { class: 't', text: 'Authenticator app' }), el('span', { class: 'tag', text: 'Recommended' }),
             el('span', { class: 'd', text: 'Google Authenticator, Microsoft Authenticator, 1Password, Authy, or similar. Works offline and doesn\u2019t depend on email.' })]),
           el('button', { type: 'button', class: 'choice', onclick: function () { start('email'); } }, [el('span', { class: 't', text: 'Emailed codes' }),
             el('span', { class: 'd', text: 'We email a code to ' + c.email + ' each time you log in. Simpler, but only as safe as your email.' })])
         ]),
-        opts.change ? el('div', { class: 'links' }, [a('Cancel', '#account', '')]) : null
+        el('div', { class: 'links' }, [a('Cancel', '#account', '')])
       ]);
     }
     function start(method) {
@@ -327,7 +354,7 @@
         ]),
         qrSvg(j.uri),
         confirmForm('Turn on two-step login'),
-        el('div', { class: 'links' }, [a('Pick a different method', '#', ''), opts.change ? a('Cancel', '#account', '') : null])
+        el('div', { class: 'links' }, [a('Pick a different method', '#', ''), a('Cancel', '#account', '')])
       ]);
       box.querySelector('.links a').addEventListener('click', function (e) { e.preventDefault(); choose(); });
     }
@@ -336,15 +363,14 @@
         el('h1', { text: 'Check your email' }),
         el('p', { class: 'muted', text: 'We sent a 6-digit code to ' + j.email + '. It works for 15 minutes; check your spam folder if it\u2019s not there.' }),
         confirmForm('Turn on two-step login'),
-        el('div', { class: 'links' }, [resendBtn(c.token), a('Pick a different method', '#', ''), opts.change ? a('Cancel', '#account', '') : null])
+        el('div', { class: 'links' }, [resendBtn(c.token), a('Pick a different method', '#', ''), a('Cancel', '#account', '')])
       ]);
       box.querySelectorAll('.links a')[0].addEventListener('click', function (e) { e.preventDefault(); choose(); });
     }
     function done(j) {
       signedIn(j);
       recoveryCodes(box, j.recoveryCodes, opts.change ? 'Two-step login is changed.' : 'Two-step login is on.', function () {
-        if (opts.change) { go('account'); toast('Two-step login changed.'); }
-        else { afterLogin(); toast('Welcome, ' + me.username + '!'); }
+        go('account'); toast(opts.change ? 'Two-step login changed.' : 'Two-step login is on.');
       });
     }
     choose();
@@ -867,6 +893,7 @@
         me.role !== 'ref' && !me.isAdmin ? ' An admin can make you a Ref if you run games.' : '']),
       el('div', { class: 'card' }, [el('h2', { text: 'Details' }), details]),
       mfaCard(),
+      discordCard(),
       emailCard(),
       el('div', { class: 'card' }, [el('h2', { text: 'Devices' }),
         el('p', { class: 'muted', text: 'You stay logged in for 30 days on each device you use.' }),
@@ -890,10 +917,10 @@
       box.innerHTML = '';
       box.appendChild(el('h2', { text: 'Two-step login' }));
       box.appendChild(el('p', { class: 'muted', text: j.method ? 'On, with ' + (j.method === 'totp' ? 'an authenticator app' : 'codes emailed to ' + me.email) + '. ' +
-        j.recoveryLeft + ' recovery code' + (j.recoveryLeft === 1 ? '' : 's') + ' left.' : 'Not set up yet: you\u2019ll set it up the next time you log in.' }));
+        j.recoveryLeft + ' recovery code' + (j.recoveryLeft === 1 ? '' : 's') + ' left.' : 'Off. Turn it on to also need a code from an authenticator app or your email when you log in.' }));
       if (j.method && j.recoveryLeft <= 3) box.appendChild(el('div', { class: 'msg warn', text: 'You\u2019re running low on recovery codes. Make new ones.' }));
       box.appendChild(el('div', { class: 'row-btns' }, [
-        btn(j.method ? 'Change method' : 'Set it up now', function () {
+        btn(j.method ? 'Change method' : 'Turn on', function () {
           withPassword('Continue', function (pw) { return api('POST', 'account.mfaChange', { currentPassword: pw }).then(function (r) { viewMfaSetup({ token: r.token, email: r.email }, { change: true }); }); });
         }, 'btn-small'),
         j.method ? btn('New recovery codes', function () {
@@ -903,7 +930,42 @@
               recoveryCodes(card, r.recoveryCodes, 'New recovery codes', function () { go('account'); toast('Your old recovery codes no longer work.'); });
             });
           });
+        }, 'btn-small btn-ghost') : null,
+        j.method ? btn('Turn off', function () {
+          withPassword('Turn off two-step login', function (pw) {
+            return api('POST', 'account.mfaOff', { currentPassword: pw }).then(function () { go('account'); toast('Two-step login is off.'); });
+          });
         }, 'btn-small btn-ghost') : null]));
+    }, function (e) { box.lastChild.textContent = e.message; });
+    return box;
+  }
+
+  /* Whether this account can log in with Discord, and connecting or disconnecting it. */
+  function discordCard() {
+    var box = el('div', { class: 'card' }, [el('h2', { text: 'Discord' }), el('p', { class: 'muted', text: 'Loading…' })]);
+    api('GET', 'account.discord').then(function (j) {
+      if (!j.enabled && !j.linked) { box.hidden = true; return; }
+      box.innerHTML = '';
+      box.appendChild(el('h2', { text: 'Discord' }));
+      box.appendChild(el('p', { class: 'muted', text: j.linked
+        ? 'You can log in with Discord (' + j.linked + '). Logging in with Discord skips two-step login codes; Discord has its own.'
+        : 'Connect Discord to log in with one click instead of a password.' }));
+      if (!j.hasPassword) box.appendChild(el('div', { class: 'msg warn', text: 'This account has no password yet. Use \u201cForgot your password?\u201d on the log-in page if you want one.' }));
+      var row = el('div', { class: 'row-btns' });
+      if (j.linked) {
+        row.appendChild(j.hasPassword ? btn('Disconnect', function () {
+          var pw = input('password', 'currentPassword', { autocomplete: 'current-password' });
+          var f = form([field('Current password', pw)], 'Disconnect Discord', function (v) {
+            return api('POST', 'account.discordUnlink', { currentPassword: v.currentPassword }).then(function () { go('account'); toast('Discord disconnected.'); });
+          });
+          box.appendChild(f); pw.focus();
+        }, 'btn-small btn-ghost') : null);
+      } else if (j.enabled) {
+        row.appendChild(btn('Connect Discord', function () {
+          api('POST', 'account.discordLink', {}).then(function (r) { location.href = r.url; }, function (e) { toast(e.message); });
+        }, 'btn-small btn-discord'));
+      }
+      box.appendChild(row);
     }, function (e) { box.lastChild.textContent = e.message; });
     return box;
   }
@@ -997,7 +1059,8 @@
       user_deleted: 'Account deleted', share_link_made: 'Made a share link', share_link_disabled: 'Turned off share link',
       share_redeemed: 'Ref added a shared crow', share_revoked: 'Took away a Ref\u2019s access', login_password: 'Password OK (second step next)',
       mfa_failed: 'Wrong two-step code', mfa_set_up: 'Set up two-step login', mfa_recovery_used: 'Used a recovery code',
-      mfa_recovery_regenerated: 'Made new recovery codes', mfa_reset: 'Two-step login reset by admin' };
+      mfa_recovery_regenerated: 'Made new recovery codes', mfa_reset: 'Two-step login reset by admin', mfa_off: 'Turned off two-step login',
+      login_discord: 'Logged in with Discord', discord_linked: 'Connected Discord', discord_unlinked: 'Disconnected Discord' };
     var logBox = el('div', null, [btn('Show security log', function () {
       logBox.innerHTML = '<p class="muted">Loading…</p>';
       api('GET', 'admin.audit').then(function (j) {
@@ -1033,7 +1096,7 @@
   // ---------------------------------------------------------------- start
   window.addEventListener('hashchange', route);
   api('GET', 'me').then(function (j) {
-    https = j.https; signedIn(j); route();
+    https = j.https; discordOn = !!j.discord; signedIn(j); route();
   }, function (e) {
     $('view').innerHTML = '';
     $('view').appendChild(el('div', { class: 'narrow' }, [el('div', { class: 'card' }, [

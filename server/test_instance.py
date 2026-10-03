@@ -406,7 +406,7 @@ def smoke():
     fails("a wrong sign-up code is refused", 400, lambda: anon.post("register.verify", {"token": fresh["verify"]["token"], "code": "000000" if code != "000000" else "111111"}))
     fails("no code works for a taken email", 400, lambda: anon.post("register.verify", {"token": taken["verify"]["token"], "code": code}))
     done = anon.post("register.verify", {"token": fresh["verify"]["token"], "code": code})
-    check("the right code makes the account and goes on to two-step setup", "mfaSetup" in done)
+    check("the right code makes the account and signs in (two-step login is optional)", "user" in done and "csrf" in done and "mfa" not in done)
     nu = next((u for u in admin.get("admin.users")["users"] if u["username"] == new_name), None)
     check("the new account exists", nu is not None)
     if nu: admin.post("admin.deleteUser", {"id": nu["id"]})

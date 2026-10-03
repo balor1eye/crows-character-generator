@@ -9,6 +9,7 @@
 declare(strict_types=1);
 require __DIR__ . '/bootstrap.php';
 require __DIR__ . '/mfa.php';
+require __DIR__ . '/discord.php';
 
 final class ApiError extends Exception {
     public int $status;
@@ -99,6 +100,7 @@ function check_password(array $s, string $pw): void {
     $key = 'pw:' . $s['id'];
     throttle($key, 5, 30, 900);
     $row = q('SELECT pass_hash FROM users WHERE id = ?', [$s['id']])->fetch();
+    if ($row && $row['pass_hash'] === '') fail('This account signs in with Discord and has no password yet. Use "Forgot your password?" on the log-in page to set one first.', 409);
     if (!$row || !password_verify($pw, $row['pass_hash'])) {
         note_attempt($key);
         audit('password_check_failed', $s['id']);
@@ -179,12 +181,12 @@ function a_me(): array {
     $notes = 0;
     try { if ($s) $notes = (int)q('SELECT COUNT(*) FROM notifications WHERE user_id = ? AND seen_at IS NULL', [$s['id']])->fetchColumn(); }
     catch (Throwable $e) { /* table not there yet mid-deploy: never block logging in over it */ }
-    return ['user' => $s ? public_user($s) : null, 'csrf' => $s ? $s['csrf'] : null, 'https' => is_https(), 'notes' => $notes];
+    return ['user' => $s ? public_user($s) : null, 'csrf' => $s ? $s['csrf'] : null, 'https' => is_https(), 'notes' => $notes, 'discord' => discord_enabled()];
 }
 
 /*
  * Creating an account takes two steps. register checks the username and password and emails a 6-digit code to the
- * address; register.verify with that code makes the account (then two-step login is set up, mfa.php). If the
+ * address; register.verify with that code makes the account and signs in. If the
  * address already has an account, its owner is emailed that instead and no code works, but the answer is the same,
  * so signing up never shows whether an email is in use. (Usernames are shown to other players, so a taken one
  * is still said straight away.)
@@ -236,7 +238,7 @@ function signup_send(array $r): void {
         "It works for 30 minutes. If you didn't try to create an account, you can ignore this email.\n");
 }
 
-/** The emailed code is right: make the account, then set up two-step login (no session until that's done). */
+/** The emailed code is right: make the account and sign in. */
 function a_register_verify(): array {
     $r = signup_row(str('token', 100));
     throttle('signupcode:' . strtolower($r['email']), 10, 30, 900);
@@ -287,7 +289,7 @@ function a_login(): array {
     }
     audit('login_password', (int)$u['id']);
     q('DELETE FROM login_attempts WHERE login = ?', [$key]);
-    return mfa_gate($u);   // the session comes after the second step (mfa.php)
+    return mfa_gate($u);   // a session now, or a challenge when the account turned two-step login on (mfa.php)
 }
 
 function a_logout(): array { end_session(); return []; }
@@ -319,7 +321,7 @@ function a_reset(): array {
     audit('password_reset', $uid);
     q('DELETE FROM password_resets WHERE user_id = ?', [$uid]);
     q('DELETE FROM sessions WHERE user_id = ?', [$uid]);
-    // A reset link proves the mailbox, not the second factor: that still has to be shown (mfa.php).
+    // A reset link proves the mailbox, not the second factor: when the account has one, that still has to be shown (mfa.php).
     return mfa_gate(q('SELECT * FROM users WHERE id = ?', [$uid])->fetch());
 }
 
@@ -1724,6 +1726,11 @@ const ACTIONS = [
     'account.mfa' => ['GET', 'a_account_mfa', false],
     'account.mfaChange' => ['POST', 'a_account_mfa_change', true],
     'account.mfaRecovery' => ['POST', 'a_account_mfa_recovery', true],
+    'account.mfaOff' => ['POST', 'a_account_mfa_off', true],
+    'account.discord' => ['GET', 'a_account_discord', false],
+    'account.discordLink' => ['POST', 'a_account_discord_link', true],
+    'account.discordUnlink' => ['POST', 'a_account_discord_unlink', true],
+    'discord.start' => ['POST', 'a_discord_start', false],
     // The second login step: authorised by the challenge token (there's no session yet), JSON-only like every POST.
     'mfa.verify' => ['POST', 'a_mfa_verify', false],
     'mfa.resend' => ['POST', 'a_mfa_resend', false],
@@ -1786,6 +1793,7 @@ const ACTIONS = [
 
 function run_api(): void {
     if (($_GET['a'] ?? '') === 'art.file' && $_SERVER['REQUEST_METHOD'] === 'GET') { try { serve_art(); } catch (Throwable $e) { error_log('crows art: ' . $e); http_response_code(500); } return; }
+    if (($_GET['a'] ?? '') === 'discord.callback' && $_SERVER['REQUEST_METHOD'] === 'GET') { discord_callback(); return; }
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');
     header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");

@@ -180,7 +180,7 @@ CREATE TABLE IF NOT EXISTS email_prefs (
   CONSTRAINT fk_prefs_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
--- Two-step login (see mfa.php). Every account sets one up: an authenticator app (secret encrypted with
+-- Two-step login (see mfa.php), optional per account: an authenticator app (secret encrypted with
 -- mfa.key; last_step stops a code being used twice) or a code emailed at each login.
 CREATE TABLE IF NOT EXISTS mfa (
   user_id INT UNSIGNED NOT NULL PRIMARY KEY,
@@ -291,4 +291,23 @@ CREATE TABLE IF NOT EXISTS ref_art (
   updated_at DATETIME NOT NULL,
   PRIMARY KEY (user_id, art_key),
   CONSTRAINT fk_refart_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- Discord sign-in (see discord.php): which Discord account an account can log in with.
+CREATE TABLE IF NOT EXISTS discord_links (
+  user_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  discord_id VARCHAR(32) NOT NULL,
+  discord_name VARCHAR(100) NOT NULL DEFAULT '',
+  created_at DATETIME NOT NULL,
+  UNIQUE KEY uq_discord (discord_id),
+  CONSTRAINT fk_discord_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
+-- A Discord sign-in or link in progress (the OAuth `state`, hashed; single use).
+CREATE TABLE IF NOT EXISTS oauth_states (
+  state_hash CHAR(64) NOT NULL PRIMARY KEY,
+  purpose ENUM('login','link') NOT NULL,
+  user_id INT UNSIGNED NULL,
+  expires_at DATETIME NOT NULL,
+  KEY k_expires (expires_at)
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
