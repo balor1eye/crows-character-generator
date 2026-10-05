@@ -594,9 +594,22 @@
     }
     box.appendChild(el('div', { class: 'row wrap cbt-say' }, [input, btn(tAt ? 'Send (at ' + tAt.name + ')' : 'Send', declare, '')]));
   }
+  /* The tabletop scene the Ref is showing this crow's party (with the fog as a mask), and what to send back (moves and pings). */
+  function tableData() {
+    var id = charId();
+    return fight && id && fight.charId === id && fight.combat && fight.combat.table ? { table: fight.combat.table, you: fight.you, campaign: fight.campaign, combat: cur(), charId: id, version: fight.version } : null;
+  }
+  function sendTable(a) {
+    var d = tableData();
+    if (!d) return Promise.resolve(false);
+    return Cloud.api('POST', 'combat.act', '', { id: d.charId, campaign: d.campaign.id, action: a }).then(function () { return true; },
+      function (e) { C.toast('Not sent to the Ref: ' + e.message, 4000); if (e.status === 409) load(); return false; });
+  }
+  function setTarget(id) { if (!find(id)) return false; targets = [id]; update(); return true; }
   /* Show the fight: the whole card, or just its view while the player is typing in it. */
   function update(force) {
     renderSession();
+    if (window.CrowsVTTPlay) window.CrowsVTTPlay.refresh();
     var box = $('play-combat');
     if (!box) return;
     var c = document.body.getAttribute('data-mode') === 'play' ? cur() : null;
@@ -632,7 +645,7 @@
   window.CrowsCombat = { load: load, render: update, rolled: rolled, updated: updated, superseded: superseded, rollNote: rollNote,
     session: session, resting: resting, restSent: restSent, sendRest: sendRest,
     ground: ground, pickUp: pickUp, cantPickUp: cantPickUp, drop: drop,
-    rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };
+    tableData: tableData, sendTable: sendTable, setTarget: setTarget, rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') load(); });
   // A crow that gets its record id later (a new crow, saved as a draft) starts being watched then.
   setInterval(function () { var id = charId(); if (id && (!fight || fight.charId !== id)) load(); }, 2000);

@@ -1385,8 +1385,8 @@ function a_notes_dismiss(): array {
  * keeps the fight's unattended items and hands a picked-up one to the crow in the fight it publishes). The Ref Screen watches ('cacts', campaign
  * id), whose version is the newest action's id, reads new ones with combat.actions, and applies them.
  */
-const COMBAT_MAX_BYTES = 200000;
-const ACTION_TYPES = ['attack', 'maneuver', 'taunt', 'ready', 'assist', 'assistUsed', 'declare', 'done', 'undone', 'drop', 'pickup', 'rest', 'defend'];
+const COMBAT_MAX_BYTES = 600000;   // the fight, its session, and the tabletop scene (fog mask and token art)
+const ACTION_TYPES = ['attack', 'maneuver', 'taunt', 'ready', 'assist', 'assistUsed', 'declare', 'done', 'undone', 'drop', 'pickup', 'rest', 'defend', 'move', 'ping'];
 const REST_FOODS = ['', 'Ration', 'Hearty Ration', 'none'];
 const MANEUVERS = ['Move', 'Shift', 'Stand Up', 'Draw From Pack', 'Draw From Belt', 'Pick Up Item', 'Dump Backpack', 'Reload', 'Command Pet',
     'Grab', 'Escape Grab', 'Knockback', 'Jump'];
@@ -1417,7 +1417,8 @@ function a_combat_publish(): array {
     own_campaign($s, $cid);
     $c = body_obj()->combat ?? null;
     $active = is_object($c) && !empty($c->active);
-    $json = enc($active ? $c : ['active' => false] + (is_object($c) && is_object($c->session ?? null) ? ['session' => $c->session] : []));
+    $json = enc($active ? $c : ['active' => false] + (is_object($c) && is_object($c->session ?? null) ? ['session' => $c->session] : [])
+        + (is_object($c) && is_object($c->table ?? null) ? ['table' => $c->table] : []));
     if (strlen($json) > COMBAT_MAX_BYTES) fail('The fight is too large to share.', 413);
     $aids = array_values(array_unique(array_filter(array_map('intval', is_array(body()['members'] ?? null) ? body()['members'] : []))));
     $chars = [];
@@ -1522,6 +1523,11 @@ function clean_action($a): array {
                  'useKit' => $flag('useKit'), 'tended' => $flag('tended'), 'tendedKit' => $flag('tendedKit'), 'caretaker' => $flag('caretaker')];
     }
     if ($type === 'defend') $out += ['hit' => $txt('hit', 40)];
+    if ($type === 'move' || $type === 'ping') {
+        // On the tabletop: the crow's token to a point on the map, or a ping there (map pixels).
+        $fl = function (string $k) use ($a): float { $v = $a[$k] ?? 0; return is_numeric($v) ? round(max(0.0, min(100000.0, (float)$v)), 1) : 0.0; };
+        $out += ['token' => $txt('token', 40), 'x' => $fl('x'), 'y' => $fl('y')];
+    }
     if ($type === 'pickup') $out += ['item' => $txt('item', 40), 'itemName' => $txt('itemName', 80)];
     if ($type === 'drop') {
         // Items the crow put down: what's in its hands, or its backpack's contents (dump: the Dump Backpack maneuver).
@@ -1546,8 +1552,11 @@ function a_combat_act(): array {
     $cid = combat_campaign_id();
     $r = member_combat($id, $cid);
     $c = $r ? json_decode($r['data']) : null;
-    if ((body()['action']['type'] ?? '') === 'rest') {
+    $atype = body()['action']['type'] ?? '';
+    if ($atype === 'rest') {
         if (!$r || !is_object($c) || empty($c->session->rest->active)) fail('The party isn\'t resting any more.', 409);
+    } elseif ($atype === 'move' || $atype === 'ping') {
+        if (!$r || !is_object($c) || !is_object($c->table ?? null)) fail('The Ref isn\'t showing a map any more.', 409);
     } else {
         $in = $r && is_object($c) && !empty($c->active) && is_array($c->list ?? null) && array_filter($c->list, function ($x) use ($r) {
             return is_object($x) && ($x->kind ?? '') === 'pc' && (int)($x->link ?? 0) === (int)$r['access_id'];
@@ -1562,6 +1571,34 @@ function a_combat_act(): array {
     q('DELETE FROM combat_actions WHERE campaign_id = ? AND (id < ? OR created_at < ?)', [$cid, $aid - 300, now(-2 * 86400)]);
     signal('cacts', $cid, $aid);
     return ['id' => $aid];
+}
+
+/*
+ * table.map: the picture of the map the Ref is showing in the campaign's tabletop (one of the Ref's own maps, kept in ref_art). Only the Ref and
+ * the players of the crows in the fight get it, and only the map the published scene names, so a Ref's other pictures stay theirs.
+ */
+function serve_table_map(): void {
+    $s = current_session();
+    $cid = (int)($_GET['campaign'] ?? 0);
+    $k = $_GET['key'] ?? '';
+    $img = null;
+    if ($s && $cid > 0 && is_string($k) && preg_match('/^m:[a-z0-9]{1,24}$/', $k)) {
+        $owner = q('SELECT user_id FROM campaigns WHERE id = ?', [$cid])->fetchColumn();
+        if ($owner !== false) {
+            $shown = (string)q('SELECT data FROM combats WHERE campaign_id = ?', [$cid])->fetchColumn();
+            $ok = (int)$owner === (int)$s['id'] || (strpos($shown, '"map":{"k":"' . $k . '"}') !== false && (int)q(
+                'SELECT COUNT(*) FROM combat_members m JOIN characters c ON c.id = m.character_id LEFT JOIN character_control k ON k.character_id = c.id
+                 WHERE m.campaign_id = ? AND (c.user_id = ? OR k.user_id = ?)', [$cid, $s['id'], $s['id']])->fetchColumn() > 0);
+            if ($ok) $img = q('SELECT image FROM ref_art WHERE user_id = ? AND art_key = ?', [(int)$owner, $k])->fetchColumn();
+        }
+    }
+    if ($img === false || $img === null) { http_response_code(404); header('Content-Type: text/plain'); echo 'Not found'; return; }
+    header('Content-Type: image/jpeg');
+    header('X-Content-Type-Options: nosniff');
+    header("Content-Security-Policy: default-src 'none'; frame-ancestors 'none'");
+    header('Cache-Control: private, max-age=3600');
+    header('Content-Length: ' . strlen($img));
+    echo $img;
 }
 
 // ---------------------------------------------------------------- page layouts
@@ -1833,6 +1870,7 @@ const ACTIONS = [
 
 function run_api(): void {
     if (($_GET['a'] ?? '') === 'art.file' && $_SERVER['REQUEST_METHOD'] === 'GET') { try { serve_art(); } catch (Throwable $e) { error_log('crows art: ' . $e); http_response_code(500); } return; }
+    if (($_GET['a'] ?? '') === 'table.map' && $_SERVER['REQUEST_METHOD'] === 'GET') { try { serve_table_map(); } catch (Throwable $e) { error_log('crows table map: ' . $e); http_response_code(500); } return; }
     if (($_GET['a'] ?? '') === 'discord.callback' && $_SERVER['REQUEST_METHOD'] === 'GET') { discord_callback(); return; }
     header('Content-Type: application/json; charset=utf-8');
     header('Cache-Control: no-store');

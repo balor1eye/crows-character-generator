@@ -151,3 +151,16 @@ python3 ref/test/run_live_rest_test.py              # after server/deploy.sh; --
 
 Scripts sent over WebDriver run with their own globals, so a test that fixes the dice has to replace
 `window.Math.random` (the page's), not `Math.random`.
+
+
+## Live tabletop (`run_live_table_test.py`)
+
+The graphical tabletop between the Ref Screen and a player's Play page on the test instance, in two headless Firefoxes (like
+`run_live_combat_test.py`). A Dungeon scene with a walled room and a closed door: the player must see their crow and the creature in the lit
+room but not the one behind the wall, the fog mask must hide the far room, the published scene must hold no walls, a player's move must reach the
+Ref's token while a move through the wall must not, opening the door must reveal the creature, a token the Ref hides must vanish, and a ping must
+reach the Ref. It deletes what it made.
+
+```bash
+python3 -u ref/test/run_live_table_test.py
+```

@@ -11,7 +11,7 @@
   var el = C.el, $ = C.$, d = C.d, fmt = C.fmt, signed = C.signed, item = C.item;
   var MODE_KEY = 'crows-pt2-mode';
   var SUBTAB_KEY = 'crows-pt2-play-subtab';
-  var SUBTABS = [['now', 'Now'], ['rest', 'Rest & turns'], ['items', 'Items'], ['growth', 'Growth'], ['log', 'Log']];
+  var SUBTABS = [['now', 'Now'], ['rest', 'Rest & turns'], ['items', 'Items'], ['growth', 'Growth'], ['table', 'Table'], ['log', 'Log']];
   var Dice = window.CrowsDice, Rules = window.CrowsRules, Sheet = window.CrowsSheet;   // src/shared/
   var CONDITIONS = Sheet.CONDITIONS;
   var DT_CONDITIONS = Rules.DT_CONDITIONS; // end at the end of a dungeon turn
@@ -85,7 +85,7 @@
     var cur = subtab();
     SUBTABS.forEach(function (t) {
       box.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': String(cur === t[0]), 'aria-pressed': String(cur === t[0]),
-        text: t[1], onclick: function () { setSubtab(t[0]); } }));
+        text: t[1] + (t[0] === 'table' && window.CrowsVTTPlay && window.CrowsVTTPlay.live() ? ' \u25CF' : ''), onclick: function () { setSubtab(t[0]); } }));
     });
   }
   /* Show this mode's address. Only where the accounts server answered: elsewhere there's no play address to go to. */
