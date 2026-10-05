@@ -85,15 +85,22 @@
     var rec = customMaps().filter(function (r) { return r.key === m.k; })[0];
     return rec ? blobUrl(rec) : null;
   }
+  function artVariant(file) {
+    var r = null;
+    (REFD.ART.maps || []).forEach(function (m) { m.variants.forEach(function (v) { if (v.file === file) r = v; }); });
+    return r;
+  }
   /* Set a scene's map and size the scene to the picture (once it has loaded). */
   function setMap(sc, m) {
     sc.map = m;
     var src = mapSrc(sc);
     if (!m || !src) { changed(); return; }
     var img = new Image();
+    var v = m.b ? artVariant(m.b) : null;   // official artwork knows its own squares across; otherwise use the Squares across setting
     img.onload = function () {
       sc.w = img.naturalWidth; sc.h = img.naturalHeight;
-      sc.g = Math.max(10, Math.round(sc.w / (sc.kind === 'travel' ? 28 : U.cols)));
+      if (v && v.cols) { sc.g = sc.w / v.cols; sc.grid = 'square'; sc.showGrid = !v.printed; U.cols = v.cols; }   // exact (fractional) squares so the grid meets the artwork's edges
+      else sc.g = Math.max(10, Math.round(sc.w / (sc.kind === 'travel' ? 28 : U.cols)));
       sc.seen = ''; sc.seenDims = ''; sc.ox = sc.oy = 0; changed(); if (U.view) U.view.sceneChanged(sc.id + 'm'); render();
     };
     img.src = src;
@@ -459,7 +466,7 @@
     mapSel.value = sc.map ? (sc.map.b ? 'b|' + sc.map.b : 'k|' + sc.map.k) : '';
     var cols = { n: Math.round(sc.w / sc.g) };
     var colsIn = el('input', { type: 'number', class: 'tiny', min: 4, max: 400, value: cols.n, 'aria-label': 'Squares across' });
-    colsIn.addEventListener('change', function () { var n = clamp(parseInt(this.value, 10) || 40, 4, 400); U.cols = n; sc.g = Math.max(10, Math.round(sc.w / n)); sc.seen = ''; sc.seenDims = ''; changed(); render(); });
+    colsIn.addEventListener('change', function () { var n = clamp(parseInt(this.value, 10) || 40, 4, 400); U.cols = n; sc.g = Math.max(10, sc.w / n); sc.seen = ''; sc.seenDims = ''; changed(); render(); });
     var grid = el('select', { class: 'in', 'aria-label': 'Grid', onchange: function () { sc.grid = this.value; sc.seen = ''; sc.seenDims = ''; changed(); render(); } },
       [['square', 'Square grid'], ['hexp', 'Hexes (pointy top)'], ['hexf', 'Hexes (flat top)'], ['none', 'No grid']].map(function (o) { return el('option', { value: o[0], text: o[1], selected: sc.grid === o[0] ? true : null }); }));
     var bg = el('input', { type: 'color', value: sc.bg || '#2a2622', 'aria-label': 'Board color' }); bg.addEventListener('input', function () { sc.bg = this.value; U.view.redraw(); }); bg.addEventListener('change', function () { changed(); });

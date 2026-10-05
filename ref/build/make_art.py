@@ -33,9 +33,12 @@ for grp in sorted(os.listdir(base)):
         rec = {'title': name, 'file': 'art/' + fn, 'thumb': thumb(im, 240)}
         (creatures.__setitem__(name, rec) if name.startswith(('Blood Creature ', 'Undead ')) else extras.append(rec))
 
-def mapvariant(rel, fn, label, maxw):
+def mapvariant(rel, fn, label, maxw, cols=None, printed=False):
     im = Image.open(os.path.join(SRC, 'Maps', rel)); save(im, fn, maxw, 84)
-    return {'label': label, 'file': 'art/' + fn, 'w': min(im.width, maxw or im.width)}, im
+    v = {'label': label, 'file': 'art/' + fn, 'w': min(im.width, maxw or im.width)}
+    if cols: v['cols'] = cols          # squares across the official artwork, so the tabletop grid lines up with it
+    if printed: v['printed'] = True    # the artwork draws its own grid
+    return v, im
 
 maps = []
 v, im = mapvariant('Cornath Map TEMP.png', 'map-cornath.jpg', 'Map', None)
@@ -43,18 +46,18 @@ maps.append({'title': 'Cornath', 'note': 'Temporary map.', 'thumb': thumb(im, 42
 vs = []
 for lab, rel, fn in [('Labels', 'Floating Manor/Floating Manor Labels 89x54.png', 'map-floating-manor-labels.jpg'),
                      ('No labels', 'Floating Manor/Floating Manor No Labels 89x54.png', 'map-floating-manor.jpg')]:
-    v, im = mapvariant(rel, fn, lab, 5000); vs.append(v)
+    v, im = mapvariant(rel, fn, lab, 5000, 89); vs.append(v)
 maps.append({'title': 'Floating Manor', 'note': '89 × 54 squares.', 'thumb': thumb(im, 420), 'variants': vs})
 vs = []
 G = 'Blood Library/Good Maps/140ppi VTT '
 parts = [('Full', '42x65', 'Full', 'full'), ('Upper', '42x24', 'Upper', 'upper'), ('Lower', '42x41', 'Lower', 'lower')]
-rows = [('Labels', 'Blood Library/Blood Library Labels 47x74.png', 'map-blood-library-labels.jpg')]
+rows = [('Labels', 'Blood Library/Blood Library Labels 47x74.png', 'map-blood-library-labels.jpg', 47, False)]
 for lab, size, part, key in parts:
     for grid in ('Gridded', 'Gridless'):
         rows.append((lab + ' · ' + grid.lower(), '%s%s/MAD_MCDM_CROWS_%s_140ppi-VTT_%s_Blood-Library-%s.jpg' % (G, grid, grid, size, part),
-                     'map-blood-library-%s-%s.jpg' % (key, grid.lower())))
-for lab, rel, fn in rows:
-    v, im = mapvariant(rel, fn, lab, 4000); vs.append(v)
+                     'map-blood-library-%s-%s.jpg' % (key, grid.lower()), int(size.split('x')[0]), grid == 'Gridded'))
+for lab, rel, fn, cols, printed in rows:
+    v, im = mapvariant(rel, fn, lab, 4000, cols, printed); vs.append(v)
 maps.append({'title': 'Blood Library', 'note': '42 × 65 squares (Labels sheet: 47 × 74).', 'thumb': thumb(Image.open(os.path.join(SRC, 'Maps', rows[1][1])), 420), 'variants': vs})
 
 with open(os.path.join(ROOT, 'ref', 'src', 'art-data.js'), 'w', encoding='utf-8', newline='\n') as f:
