@@ -7722,6 +7722,69 @@ CROWS.NAME_IDEAS = {
     (REFD.ART.maps || []).forEach(function (m) { m.variants.forEach(function (v) { if (v.file === file) r = v; }); });
     return r;
   }
+  // ------------------------------------------------------------------ grid detection for uploaded maps
+  /* Find a repeating line spacing in an edge profile (one value per pixel column or row): { p, phase, z } or null. Folds the profile at each
+     candidate period and scores how sharply one phase stands out; the smallest period that scores nearly as well as the best wins, so the
+     squares are found rather than blocks of several. */
+  function profilePeriod(prof, minP, maxP) {
+    var n = prof.length, mean = 0, sd = 0, i;
+    for (i = 0; i < n; i++) mean += prof[i]; mean /= n;
+    for (i = 0; i < n; i++) sd += (prof[i] - mean) * (prof[i] - mean); sd = Math.sqrt(sd / n);
+    if (!sd) return null;
+    var cands = [], best = 0;
+    for (var p = minP; p <= maxP; p *= 1.004) {
+      var nb = Math.max(4, Math.floor(p)), sum = new Float64Array(nb), cnt = new Float64Array(nb);
+      for (i = 0; i < n; i++) { var b = Math.floor((i % p) / p * nb); sum[b] += prof[i]; cnt[b]++; }
+      var top = -1e9, at = 0;
+      for (var k = 0; k < nb; k++) {
+        var m = (sum[k] + sum[(k + 1) % nb] + sum[(k + nb - 1) % nb]) / Math.max(1, cnt[k] + cnt[(k + 1) % nb] + cnt[(k + nb - 1) % nb]);
+        if (m > top) { top = m; at = k; }
+      }
+      var z = (top - mean) / sd * Math.sqrt(n / p) / 3;   // a sharp line at one phase in many cells counts for more than in few
+      cands.push({ p: p, phase: (at + .5) / nb * p, z: z }); if (z > best) best = z;
+    }
+    if (best < 1.2) return null;
+    for (i = 0; i < cands.length; i++) {
+      var c = cands[i];
+      if (c.z < best * .8) continue;
+      var j = i; for (var q = i + 1; q < cands.length && cands[q].p < c.p * 1.02; q++) if (cands[q].z > cands[j].z) j = q;   // the peak of this cluster
+      return cands[j];
+    }
+    return null;
+  }
+  /* Detect the printed square grid of a map picture: { g, ox, oy } in picture pixels, or null when no grid shows. */
+  function detectGrid(img) {
+    var s = Math.min(1, 1600 / img.naturalWidth), w = Math.round(img.naturalWidth * s), h = Math.round(img.naturalHeight * s);
+    var cv = document.createElement('canvas'); cv.width = w; cv.height = h;
+    var cx = cv.getContext('2d', { willReadFrequently: true }); cx.drawImage(img, 0, 0, w, h);
+    var d; try { d = cx.getImageData(0, 0, w, h).data; } catch (e) { return null; }
+    var gray = new Float32Array(w * h), x, y;
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) { var o = (y * w + x) * 4; gray[y * w + x] = .3 * d[o] + .59 * d[o + 1] + .11 * d[o + 2]; }
+    var cp = new Float64Array(w), rp = new Float64Array(h);
+    for (y = 0; y < h - 1; y++) for (x = 0; x < w - 1; x++) {
+      var v = gray[y * w + x];
+      cp[x] += Math.abs(gray[y * w + x + 1] - v); rp[y] += Math.abs(gray[(y + 1) * w + x] - v);
+    }
+    function flat(a) {   // remove the slow trend so only line-like spikes remain
+      var out = new Float64Array(a.length), W = 12, i;
+      for (i = 0; i < a.length; i++) { var lo = Math.max(0, i - W), hi = Math.min(a.length - 1, i + W), sm = 0; for (var j = lo; j <= hi; j++) sm += a[j]; out[i] = a[i] - sm / (hi - lo + 1); }
+      return out;
+    }
+    var minP = Math.max(10 * s, 8), maxP = Math.min(w, h) / 3;
+    var X = profilePeriod(flat(cp), minP, maxP), Y = profilePeriod(flat(rp), minP, maxP), r;
+    if (X && Y && Math.abs(X.p - Y.p) / X.p < .04) r = { p: (X.p + Y.p) / 2, ox: X.phase, oy: Y.phase };
+    else if (X && !Y && X.z > 2.5) r = { p: X.p, ox: X.phase, oy: 0 };
+    else if (Y && !X && Y.z > 2.5) r = { p: Y.p, ox: 0, oy: Y.phase };
+    else return null;
+    var g = r.p / s;
+    return { g: g, ox: (r.ox / s) % g, oy: (r.oy / s) % g };
+  }
+  /* "42x65" in a file name: squares across and down. */
+  function sizeFromName(title) {
+    var m = /(\d{2,3})\s*[x×]\s*(\d{2,3})/i.exec(title || '');
+    return m ? { cols: +m[1], rows: +m[2] } : null;
+  }
+
   /* Set a scene's map and size the scene to the picture (once it has loaded). */
   function setMap(sc, m) {
     sc.map = m;
@@ -7732,8 +7795,14 @@ CROWS.NAME_IDEAS = {
     img.onload = function () {
       sc.w = img.naturalWidth; sc.h = img.naturalHeight;
       if (v && v.cols) { sc.g = sc.w / v.cols; sc.grid = 'square'; sc.showGrid = !v.printed; U.cols = v.cols; }   // exact (fractional) squares so the grid meets the artwork's edges
-      else sc.g = Math.max(10, Math.round(sc.w / (sc.kind === 'travel' ? 28 : U.cols)));
-      sc.seen = ''; sc.seenDims = ''; sc.ox = sc.oy = 0; changed(); if (U.view) U.view.sceneChanged(sc.id + 'm'); render();
+      else {
+        var rec = m.k ? customMaps().filter(function (r) { return r.key === m.k; })[0] : null, nm = rec ? sizeFromName(rec.title) : null, dg = rec && sc.kind !== 'travel' ? detectGrid(img) : null;
+        sc.ox = sc.oy = 0;
+        if (dg && sc.w / dg.g >= 4 && sc.w / dg.g <= 400) { sc.g = dg.g; sc.grid = 'square'; sc.showGrid = false; sc.ox = dg.ox; sc.oy = dg.oy; U.cols = Math.round(sc.w / dg.g); toast('Found a grid of ' + Math.round(sc.w / dg.g) + ' squares across; adjust it in Scene settings if it is off.'); }   // the picture draws its own grid: ours only snaps
+        else if (nm && nm.cols >= 4 && nm.cols <= 400) { sc.g = sc.w / nm.cols; sc.grid = 'square'; U.cols = nm.cols; }
+        else sc.g = Math.max(10, Math.round(sc.w / (sc.kind === 'travel' ? 28 : U.cols)));
+      }
+      sc.seen = ''; sc.seenDims = ''; changed(); if (U.view) U.view.sceneChanged(sc.id + 'm'); render();
     };
     img.src = src;
     changed();
