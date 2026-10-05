@@ -10,7 +10,7 @@
       clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), feat = f('feat'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
       int = f('int'), lightbox = f('lightbox'), linkOn = f('linkOn'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
       rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), sheetOp = f('sheetOp'),
-      tabletop = f('tabletop'), test = f('test'), testLine = f('testLine');
+      publicTable = f('publicTable'), tabletop = f('tabletop'), test = f('test'), testLine = f('testLine'), vttAction = f('vttAction');
   var $ = A.$, clone = A.clone, d = A.d, d100 = A.d100, el = A.el, netEdges = A.netEdges, pick = A.pick, plural = A.plural, Rules = A.Rules,
       signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -578,8 +578,9 @@
   function publicCombat() {
     var c = S().combat, run = runningEnc();
     if (!liveOn()) return { active: false };
-    if (!c.list.length) return { active: false, session: publicSession() };
-    return { active: true, session: publicSession(), round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
+    var tbl = publicTable();   // the tabletop scene, if the Ref is showing one (ref-vtt.js)
+    if (!c.list.length) return tbl ? { active: false, session: publicSession(), table: tbl } : { active: false, session: publicSession() };
+    return { active: true, session: publicSession(), table: tbl || undefined, round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
       list: c.list.map(function (x) {
         var b = beast(x.cref), pc = x.kind === 'pc', g = byId(x.grabbedBy), o = { id: x.id, kind: x.kind, name: x.name, health: healthWord(x), dead: !!x.dead,
           conds: Object.keys(x.conds || {}).filter(function (k) { return x.conds[k]; }), surprised: surprised(x), sz: sizeOf(x) };
@@ -680,6 +681,7 @@
     var a = it.action || {}, c = S().combat;
     var p = it.link ? state.party.filter(function (x) { return x.link === it.link; })[0] : null;
     if (a.type === 'rest') { if (p) restChoice(p, a); return; }
+    if (a.type === 'move' || a.type === 'ping') { vttAction(p, a); return; }
     var me = p ? c.list.filter(function (x) { return x.kind === 'pc' && x.pcId === p.id; })[0] : null;
     if (!me) return;   // not in this fight (any more)
     var who = me.name;

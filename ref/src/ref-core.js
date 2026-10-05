@@ -23,7 +23,7 @@
       counterDamage = f('counterDamage'), dropFromFallen = f('dropFromFallen'), defendRow = f('defendRow'), endDT = f('endDT'), feed = f('feed'), fxItems = f('fxItems'),
       heal = f('heal'), liveChanged = f('liveChanged'), newRound = f('newRound'), pendingText = f('pendingText'),
       releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderMaps = f('renderMaps'), renderEncounters = f('renderEncounters'),
-      renderParty = f('renderParty'), renderPrefs = f('renderPrefs'), renderRules = f('renderRules'), renderSession = f('renderSession'),
+      renderParty = f('renderParty'), renderPrefs = f('renderPrefs'), renderVtt = f('renderVtt'), renderRules = f('renderRules'), renderSession = f('renderSession'),
       renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
       renderWorld = f('renderWorld'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -32,7 +32,7 @@
   var STORAGE_KEY = 'crows-pt2-ref-campaign';
   var TAB_KEY = 'crows-pt2-ref-tab';
   // The tabs in their groups, shown with the group's name in the tab bar: [group, [[tab id, label], ...]].
-  var TAB_GROUPS = [['Run', [['session', 'Session'], ['encounters', 'Encounters'], ['travel', 'Travel']]],
+  var TAB_GROUPS = [['Run', [['session', 'Session'], ['vtt', 'Tabletop'], ['encounters', 'Encounters'], ['travel', 'Travel']]],
     ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World'], ['prefs', 'Preferences']]],
     ['Reference', [['bestiary', 'Bestiary'], ['maps', 'Maps'], ['tables', 'Tables'], ['rules', 'Rules']]]];
   var TABS = TAB_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
@@ -44,6 +44,7 @@
    * [key, label, what it does, group, { tab } or { ids }]
    */
   var FEATURES = [
+    ['vtt', 'Tabletop tab', 'The graphical tabletop: maps, tokens, fog of war, and what the players see on it.', 'Tabs', { tab: 'vtt' }],
     ['encounters', 'Encounters tab', 'Encounter rolls, saved encounters, and running an encounter.', 'Tabs', { tab: 'encounters' }],
     ['travel', 'Travel tab', 'Overland days, pace, weather, travel encounters, and Miasma.', 'Tabs', { tab: 'travel' }],
     ['village', 'Village tab', 'The village, its institutions, and the crypt.', 'Tabs', { tab: 'village' }],
@@ -115,7 +116,8 @@
       village: freshVillage(),
       party: [], xpLog: [], hirelings: [], ledger: [], places: [], npcs: [], encounters: [], notes: '', hooks: '', history: [],
       dice: { mod: 0, net: 0, expr: '3d6', ud: 1 },
-      prefs: { tabletop: false, off: {} }
+      prefs: { tabletop: false, off: {} },
+      vtt: { scenes: [], cur: '', shown: false, clean: true }
     };
   }
   function withDefaults(base, s) {
@@ -343,7 +345,7 @@
     renderTabbar();
     renderSide();
     if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
-    ({ session: renderSession, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
+    ({ session: renderSession, vtt: renderVtt, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
     applyPrefs();
     tick();
   }

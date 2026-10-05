@@ -60,6 +60,11 @@ left), the greed bonus, Resting, and Encounter signalled.
   notification, it's pinned at the top, and the Ref can tick Also email every player) with one-click templates such as
   "Session starts in 15 minutes", and can send a private message to one player. Announcements and private messages also
   pop up on the Play page and Ref Screen, and can be emailed (players can turn chat emails off on their Account page).
+- **Table** (accounts site, the Table sub-tab, with a dot when the Ref is showing a map): the graphical tabletop the Ref shares (see
+  **Tabletop** below). You see the map with **fog of war**: only what your party's crows can see, by their own light and the party's
+  torches and lanterns, with walls and closed doors blocking sight; what you've explored stays dimly visible, and creatures out of sight aren't
+  shown. Drag your crow's token to move it (the Ref's walls stop you, and it shows the distance against your speed while you drag), measure,
+  ping (Alt-click in any tool), click a creature to target it for your next attack, and pan and zoom (scroll, or pinch on a phone).
 - **Live combat** (accounts site): when the Ref runs a fight with your linked crow in the Ref Screen's combat
   tracker, a **Combat** card appears at the top of Play within a second or two. It offers every option the combat
   rules give at that moment: your turn (an action and a maneuver, or two maneuvers; a crit adds an action; one
@@ -117,10 +122,23 @@ choice is remembered and shared by the Character Generator, the Ref Screen, and 
 A separate, self-contained app for running sessions and keeping the campaign between them:
 on the accounts site (Ref accounts only), or offline as
 **`dist/Crows_Ref_Screen.html`** (one file, works offline, autosaves in the browser; **Save campaign /
-Load campaign** writes a `.json` file). The tabs come in three groups: **Run** (Session, Encounters, Travel),
+Load campaign** writes a `.json` file). The tabs come in three groups: **Run** (Session, Tabletop, Encounters, Travel),
 **Campaign** (Party, Village, World, Preferences), and **Reference** (Bestiary, Maps, Tables, Rules). The sidebar keeps the timer, the dice,
 and the session log (the last 14 entries, or Show all, with a box for notes).
 
+- **Tabletop** (Run group): a graphical tabletop in the spirit of Foundry VTT, for every mode of play. Make a **scene**: a **Dungeon** (a map or
+  board with walls, doors, and windows; fog of war by line of sight and light, with ambient light bright/dim/dark, torch 5/5 and lantern
+  10/10 as light on a crow or a token left on the map, and a crow's own sight radius for Dark Senses), a **Battle map** (tokens tied to the combat
+  tracker: names, health bars, conditions, who has acted, hurt/heal/conditions from the token, creatures added from the Bestiary into the tracker
+  in one step, and initiative and Next round on the strip above), an **Overland hex map** (Cornath or your own: the party marker, the day's hexes
+  from the Travel tab against the hexes moved, and hexes revealed as it travels), a **Village or town** (pins for places and institutions, tokens
+  for NPCs), or a **Blank board**. Tokens show the art assigned to them: a crow's portrait and a creature's Bestiary (or your own) art. Tools:
+  select/move, measure (squares or hexes), ping, walls, doors, windows, room, erase, reveal and hide the fog by brush, box, or shape, and pins.
+  **Player view** shows exactly what the players see (good for a shared screen or TV: Fullscreen); in Tabletop Mode, where nothing is shared, it is
+  the table's own display. **Show to players** publishes the scene with the live fight: only the fog (as a mask, never the walls) and the tokens
+  the party can see are sent, and players' moves and pings come back like their combat actions. Dungeon scenes also carry the dungeon turn clock
+  and End DT. Scenes are saved with the campaign. (The map picture itself is the whole picture, as with any virtual tabletop: fog hides it on
+  screen, not from someone who digs through the page.)
 - **Session**: Start session and End session (ending one fills in the XP award from the players' claims, with the greed
   bonus, and reminds you of the village cycle; starting the next archives the log), the shared dungeon-turn timer (60/30/20 minutes or every 1d6 rooms), Encounter Number with
   crowded/chaos adjustments, greed bonus, End DT (ends DT conditions, rolls the encounter check and the monster
