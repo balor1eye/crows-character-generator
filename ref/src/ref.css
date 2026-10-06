@@ -424,7 +424,7 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 body[data-tab="vtt"] .side-timer { display: none; }
 /* The Tabletop's Practice block (ref-practice.js): only on that tab */
 .side-practice:not(.on) { display: none; }
-.side-practice { border-bottom: 1px solid var(--line); padding-bottom: .8rem; display: flex; flex-direction: column; gap: .45rem; }
+.side-practice { border-top: 1px solid var(--line); padding-top: .8rem; display: flex; flex-direction: column; gap: .45rem; }
 .side-practice .field { margin: 0; }
 .side-practice .prac-row .grow { flex: 1; }
 .prac-crows { margin: 0; padding-left: 1.3rem; display: flex; flex-direction: column; gap: .35rem; }

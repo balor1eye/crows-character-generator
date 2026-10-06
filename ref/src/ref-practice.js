@@ -481,6 +481,10 @@
     var on = tab === 'vtt' && !!(run() || scene());   // on the Tabletop, once there's a scene
     box.classList.toggle('on', on);
     if (!on) return;
+    if (!U.open && !run()) {   // collapsed to a button until clicked (a fight under way stays open)
+      box.appendChild(btn('Practice fight…', function () { U.open = true; renderPractice(); }, 'btn-small btn-ghost', 'Run this encounter against computer-controlled crows'));
+      return;
+    }
     var kids = [el('h3', { text: 'Practice fight' })];
     if (run()) kids = kids.concat(runUI()); else kids = kids.concat(setupUI());
     var hist = (P().history || []).slice(0, 5);
