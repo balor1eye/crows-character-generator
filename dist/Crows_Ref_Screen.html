@@ -8600,10 +8600,28 @@ CROWS.NAME_IDEAS = {
     changed(); render();
   }
   function sameMap(a, b) { return !!a && !!b && (a.b ? a.b === b.b : a.k === b.k); }
+  /* A scene made before grids were read from the map has never been checked: look once, and refit it if the map's own grid is of another kind or
+     size (a hex map on squares, say). A scene whose grid already agrees keeps its offsets and tuning. `force` refits it whatever it has. */
+  function checkGrid(sc, force) {
+    var m = sc && sc.map, id = m && (m.b || m.k); if (!m || (!force && sc.autoGrid === id)) return;
+    var src = mapSrc(sc), v = m.b ? artVariant(m.b) : null; if (!src) return;
+    if (force && U.gridMemo) delete U.gridMemo[id];
+    var busy = U.checking || (U.checking = {}); if (busy[sc.id + id]) return; busy[sc.id + id] = true;
+    var img = new Image();
+    img.onerror = function () { delete busy[sc.id + id]; sc.autoGrid = id; };
+    img.onload = function () {
+      delete busy[sc.id + id];
+      if (sc.map !== m) return;
+      var memo = U.gridMemo || (U.gridMemo = {}), dg = v && v.cols ? { grid: 'square', g: img.naturalWidth / v.cols } : id in memo ? memo[id] : (memo[id] = detectGrid(img));
+      if (force || !dg || dg.grid !== sc.grid || Math.abs(dg.g / sc.g - 1) > .03) { if (dg || force) { setMap(sc, m); return; } }
+      sc.autoGrid = id; changed();
+    };
+    img.src = src;
+  }
   /* The scene that has this map (the first one), or a new battle-map scene made for it. */
   function sceneForMap(m, title) {
     var sc = V().scenes.filter(function (s) { return sameMap(s.map, m); })[0];
-    if (sc) return sc;
+    if (sc) { checkGrid(sc); return sc; }
     sc = makeScene('open', (title || 'Map').slice(0, 60));
     V().scenes.push(sc); setMap(sc, m);
     return sc;
@@ -8806,7 +8824,7 @@ CROWS.NAME_IDEAS = {
           else { sc.g = Math.max(10, Math.round(sc.w / (sc.kind === 'travel' ? 28 : U.cols))); sc.grid = sc.kind === 'travel' ? 'hexp' : Tbl.isHex(sc) ? 'square' : sc.grid; }   // nothing found: a travel scene's hexes, otherwise squares
         }
       }
-      sc.seen = ''; sc.seenDims = ''; changed(); if (U.view) U.view.sceneChanged(sc.id + 'm'); render();
+      sc.autoGrid = m.b || m.k; sc.seen = ''; sc.seenDims = ''; changed(); if (U.view) U.view.sceneChanged(sc.id + 'm'); render();
     };
     img.src = src;
     changed();
@@ -9139,7 +9157,7 @@ CROWS.NAME_IDEAS = {
   function renderVtt() {
     var sc = cur();
     if (!U.built) { U.host = build(); U.built = true; }
-    if (sc) { syncTokens(sc); vitalsFx(sc); }
+    if (sc) { syncTokens(sc); vitalsFx(sc); checkGrid(sc); }
     var box = $('sec-vtt');
     // Keep the canvas where it is: only the layers floating on it are rebuilt.
     if (!box.contains(U.host)) { box.innerHTML = ''; box.appendChild(U.host); U.view.resize(); }
@@ -9715,6 +9733,7 @@ CROWS.NAME_IDEAS = {
       [['bright', 'Bright'], ['dim', 'Dim'], ['dark', 'Dark']].map(function (o) { return el('option', { value: o[0], text: o[1], selected: sc.ambient === o[0] ? true : null }); }));
     return el('div', { class: 'dr-stack' }, [
       el('label', { class: 'field' }, ['Name', name]), el('label', { class: 'field' }, ['Map', mapSel]),
+      sc.map ? btn('Detect the grid from the map', function () { checkGrid(sc, true); }, 'btn-small', 'Look at the picture for its squares or hexes and fit the grid to them (replaces the grid settings below)') : null,
       el('h4', { text: 'Grid' }),
       el('div', { class: 'row center' }, [el('label', { class: 'field' }, ['Squares across', colsIn]), el('label', { class: 'field grow' }, ['Grid', grid]), el('label', { class: 'field' }, ['Board', bg])]),
       el('div', { class: 'row center' }, [el('span', { class: 'fine', text: 'Offset' }), numIn(sc, 'ox', -400, 400, function () { sc.seen = ''; }), numIn(sc, 'oy', -400, 400, function () { sc.seen = ''; }),
