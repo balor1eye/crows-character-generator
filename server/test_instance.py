@@ -272,6 +272,16 @@ def smoke():
     check("an unchanged fight answers 'unchanged'", p1.get("combat.mine", id=ch["id"], known=mine["version"]).get("unchanged"))
     fails("another player can't see the crow's fight", 404, lambda: p2.get("combat.mine", id=ch["id"]))
     check("a linked crow that isn't in the fight sees none", p2.get("combat.mine", id=ch2["id"])["combat"] is None)
+    # Monster Expert: what only one crow knows reaches only that crow's player
+    known = {"st": 7, "stMax": 10, "p": 2, "atk": ["Bite"], "traits": ["Pack"]}
+    pub = ref.post("combat.publish", {"campaign": camp["id"], "combat": dict(fight, expert={str(acc["id"]): {"f1": known}, str(acc2["id"]): {"f1": dict(known, p=99)}}),
+                                      "members": [acc["id"]]})
+    check("the server says it keeps Monster Expert knowledge private", pub.get("expert") is True)
+    mine = p1.get("combat.mine", id=ch["id"])["combat"]
+    check("the crow's player gets only their own crow's Monster Expert knowledge", mine.get("expert") == {"f1": known})
+    ref.post("combat.publish", {"campaign": camp["id"], "combat": dict(fight, expert={str(acc2["id"]): {"f1": known}}), "members": [acc["id"]]})
+    check("...and none when only another crow knows", "expert" not in p1.get("combat.mine", id=ch["id"])["combat"])
+    pub = ref.post("combat.publish", {"campaign": camp["id"], "combat": fight, "members": [acc["id"]]})
     p1.post("combat.act", {"id": ch["id"], "campaign": camp["id"], "action": {
         "type": "attack", "target": "f1", "targetName": "Smoke Rat 1", "label": "Attack with Dagger", "tier": 2, "damage": 4, "extra": "dropped"}})
     fails("a crow not in the fight can't act in it", 409, lambda: p2.post("combat.act", {"id": ch2["id"], "campaign": camp["id"], "action": {"type": "done"}}))

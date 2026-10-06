@@ -1436,7 +1436,7 @@ function a_combat_publish(): array {
     else q('DELETE FROM combat_members WHERE campaign_id = ?', [$cid]);
     foreach ($chars as $ch) q('INSERT IGNORE INTO combat_members (campaign_id, character_id) VALUES (?,?)', [$cid, $ch]);
     foreach (array_unique(array_merge($old, $chars)) as $ch) signal('combatc', $ch, $v);
-    return ['version' => $v, 'members' => count($chars), 'actions' => actions_info($cid)];
+    return ['version' => $v, 'members' => count($chars), 'actions' => actions_info($cid), 'expert' => true];   // expert: combat.mine hands out per-player knowledge
 }
 
 /** The Ref Screen: actions players sent after `after` (oldest first), and where to watch for more. */
@@ -1474,7 +1474,18 @@ function a_combat_mine(): array {
     if ($known && $known === $v) return ['unchanged' => true, 'version' => $v];
     return ['version' => $v, 'watch' => combat_watch('combatc', $id),
             'campaign' => $r ? ['id' => (int)$r['campaign_id'], 'name' => $r['name'] !== '' ? $r['name'] : 'Untitled campaign'] : null,
-            'combat' => $r ? json_decode($r['data']) : null, 'you' => $r ? (int)$r['access_id'] : null];   // this crow's link in the fight
+            'combat' => $r ? own_view(json_decode($r['data']), (int)$r['access_id']) : null, 'you' => $r ? (int)$r['access_id'] : null];   // this crow's link in the fight
+}
+/**
+ * What one crow's player may see of the fight: what only some crows know (Monster Expert: { link: { creature id: stats } }) is cut down
+ * to this crow's own part.
+ */
+function own_view($c, int $link) {
+    if (!is_object($c) || !isset($c->expert)) return $c;
+    $mine = is_object($c->expert) && isset($c->expert->{(string)$link}) ? $c->expert->{(string)$link} : null;
+    unset($c->expert);
+    if (is_object($mine)) $c->expert = $mine;
+    return $c;
 }
 
 function clean_action($a): array {

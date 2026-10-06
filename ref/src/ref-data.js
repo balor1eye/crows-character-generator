@@ -135,6 +135,15 @@ REF.BESTIARY = [
   C('Undead', 'Undead G', 'M', 20, 100, '6, fly 6', 0, [2, 5, 5], 0, [['Rustswords', 5, 'M1', 8, 16, 'each metal armor/sword/shield of a damaged creature -5 AD'], ['Begone', 5, 'R10', 8, 14, 'vertical slide 3 (T2) or 5 (T3)']], '"Fallen knight", "rusted one". Extra action or maneuver per turn. Insect Breath (action, 1/turn): 5 cube within 1, enemies Agility RR: 20; 10; 0. Rise!: humans it kills rise as undead A in 1d6 rounds.', [['Insect Breath', 3, 'Day']], 4),
   C('Undead', 'Undead H', 'H', 25, 120, '7', 0, [3, 4, 5], 0, [['Spineswords', 5, 'M2/R5', 10, 19, 'damage: weakened'], ['Bites', 5, 'M1', 5, 10, '2 targets; crit vs Large or smaller: head removed']], '"Flayer of souls", "spinecruncher". Extra action or maneuver. Whirlwind (action, 1/turn): move speed, no opportunity attacks; each enemy within 2 at start, end, or during takes 1d10. Damned Shriek (maneuver, 1/turn): enemies within 5 Mind RR: prone and vulnerable; prone; none.', [['Whirlwind', 3, 'Day'], ['Damned Shriek', 2, 'Day']], 4)
 ];
+/* The names of each monster's traits (what Monster Expert tells a player; the stat block's text has the details). */
+REF.MONSTER_TRAITS = {
+  'Blood Creature A': ['Pack hunter', 'Drop Attack'], 'Blood Creature B': ['Tendril orb', 'Drain the grabbed (maneuver)'],
+  'Blood Creature C': ['Squeeze through gaps', 'Can\'t be grabbed or knocked prone'],
+  'Ring Collector (Namlin)': ['Extra action or maneuver', 'Ring sense', 'Vanish'],
+  'Undead A': ['Pack', 'Leap'], 'Undead B': ['Leap', 'Hard counters'], 'Undead C': ['Squeeze'], 'Undead D': ['Fire Beam', 'Absorb'],
+  'Undead E': ['Bite Frenzy', 'Horrid Gnashing'], 'Undead F': ['Exploding Mote', 'Glorp Through', 'Explodes at 0 Stamina'],
+  'Undead G': ['Extra action or maneuver', 'Insect Breath', 'Rise!'], 'Undead H': ['Extra action or maneuver', 'Whirlwind', 'Damned Shriek']
+};
 REF.TYPE_NOTES = {
   'Animal': 'Rarely fight to the death; flee at 0 Stamina or when they get what they want. Predators give up on hard targets and traps. All animals can become pets.',
   'Human': 'All Medium, speed 5, 10 slots. Flee or surrender when outmatched; fight for a reason and stop when satisfied. A lone human at 0 Stamina flees; a group reduced by half flees (Ref\'s call).',

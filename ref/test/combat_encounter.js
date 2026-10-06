@@ -166,12 +166,20 @@ var CROWS = [['Ash', 11, 'Strength', 9], ['Briar', 7, 'Agility', 7], ['Corvin', 
   check(cues().some(function (t) { return /Every foe is down/.test(t); }), 'cue: every foe is down');
   check(/0 of 5 foes standing/.test(text(run())), 'the count reads 0 of 5 foes standing');
 
-  /* ---------------------------------------------------------------- 9. the Session tab knows */
+  /* ---------------------------------------------------------------- 9. one tracker, not on the Session tab */
+  check(q('#sec-combat').hidden && qa('.cbt', run()).length === 10, 'while it runs, the fight has one tracker: the Running card (the plain Combat card is hidden)');
   goTab('Session');
-  check(/Running encounter: Ambush at the ford/.test(text(q('#sec-combat .run-note'))), 'the Session tab\'s combat card links to the running encounter');
-  check(!q('#sec-combat .cbt') && /round 2, 1 foe standing/.test(text(q('#sec-combat'))), '...with a summary of the fight instead of a second tracker');
-  click('Go to the fight', q('#sec-combat'));
-  check(document.body.getAttribute('data-tab') === 'encounters' && !run().hidden, 'Go to the fight opens the Encounters tab');
+  check(!qa('.cbt').some(function (n) { return n.offsetParent; }) && !q('#sec-combat').offsetParent, 'the Session tab has no combat tracker');
+  click('Tabletop', q('#tabbar'));
+  click('Battle map', q('.vtt-empty'));
+  q('.vtt-roster .fab.add').click();
+  check(/Running: Ambush at the ford/.test(text(q('.vtt-drawer'))), 'the Tabletop\'s Add drawer names the running encounter');
+  click('Put its creatures on the map', q('.vtt-drawer'));
+  var toks = window.CrowsRef.state.vtt.scenes[0].tokens, alive = window.CrowsRef.state.session.combat.list.filter(function (x) { return x.kind !== 'pc' && !x.dead; });
+  check(toks.filter(function (t) { return t.kind === 'pc'; }).length === 4 && alive.every(function (x) { return toks.some(function (t) { return t.cid === x.id; }); }) && toks.length === 4 + alive.length,
+    'it puts the four crows and the creatures still alive on the battle map, tied to the tracker (' + toks.map(function (t) { return t.name; }).join(', ') + ')');
+  goTab('Encounters');
+  check(!run().hidden, 'the fight is on the Encounters tab');
 
   /* ---------------------------------------------------------------- 10. treasure XP for the four players */
   type(q('textarea', run()), 'The thieves carried a silver locket.');

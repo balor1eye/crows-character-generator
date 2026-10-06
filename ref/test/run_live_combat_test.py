@@ -97,7 +97,7 @@ def main():
         ok("Ref adds the crow to a new campaign from the player's link")
 
         # The fight: two Blood Creature A and the party, round 1.
-        r("button('Session', q('#tabbar')).click();")
+        r("button('Encounters', q('#tabbar')).click();")
         r("""var box = q('#sec-combat'); var s = q('select[aria-label=Creature]', box); s.value = 'Blood Creature A'; s.dispatchEvent(new Event('change'));
              type(q('input[aria-label=\"How many\"]', box), '2'); button('Add', box, true).click();""")
         r("button('Add party', q('#sec-combat')).click();")

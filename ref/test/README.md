@@ -37,8 +37,9 @@ first check that didn't hold, and the run stops there.
    an ally joins the running encounter.
 8. **Morale.** One thief at 0 Stamina gives the "half the human foes are down" cue. Then the undead die and
    the other thief is marked dead, giving "every foe is down" and "0 of 5 foes standing".
-9. **The Session tab** shows that an encounter is running, as a summary (round, foes standing) instead of a second
-   tracker, and "Go to the fight" opens the Encounters tab.
+9. **One tracker.** While it runs, the Running card holds the only tracker (the Encounters tab's plain Combat card is
+   hidden), and the Session tab has none. On the Tabletop, a new battle map's Add drawer names the running encounter,
+   and "Put its creatures on the map" places the four crows and the creatures still alive, tied to the tracker.
 10. **Treasure XP.** Notes typed during the fight are kept. "Award treasure XP" opens the Party tab labelled
     with the encounter, and 400 gc gives each of the four crows 100 pending XP.
 11. **Ending it** ("The crows won"). The tracker clears, and the encounter is resolved and shown. Its notes get

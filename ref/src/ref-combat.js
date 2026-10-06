@@ -7,10 +7,10 @@
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
   var activePCs = f('activePCs'), beast = f('beast'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
-      clamp = f('clamp'), cloudOn = f('cloudOn'), encLink = f('encLink'), feat = f('feat'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
+      clamp = f('clamp'), cloudOn = f('cloudOn'), feat = f('feat'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
       int = f('int'), lightbox = f('lightbox'), linkOn = f('linkOn'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
       rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), sheetOp = f('sheetOp'),
-      publicTable = f('publicTable'), tabletop = f('tabletop'), test = f('test'), testLine = f('testLine'), vttAction = f('vttAction');
+      lineOfEffect = f('lineOfEffect'), publicTable = f('publicTable'), tabletop = f('tabletop'), test = f('test'), testLine = f('testLine'), vttAction = f('vttAction');
   var $ = A.$, clone = A.clone, d = A.d, d100 = A.d100, el = A.el, netEdges = A.netEdges, pick = A.pick, plural = A.plural, Rules = A.Rules,
       signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -574,13 +574,46 @@
       rooms: timer ? null : Math.max(0, (s.rooms || 0) - (s.roomsDone || 0)), greed: greedBonus(), pending: !!s.pending,
       rest: r.active ? { active: true, half: !!r.half, where: r.where, chose: Object.keys(r.choices || {}).map(Number) } : { active: false } };
   }
+  /*
+   * Monster Expert: "When you are wielding a monster lore book and a monster is in your line of effect, you know the monster's Stamina,
+   * power, and the names of their attacks and traits." Checked on the crow's own sheet (a linked crow whose sheet is loaded here): the trait
+   * bought, and a Lore Book (Monster Lore) in hand. A monster is a creature that isn't human or animal, standing and not hidden. Line of
+   * effect comes from the Tabletop when both have tokens on the current scene (walls, closed doors, and windows block it); with no map to
+   * tell, every monster in the fight counts.
+   */
+  var EXPERT_BOOK = 'Lore Book (Monster Lore)';
+  function isExpert(p) {
+    var sh = sheetOf(p);
+    return !!(sh && (sh.traits || []).some(function (id) { return /\|Monster Expert$/.test(id); }) &&
+      (sh.inv || []).some(function (x) { return x.area === 'hand' && x.key === EXPERT_BOOK; }));
+  }
+  function isMonster(x) { var b = beast(x.cref); return !!(b && x.kind !== 'pc' && b.t !== 'Human' && b.t !== 'Animal'); }
+  /* { crow's link: { creature id: what the crow knows } } for every crow in the fight that qualifies. */
+  function expertKnows() {
+    var c = S().combat, out = {};
+    c.list.forEach(function (me) {
+      var p = pcOf(me); if (!p || !p.link || me.dead || !isExpert(p)) return;
+      c.list.forEach(function (x) {
+        if (!isMonster(x) || x.dead || x.hidden || lineOfEffect(p.id, x.id) === false) return;
+        var b = beast(x.cref);
+        (out[p.link] = out[p.link] || {})[x.id] = { st: x.st, stMax: x.stMax, p: b.p, atk: b.atk.map(function (a) { return a[0]; }),
+          traits: (REF.MONSTER_TRAITS || {})[b.n] || b.uses.map(function (u) { return u[0].replace(/ \(.*$/, ''); }) };
+      });
+    });
+    return out;
+  }
+  /* The names of the crows whose players know this creature through Monster Expert (for the Ref's screen). */
+  function monsterExperts(x) {
+    var k = expertKnows();
+    return state.party.filter(function (p) { return p.link && k[p.link] && k[p.link][x.id]; }).map(function (p) { return p.name || 'A crow'; });
+  }
   /* The fight as the players see it ({ active: false } when there's none), with the session. */
   function publicCombat() {
     var c = S().combat, run = runningEnc();
     if (!liveOn()) return { active: false };
     var tbl = publicTable();   // the tabletop scene, if the Ref is showing one (ref-vtt.js)
     if (!c.list.length) return tbl ? { active: false, session: publicSession(), table: tbl } : { active: false, session: publicSession() };
-    return { active: true, session: publicSession(), table: tbl || undefined, round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
+    var out = { active: true, session: publicSession(), table: tbl || undefined, round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
       list: c.list.map(function (x) {
         var b = beast(x.cref), pc = x.kind === 'pc', g = byId(x.grabbedBy), o = { id: x.id, kind: x.kind, name: x.name, health: healthWord(x), dead: !!x.dead,
           conds: Object.keys(x.conds || {}).filter(function (k) { return x.conds[k]; }), surprised: surprised(x), sz: sizeOf(x) };
@@ -613,6 +646,10 @@
       prompts: (c.prompts || []).filter(function (p) { return !p.done && p.round === c.round; }),
       assists: c.assists || [],
       feed: (c.feed || []).slice(-25) };
+    // Each player gets only their own crow's part (the server keeps the rest from them); a server too old to do that gets none.
+    var ex = expertKnows();
+    if (live.expertOk && Object.keys(ex).length) out.expert = ex;
+    return out;
   }
   /* Called from save(): publish the fight soon after it changes. */
   /* The fight is shared with the players unless this is a Tabletop Mode campaign or the Ref turned it off. */
@@ -635,6 +672,7 @@
     live.busy = true; live.again = false;
     window.CrowsCloud.api('POST', 'combat.publish', '', { campaign: cid, combat: pub, members: members }).then(function (j) {
       live.sent = json; live.cid = cid;
+      if (j.expert && !live.expertOk) { live.expertOk = true; liveChanged(); }   // this server keeps each player's Monster Expert knowledge private
       var c = S().combat;
       if (typeof c.lastAct !== 'number') { c.lastAct = j.actions.latest; save(); }   // anything older belongs to an earlier fight
       window.CrowsCloud.watch('cacts', j.actions.watch, c.lastAct, fetchActions);
@@ -846,18 +884,14 @@
     ]);
   }
 
-  function friends(n) { return n === 1 ? '1 crow or ally' : n + ' crows and allies'; }
-  /* The Session tab's combat card: the tracker, or while an encounter is running (its tracker is on the Encounters tab), a summary. */
+  /* The Encounters tab's combat card: the tracker for a fight outside a running encounter (a running one has the tracker in its own card). */
   function renderCombat() {
-    renderTable();
-    var c = S().combat, living = c.list.filter(function (x) { return !x.dead && x.kind === 'foe'; }), run = runningEnc();
-    var head = el('h2', null, ['Combat', el('small', { text: living.length ? plural(living.length, 'foe') + ' standing' : 'tracker' })]);
-    if (!run) { card('sec-combat', head, combatUI(false)); return; }
-    card('sec-combat', head, [el('div', { class: 'pending run-note row center' }, [
-      el('span', { class: 'grow' }, [el('b', { text: 'Running encounter: ' }), encLink(run.id, run.name || 'untitled'),
-        ' \u00b7 ' + (c.round ? 'round ' + c.round + ', ' : 'not started, ') + plural(living.length, 'foe') + ' standing, ' +
-        friends(c.list.filter(function (x) { return !x.dead && x.kind !== 'foe'; }).length) + '.']),
-      btn('Go to the fight', function () { setTab('encounters'); }, 'btn-small btn-primary', 'The fight\u2019s tracker is on the Encounters tab, with the encounter')])]);
+    var box = $('sec-combat'), run = runningEnc();
+    if (!feat('combat')) return;
+    box.hidden = !!run;
+    if (run) { box.innerHTML = ''; return; }
+    var c = S().combat, living = c.list.filter(function (x) { return !x.dead && x.kind === 'foe'; });
+    card('sec-combat', el('h2', null, ['Combat', el('small', { text: living.length ? plural(living.length, 'foe') + ' standing' : 'tracker' })]), combatUI(false));
   }
   /* Start the next round: roll who acts first (1d10, 6+ is the crows and allies). */
   function nextRound() {
@@ -869,7 +903,7 @@
     feed('**Round ' + c.round + '.** ' + (crows ? 'Crows and allies act first.' : 'Enemies act first.') + sur);
     save(); render();
   }
-  /* The combat tracker's controls and list, for the Session tab and for a running encounter (inRun). */
+  /* The combat tracker's controls and list, for the Encounters tab's Combat card and for a running encounter (inRun). */
   function combatUI(inRun) {
     var s = S(), c = s.combat, addSel = { name: ui.addName || 'Blood Creature A', n: ui.addN || 1, side: ui.addSide || 'foe' };
     var select = beastSelect(addSel.name, function (v) { ui.addName = v; });
@@ -1040,6 +1074,6 @@
       itemsText: itemsText, newItem: newItem, onGround: onGround, itemNews: itemNews, putDown: putDown, creaturePickUp: creaturePickUp,
       creatureDrop: creatureDrop, dropFromFallen: dropFromFallen, groundText: groundText, itemsPanel: itemsPanel, pcOf: pcOf, healthWord: healthWord,
       publicSession: publicSession, publicCombat: publicCombat, restChoice: restChoice, restChoiceText: restChoiceText, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,
-      doomOptions: doomOptions, livePanel: livePanel, liveOn: liveOn, nextRound: nextRound, tableStatus: tableStatus, renderTable: renderTable, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
+      doomOptions: doomOptions, livePanel: livePanel, liveOn: liveOn, nextRound: nextRound, isExpert: isExpert, expertKnows: expertKnows, monsterExperts: monsterExperts, tableStatus: tableStatus, renderTable: renderTable, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
       SIZE_ORDER: SIZE_ORDER, live: live, dropQueued: dropQueued, MANEUVER_NOTES: MANEUVER_NOTES });
 })();

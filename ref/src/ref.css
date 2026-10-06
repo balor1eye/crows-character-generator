@@ -408,3 +408,6 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .tt-name { flex: 1 1 150px; }
 .tt-atks { flex: 1 0 100%; }
 .cbt-ref { margin: .3rem 0 0; padding-left: 1.1rem; font-size: .82rem; color: var(--muted); }
+
+/* The Tabletop tab has the clock floating on its map. */
+body[data-tab="vtt"] .side-timer { display: none; }

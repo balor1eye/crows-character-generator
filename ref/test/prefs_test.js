@@ -43,6 +43,7 @@ try {
   var list = st().session.combat.list, bear = list.filter(function (x) { return x.cref === 'Bear'; })[0], ash = list.filter(function (x) { return x.kind === 'pc'; })[0];
   check(bear && ash, 'a Bear and a crow are in the tracker');
   bear.tgt = ash.id; CR.save(); CR.render();
+  tab('Encounters');
   var row = qa('#sec-combat .cbt').filter(function (r) { return q('.cbt-name input', r).value === bear.name; })[0];
   check(q('.cbt-ref', row) && /Bite/.test(text(q('.cbt-ref', row))), 'the Bear lists its attacks');
   qa('.atk-btn', row)[0].click();

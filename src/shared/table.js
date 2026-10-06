@@ -22,6 +22,15 @@
   // ------------------------------------------------------------------ scenes and grids
   var SIZES = { T: 0.5, S: 1, M: 1, L: 2, H: 3 };
   var KIND_COLOR = { pc: '#4fb6a6', foe: '#c4524a', ally: '#6aa84f', npc: '#d6a93b', obj: '#8a8a93' };
+  // The markers around a token for its conditions: [color, letter]. Anything else gets a gray marker with its first letter.
+  var COND_STYLE = { Blessed: ['#d9b23c', 'B'], Grabbed: ['#e0782f', 'G'], Prone: ['#8d6a4b', 'P'], Unconscious: ['#6c5fd0', 'U'], Vulnerable: ['#d2455c', 'V'],
+    Weakened: ['#4f86b0', 'W'], Hidden: ['#5b6670', 'H'], Squeezing: ['#8b8456', 'S'], Taunted: ['#b8432f', 'T'], Surprised: ['#c27bd6', '!'] };
+  var HW_COLOR = { 'unhurt': '#9fdca8', 'armor dented': '#a9c8e8', 'hurt': '#f0c862', 'badly hurt': '#ff8a72', 'down': '#ff6b5e' };
+  var COND_INFO = { Blessed: 'Edge on all tests; attacks deal extra damage.', Grabbed: 'Speed 0, can’t flank; attacks against it have an edge.',
+    Prone: 'Speed halved, bane on melee attacks; melee against it has an edge, ranged a bane.', Unconscious: 'No actions or reactions; attacks against it are tier 3. Damage wakes it.',
+    Vulnerable: 'Takes an extra 1d6 each time it takes damage.', Weakened: 'Bane on all tests.', Hidden: 'Edge on its attacks; attacking reveals it.',
+    Squeezing: 'Speed halved; attacks against it get +1.', Taunted: 'Its attacks that leave out the taunter take a bane.', Surprised: 'No turn in round 1; attacks against it get +1.' };
+  function condStyle(c) { return COND_STYLE[c] || ['#666', (c || '?').charAt(0).toUpperCase()]; }
   var nid = 1;
   function uid(p) { return (p || 't') + Date.now().toString(36) + (nid++); }
   function newScene(o) {
@@ -266,13 +275,31 @@
   /*
    * options: ref (the Ref's controls and view), scene() -> the scene, mask() -> the fog mask, tokenSrc(t), mapSrc(scene), canMove(t),
    * speedOf(t), onSelect(t | null), onMove(t, x, y), onPing(x, y), onWall(seg), onErase(wall), onDoor(wall), onPaint(x, y, r, reveal),
-   * onRoom(rect), onFogRect(pts, reveal), onMenu(t, event), onPin(pin), onDrop(x, y)
+   * onRoom(rect), onFogRect(pts, reveal), onMenu(t, event), onPin(pin), onDrop(x, y), onFrame() (after each drawn frame: overlays follow the camera)
+   *
+   * Everything that changes is animated (unless the system asks for reduced motion): tokens glide to where they moved, pop in when they
+   * arrive and fade out when they go, flash red when hurt and green when healed, and fall when they die; new conditions pop, the fog fades
+   * as it opens, walls draw themselves in, doors flash, pins drop, and the camera glides. The view diffs the scene each frame to find these.
    */
+  var RM = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+  function ease(k) { return k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; }
+  function easeOut(k) { return 1 - Math.pow(1 - k, 3); }
+  function backOut(k) { var c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); }
+  function bounceOut(k) {
+    if (k < 1 / 2.75) return 7.5625 * k * k;
+    if (k < 2 / 2.75) { k -= 1.5 / 2.75; return 7.5625 * k * k + .75; }
+    if (k < 2.5 / 2.75) { k -= 2.25 / 2.75; return 7.5625 * k * k + .9375; }
+    k -= 2.625 / 2.75; return 7.5625 * k * k + .984375;
+  }
   function view(host, o) {
     var cv = document.createElement('canvas'), ctx = cv.getContext('2d'), cam = { x: 0, y: 0, z: 1 }, V = { tool: 'select', player: false, sel: null, ghost: {}, pings: [], size: { w: 0, h: 0 }, dpr: 1,
-      brush: 1, drag: null, hover: null, ruler: null, chain: null, queued: false, sceneId: null, fogImg: null, fogKey: '', lastPing: 0, spaceDown: false, keep: {} };
+      brush: 1, drag: null, hover: null, ruler: null, chain: null, queued: false, sceneId: null, fogImg: null, fogKey: '', lastPing: 0, spaceDown: false, keep: {},
+      // animation state: shown positions, tweens, what each token looked like last frame, arrivals, departures, effects
+      shown: {}, tw: {}, seen: {}, born: {}, leaving: [], fx: {}, condT: {}, alpha: {}, floats: [], rings: [], camTw: null, fogPrev: null, fogT0: 0, sceneT0: 0,
+      primed: false, intro: 0, wallSeen: {}, wallT: {}, pinSeen: {}, pinT: {}, selT0: 0, lastT: 0, busy: false };
     cv.className = 'vtt-canvas'; cv.tabIndex = 0; cv.style.touchAction = 'none';
     host.appendChild(cv);
+    var tip = document.createElement('div'); tip.className = 'vtt-ttip'; tip.setAttribute('role', 'tooltip'); tip.hidden = true; host.appendChild(tip);
 
     function sc() { return o.scene(); }
     function toWorld(ev) { var r = cv.getBoundingClientRect(); return { x: (ev.clientX - r.left) / cam.z + cam.x, y: (ev.clientY - r.top) / cam.z + cam.y }; }
@@ -284,20 +311,79 @@
       cv.width = Math.round(V.size.w * dpr); cv.height = Math.round(V.size.h * dpr); cv.style.width = V.size.w + 'px'; cv.style.height = V.size.h + 'px';
       redraw();
     }
-    function fit() {
-      var s = sc(); if (!s) return;
-      if (host.getBoundingClientRect().width < 50) { V.fitPending = true; return; }
-      cam.z = Math.max(.05, Math.min(V.size.w / s.w, V.size.h / s.h));
-      cam.x = (s.w - V.size.w / cam.z) / 2; cam.y = (s.h - V.size.h / cam.z) / 2; redraw();
+    /* Move the camera so world point (cx, cy) is in the middle at zoom z, gliding over ms (zoom eases in log space so it feels even). */
+    function camTo(cx, cy, z, ms) {
+      if (RM || !ms) { V.camTw = null; cam.z = z; cam.x = cx - V.size.w / z / 2; cam.y = cy - V.size.h / z / 2; redraw(); return; }
+      V.camTw = { a: { cx: cam.x + V.size.w / cam.z / 2, cy: cam.y + V.size.h / cam.z / 2, z: cam.z }, b: { cx: cx, cy: cy, z: z }, t0: Date.now(), dur: ms }; redraw();
     }
-    function centerOn(x, y) { cam.x = x - V.size.w / cam.z / 2; cam.y = y - V.size.h / cam.z / 2; redraw(); }
-    function zoomAt(f, sx, sy) {
+    function stepCam(now) {
+      var t = V.camTw; if (!t) return;
+      var k = Math.min(1, (now - t.t0) / t.dur), e = ease(k), z = Math.exp(Math.log(t.a.z) + (Math.log(t.b.z) - Math.log(t.a.z)) * e);
+      cam.z = z; cam.x = t.a.cx + (t.b.cx - t.a.cx) * e - V.size.w / z / 2; cam.y = t.a.cy + (t.b.cy - t.a.cy) * e - V.size.h / z / 2;
+      if (k >= 1) V.camTw = null; else V.busy = true;
+    }
+    function fit(anim) {
       var s = sc(); if (!s) return;
-      var lo = Math.min(V.size.w / s.w, V.size.h / s.h) * .4, nz = Math.max(lo, Math.min(5, cam.z * f));
-      var wx = sx / cam.z + cam.x, wy = sy / cam.z + cam.y; cam.z = nz; cam.x = wx - sx / nz; cam.y = wy - sy / nz; redraw();
+      var r = host.getBoundingClientRect();
+      if (r.width < 50) { V.fitPending = true; return; }
+      if (Math.abs(r.width - V.size.w) > 1 || Math.abs(r.height - V.size.h) > 1) resize();   // measured before the canvas was sized
+      camTo(s.w / 2, s.h / 2, Math.max(.05, Math.min(V.size.w / s.w, V.size.h / s.h)), anim === true ? 450 : 0);
+    }
+    function centerOn(x, y, anim) { camTo(x, y, cam.z, anim ? 420 : 0); }
+    function zoomAt(f, sx, sy, anim) {
+      var s = sc(); if (!s) return;
+      var z0 = V.camTw ? V.camTw.b.z : cam.z, lo = Math.min(V.size.w / s.w, V.size.h / s.h) * .4, nz = Math.max(lo, Math.min(5, z0 * f));
+      if (V.camTw) { var b = V.camTw.b; camTo(b.cx, b.cy, nz, 200); return; }
+      var wx = sx / cam.z + cam.x, wy = sy / cam.z + cam.y;
+      camTo(wx - sx / nz + V.size.w / nz / 2, wy - sy / nz + V.size.h / nz / 2, nz, anim ? 200 : 0);
     }
     function tokens() { var s = sc(); return s ? s.tokens.filter(function (t) { return !(V.player && t.hidden); }) : []; }
-    function pos(t) { var g = V.ghost[t.id]; return g && g.until > Date.now() ? g : t; }
+    function target(t) { var g = V.ghost[t.id]; return g && g.until > Date.now() ? g : t; }
+    function pos(t) { return V.shown[t.id] || target(t); }
+    function radius(s, t) { return Math.max(.35, tokenSize(t) * .46) * s.g; }
+    /*
+     * Once a frame: glide each token toward where it is now (a drag follows the pointer at once), and note what changed since the last
+     * frame (hurt, healed, died, a new condition) to start its effect. Tokens that are new pop in (staggered when a scene opens);
+     * tokens that are gone fade out.
+     */
+    function stepTokens(s, now) {
+      var here = {};
+      tokens().forEach(function (t) {
+        here[t.id] = true;
+        var tg = target(t), g = V.ghost[t.id], prev = V.seen[t.id], sh = V.shown[t.id];
+        if (!prev || !sh) {
+          V.shown[t.id] = { x: tg.x, y: tg.y };
+          if (!RM) V.born[t.id] = now + (V.primed ? 0 : Math.min(900, V.intro++ * 45));
+        } else {
+          var tw = V.tw[t.id];
+          if (RM || g && g.drag) { delete V.tw[t.id]; tw = null; V.shown[t.id] = { x: tg.x, y: tg.y }; }
+          else if (!tw || tw.tx !== tg.x || tw.ty !== tg.y) {
+            if (Math.abs(sh.x - tg.x) > .5 || Math.abs(sh.y - tg.y) > .5) {
+              var d = Math.hypot(sh.x - tg.x, sh.y - tg.y) / s.g;
+              tw = V.tw[t.id] = { fx: sh.x, fy: sh.y, tx: tg.x, ty: tg.y, t0: now, dur: Math.min(900, 240 + d * 70) };
+            } else { delete V.tw[t.id]; tw = null; V.shown[t.id] = { x: tg.x, y: tg.y }; }
+          }
+          if (tw) {
+            var k = Math.min(1, (now - tw.t0) / tw.dur), e = ease(k);
+            V.shown[t.id] = { x: tw.fx + (tw.tx - tw.fx) * e, y: tw.fy + (tw.ty - tw.fy) * e };
+            if (k >= 1) delete V.tw[t.id]; else V.busy = true;
+          }
+          if (!RM) {
+            if (prev.hpf != null && t.hpf != null && t.hpf < prev.hpf - 1e-6) V.fx[t.id] = { type: 'hit', t0: now };
+            else if (prev.hpf != null && t.hpf != null && t.hpf > prev.hpf + 1e-6) V.fx[t.id] = { type: 'heal', t0: now };
+            if (t.dead && !prev.dead) V.fx[t.id] = { type: 'die', t0: now };
+            (t.conds || []).forEach(function (c) { if (prev.conds.indexOf(c) < 0) V.condT[t.id + '|' + c] = now; });
+          }
+        }
+        V.seen[t.id] = { hpf: t.hpf, dead: !!t.dead, conds: (t.conds || []).slice(), t: t };
+      });
+      Object.keys(V.seen).forEach(function (id) {
+        if (here[id]) return;
+        if (!RM && V.primed && V.shown[id]) V.leaving.push({ t: V.seen[id].t, p: V.shown[id], t0: now });
+        delete V.seen[id]; delete V.shown[id]; delete V.tw[id]; delete V.fx[id]; delete V.born[id]; delete V.alpha[id];
+      });
+      V.primed = true;
+    }
     function hitToken(w) {
       var list = tokens().slice().sort(function (a, b) { return tokenSize(a) - tokenSize(b); }), s = sc();
       for (var i = 0; i < list.length; i++) { var t = list[i], p = pos(t); if (Math.hypot(p.x - w.x, p.y - w.y) <= Math.max(.35, tokenSize(t) * .5) * s.g) return t; }
@@ -338,94 +424,186 @@
       }
       ctx.stroke(); ctx.restore();
     }
-    function drawToken(s, t) {
-      var p = pos(t), r = Math.max(.35, tokenSize(t) * .46) * s.g, kc = t.color || KIND_COLOR[t.kind] || '#888';
-      ctx.save(); ctx.translate(p.x, p.y);
-      if (t.hidden) ctx.globalAlpha = .5;
-      if (t.dead) ctx.globalAlpha *= .55;
-      else if (t.acted) ctx.globalAlpha *= .75;
+    /* A token, with its arrival, departure (a: { p, scale, alpha }), and effects. */
+    function drawToken(s, t, a) {
+      var now = Date.now(), p = a && a.p || pos(t), r = radius(s, t), kc = t.color || KIND_COLOR[t.kind] || '#888', scale = a && a.scale != null ? a.scale : 1, alpha = 1;
+      var b = V.born[t.id];
+      if (b && !a) {
+        var kb = (now - b) / 380; V.busy = true;
+        if (kb < 0) return;
+        if (kb >= 1) delete V.born[t.id]; else { scale *= Math.max(.01, backOut(kb)); alpha *= Math.min(1, kb * 2.5); }
+      }
+      // fade toward how it should look (hidden, dead, done this round) rather than snapping
+      var want = (t.hidden ? .5 : 1) * (t.dead ? .55 : t.acted ? .75 : 1), cur = V.alpha[t.id] == null || RM ? want : V.alpha[t.id];
+      if (Math.abs(cur - want) > .01) { cur += (want - cur) * Math.min(1, Math.min(50, now - V.lastT) / 120); V.busy = true; } else cur = want;
+      if (!a) V.alpha[t.id] = cur;
+      alpha *= cur * (a && a.alpha != null ? a.alpha : 1);
+      var fx = !a && V.fx[t.id], fk = 0, dx = 0;
+      if (fx) {
+        fk = (now - fx.t0) / (fx.type === 'hit' ? 520 : fx.type === 'heal' ? 800 : 750);
+        if (fk >= 1) { delete V.fx[t.id]; fx = null; } else { V.busy = true; if (fx.type === 'hit') dx = Math.sin(fk * 30) * r * .16 * (1 - fk); }
+      }
+      var dragging = V.drag && V.drag.type === 'token' && V.drag.token.id === t.id && V.drag.moved;
+      if (dragging) scale *= 1.08;
+      ctx.save(); ctx.translate(p.x + dx, p.y); if (scale !== 1) ctx.scale(scale, scale);
+      ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
+      if (fx && fx.type === 'die') { ctx.rotate(Math.sin(fk * Math.PI) * .25); }
       if (t.light && t.light.on !== false && (o.ref && !V.player)) { ctx.beginPath(); ctx.arc(0, 0, r + 3 / cam.z, 0, 7); ctx.strokeStyle = 'rgba(255,200,90,.9)'; ctx.lineWidth = 3 / cam.z; ctx.stroke(); }
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = kc; ctx.fill();
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = dragging ? 18 : 7; ctx.shadowOffsetY = dragging ? 6 : 2;
+      ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = kc; ctx.fill(); ctx.restore();
       var src = o.tokenSrc ? o.tokenSrc(t) : null, im = src ? pic(src, redraw) : null;
-      if (im) { ctx.save(); ctx.clip(); ctx.drawImage(im, -r, -r, r * 2, r * 2); ctx.restore(); }
+      if (im) { ctx.save(); ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.clip(); ctx.drawImage(im, -r, -r, r * 2, r * 2); ctx.restore(); }
       else if (t.kind === 'obj') { ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.font = 'bold ' + r * 1.1 + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t.icon || (t.light ? '✶' : '◆'), 0, 0); }
       else { ctx.fillStyle = '#fff'; ctx.font = 'bold ' + r * .95 + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText((t.name || '?').replace(/^(the|a|an)\s+/i, '').slice(0, 2).toUpperCase(), 0, 0); }
+      if (fx && fx.type === 'hit') { ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = 'rgba(230,40,30,' + (.6 * (1 - fk)) + ')'; ctx.fill(); }
+      if (fx && fx.type === 'heal') {
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = 'rgba(90,220,120,' + (.4 * (1 - fk)) + ')'; ctx.fill();
+        for (var hi = 0; hi < 2; hi++) { var hk = Math.max(0, fk - hi * .2); ctx.beginPath(); ctx.arc(0, 0, r * (1 + easeOut(hk) * .7), 0, 7); ctx.strokeStyle = 'rgba(110,235,140,' + (1 - hk) * .9 + ')'; ctx.lineWidth = 3 / cam.z; ctx.stroke(); }
+      }
+      if (fx && fx.type === 'die') { ctx.beginPath(); ctx.arc(0, 0, r * (1 + easeOut(fk) * .9), 0, 7); ctx.strokeStyle = 'rgba(255,255,255,' + (1 - fk) * .8 + ')'; ctx.lineWidth = 4 / cam.z; ctx.stroke(); }
       ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.lineWidth = Math.max(2.5, r * .1); ctx.strokeStyle = t.hidden ? '#9aa' : kc;
       if (t.hidden) ctx.setLineDash([r * .3, r * .2]);
       ctx.stroke(); ctx.setLineDash([]);
       if (t.mine) { ctx.beginPath(); ctx.arc(0, 0, r + 4 / cam.z, 0, 7); ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = 2.5 / cam.z; ctx.stroke(); }
-      if (V.sel === t.id) { ctx.beginPath(); ctx.arc(0, 0, r + 6 / cam.z, 0, 7); ctx.strokeStyle = '#fff'; ctx.lineWidth = 2 / cam.z; ctx.setLineDash([6 / cam.z, 4 / cam.z]); ctx.stroke(); ctx.setLineDash([]); }
-      if (t.dead) { ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(2, r * .12); ctx.beginPath(); ctx.moveTo(-r * .6, -r * .6); ctx.lineTo(r * .6, r * .6); ctx.moveTo(r * .6, -r * .6); ctx.lineTo(-r * .6, r * .6); ctx.stroke(); }
-      if (t.hpf != null && !t.dead) {
-        var bw = r * 1.7, by = r * .78; ctx.fillStyle = 'rgba(0,0,0,.65)'; ctx.fillRect(-bw / 2, by, bw, r * .2);
-        ctx.fillStyle = t.hpf > .6 ? '#5fbf6a' : t.hpf > .3 ? '#e0b43f' : '#d6544a'; ctx.fillRect(-bw / 2, by, bw * Math.max(0, Math.min(1, t.hpf)), r * .2);
+      if (V.sel === t.id && !a) {
+        var sk = RM ? 1 : Math.min(1, (now - V.selT0) / 320); if (sk < 1) V.busy = true;
+        ctx.beginPath(); ctx.arc(0, 0, r + (6 + (1 - easeOut(sk)) * 16) / cam.z, 0, 7); ctx.strokeStyle = 'rgba(255,255,255,' + (.4 + .6 * sk) + ')'; ctx.lineWidth = 2 / cam.z;
+        ctx.setLineDash([6 / cam.z, 4 / cam.z]); ctx.stroke(); ctx.setLineDash([]);
       }
-      (t.conds || []).slice(0, 4).forEach(function (c, i) {
-        var cx = r * .85 - i * r * .42, cy = -r * .85; ctx.beginPath(); ctx.arc(cx, cy, r * .22, 0, 7); ctx.fillStyle = '#222'; ctx.fill(); ctx.strokeStyle = '#fff'; ctx.lineWidth = 1 / cam.z; ctx.stroke();
-        ctx.fillStyle = '#fff'; ctx.font = 'bold ' + r * .3 + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(c.charAt(0), cx, cy + 1 / cam.z);
-      });
+      if (t.dead) {
+        var xk = fx && fx.type === 'die' ? Math.min(1, fk * 1.6) : 1, xr = r * .6;
+        ctx.strokeStyle = '#fff'; ctx.lineWidth = Math.max(2, r * .12); ctx.beginPath();
+        ctx.moveTo(-xr, -xr); ctx.lineTo(-xr + 2 * xr * Math.min(1, xk * 2), -xr + 2 * xr * Math.min(1, xk * 2));
+        if (xk > .5) { ctx.moveTo(xr, -xr); ctx.lineTo(xr - 2 * xr * (xk - .5) * 2, -xr + 2 * xr * (xk - .5) * 2); }
+        ctx.stroke();
+      }
+      if (t.hpf != null && !t.dead) {   // Stamina, and a thin AD bar under it when there's armor
+        var bw = r * 1.7, bh = Math.max(r * .2, 4 / cam.z), by = r * .74; ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(-bw / 2, by, bw, bh);
+        ctx.fillStyle = t.hpf > .6 ? '#5fbf6a' : t.hpf > .3 ? '#e0b43f' : '#d6544a'; ctx.fillRect(-bw / 2, by, bw * Math.max(0, Math.min(1, t.hpf)), bh);
+        if (t.adf != null) { var ah = bh * .55; ctx.fillStyle = 'rgba(0,0,0,.7)'; ctx.fillRect(-bw / 2, by + bh, bw, ah); ctx.fillStyle = '#6fa8dc'; ctx.fillRect(-bw / 2, by + bh, bw * Math.max(0, Math.min(1, t.adf)), ah); }
+      } else if (t.hw && !t.dead) {   // only how hurt it looks
+        var hf = Math.max(r * .26, 9 / cam.z); ctx.font = 'bold ' + hf + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle';
+        var hw = ctx.measureText(t.hw).width + hf * .7, hy = r * .78;
+        ctx.fillStyle = 'rgba(0,0,0,.72)'; ctx.fillRect(-hw / 2, hy - hf * .62, hw, hf * 1.24);
+        ctx.fillStyle = HW_COLOR[t.hw] || '#ddd'; ctx.fillText(t.hw, 0, hy);
+      }
+      // conditions: a ring of small markers over the token's top edge (hover the token for their names)
+      var cl = t.conds || [], cm = cl.length > 7 ? 6 : cl.length, mr = Math.max(r * .22, 6 / cam.z);
+      for (var ci = 0; ci < cm + (cl.length > cm ? 1 : 0); ci++) {
+        var c = ci < cm ? cl[ci] : null, ang = (-50 - ci * 30) * Math.PI / 180, cx = Math.cos(ang) * r * 1.02, cy = Math.sin(ang) * r * 1.02, ck0 = c && V.condT[t.id + '|' + c], cs = 1;
+        if (ck0) { var ck = (now - ck0) / 420; if (ck >= 1) delete V.condT[t.id + '|' + c]; else { cs = Math.max(.01, backOut(ck)); V.busy = true; } }
+        var st = c ? condStyle(c) : ['#333', '+' + (cl.length - cm)];
+        ctx.save(); ctx.translate(cx, cy); ctx.scale(cs, cs);
+        ctx.beginPath(); ctx.arc(0, 0, mr, 0, 7); ctx.fillStyle = st[0]; ctx.fill(); ctx.strokeStyle = 'rgba(255,255,255,.9)'; ctx.lineWidth = 1.5 / cam.z; ctx.stroke();
+        ctx.fillStyle = '#fff'; ctx.font = 'bold ' + mr * (st[1].length > 1 ? .95 : 1.2) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(st[1], 0, mr * .06); ctx.restore();
+      }
       if (t.name && (t.kind !== 'obj' || t.label)) {
         ctx.font = 'bold ' + Math.max(11 / cam.z, s.g * .2) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top';
         var ty = r + (t.hpf != null ? r * .28 : 3 / cam.z); ctx.lineWidth = 3 / cam.z; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(t.name, 0, ty); ctx.fillStyle = '#fff'; ctx.fillText(t.name, 0, ty);
+        if (t.vit && o.vitals && o.vitals()) {   // the Ref's full vitals, under the name
+          var vf = Math.max(10 / cam.z, s.g * .16), vy = ty + Math.max(11 / cam.z, s.g * .2) * 1.15; ctx.font = '600 ' + vf + 'px sans-serif';
+          ctx.strokeText(t.vit, 0, vy); ctx.fillStyle = '#ffe3a3'; ctx.fillText(t.vit, 0, vy);
+        }
       }
       ctx.restore();
     }
-    function fogImage(s, m) {
-      var key = m ? m.cw + 'x' + m.ch + (V.player ? 'p' : 'r') : '';
-      if (!m) return null;
+    /*
+     * The fog as a picture: the mask's cells, blurred once into a larger canvas (so drawing it each frame is cheap). When the mask changes,
+     * the old picture fades out over the new one, so newly seen ground opens up rather than popping.
+     */
+    function fogImage(m) {
+      if (!m) { V.fogImg = null; V.fogMask = null; return null; }
+      var key = m.cw + 'x' + m.ch + (V.player ? 'p' : 'r');
       if (!V.fogImg || V.fogKey !== key || V.fogMask !== m) {
-        var c = V.fogImg && V.fogImg.width === m.cw && V.fogImg.height === m.ch ? V.fogImg : document.createElement('canvas');
-        c.width = m.cw; c.height = m.ch;
-        var g = c.getContext('2d'), im = g.createImageData(m.cw, m.ch), A = V.player ? [255, 150, 90, 0] : [150, 100, 48, 0];
+        var raw = document.createElement('canvas'); raw.width = m.cw; raw.height = m.ch;
+        var g = raw.getContext('2d'), im = g.createImageData(m.cw, m.ch), A = V.player ? [255, 150, 90, 0] : [150, 100, 48, 0];
         for (var i = 0; i < m.cells.length; i++) { var j = i * 4; im.data[j] = 6; im.data[j + 1] = 5; im.data[j + 2] = 10; im.data[j + 3] = A[m.cells[i]]; }
-        g.putImageData(im, 0, 0); V.fogImg = c; V.fogKey = key; V.fogMask = m;
+        g.putImageData(im, 0, 0);
+        var S = Math.max(1, Math.min(8, Math.floor(2048 / Math.max(m.cw, m.ch)))), c = document.createElement('canvas');
+        c.width = m.cw * S; c.height = m.ch * S;
+        var g2 = c.getContext('2d'); g2.imageSmoothingEnabled = true; g2.imageSmoothingQuality = 'high';
+        if ('filter' in g2) g2.filter = 'blur(' + S * .55 + 'px)';
+        g2.drawImage(raw, 0, 0, c.width, c.height);
+        if (V.fogImg && !RM) { V.fogPrev = { img: V.fogImg, w: V.fogW, h: V.fogH }; V.fogT0 = Date.now(); }
+        V.fogImg = c; V.fogW = m.cw * m.cell; V.fogH = m.ch * m.cell; V.fogKey = key; V.fogMask = m;
       }
       return V.fogImg;
     }
-    function draw() {
-      var s = sc(), dpr = V.dpr;
-      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, V.size.w, V.size.h);
-      ctx.fillStyle = '#0c0b0d'; ctx.fillRect(0, 0, V.size.w, V.size.h);
-      if (!s) { ctx.fillStyle = '#aaa'; ctx.font = '15px sans-serif'; ctx.textAlign = 'center'; ctx.fillText('No scene yet.', V.size.w / 2, V.size.h / 2); return; }
-      var m = o.mask ? o.mask() : null;
-      ctx.save(); ctx.scale(cam.z, cam.z); ctx.translate(-cam.x, -cam.y);
-      ctx.fillStyle = s.bg || '#2a2622'; ctx.fillRect(0, 0, s.w, s.h);
-      var im = o.mapSrc ? pic(o.mapSrc(s), redraw) : null;
-      if (im) ctx.drawImage(im, 0, 0, s.w, s.h);
-      drawGrid(s);
-      // pins
+    function drawPins(s, m, now) {
       (s.pins || []).forEach(function (p) {
         if (V.player && !p.vis) return;
         if (V.player && m && maskAt(m, p.x, p.y) < 1) return;
-        ctx.save(); ctx.translate(p.x, p.y); var r = s.g * .22;
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = p.vis ? '#e8c14a' : '#7a7ad0'; ctx.fill(); ctx.lineWidth = 2 / cam.z; ctx.strokeStyle = '#000'; ctx.stroke();
+        var id = p.id || p.x + ',' + p.y, dy = 0;
+        if (!V.pinSeen[id]) { V.pinSeen[id] = true; if (V.primed && !RM) V.pinT[id] = now; }
+        if (V.pinT[id]) { var k = (now - V.pinT[id]) / 650; if (k >= 1) delete V.pinT[id]; else { dy = -(1 - bounceOut(k)) * s.g * .9; V.busy = true; } }
+        ctx.save(); ctx.translate(p.x, p.y + dy); var r = s.g * .22;
+        ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.5)'; ctx.shadowBlur = 5; ctx.shadowOffsetY = 2;
+        ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = p.vis ? '#e8c14a' : '#7a7ad0'; ctx.fill(); ctx.restore();
+        ctx.lineWidth = 2 / cam.z; ctx.strokeStyle = '#000'; ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.stroke();
         ctx.font = 'bold ' + Math.max(11 / cam.z, s.g * .2) + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'top'; ctx.lineWidth = 3 / cam.z;
         ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(p.label || '', 0, r + 3 / cam.z); ctx.fillStyle = '#fff'; ctx.fillText(p.label || '', 0, r + 3 / cam.z); ctx.restore();
       });
-      // walls (the Ref's)
-      if (o.ref && !V.player) {
-        (s.walls || []).forEach(function (w) {
-          ctx.beginPath(); ctx.moveTo(w.a[0], w.a[1]); ctx.lineTo(w.b[0], w.b[1]);
-          ctx.lineWidth = (w.t === 'wall' ? 4 : 6) / cam.z;
-          ctx.strokeStyle = w.t === 'wall' ? '#ff9f43' : w.t === 'window' ? '#6ec1ff' : w.open ? '#5fe08a' : '#ff5d5d';
-          if (w.t === 'door' && w.open) ctx.setLineDash([8 / cam.z, 6 / cam.z]);
-          ctx.stroke(); ctx.setLineDash([]);
-        });
-      }
+    }
+    /* The Ref's walls: a new one draws itself in, and a door flashes when it opens or shuts. */
+    function drawWalls(s, now) {
+      (s.walls || []).forEach(function (w) {
+        var id = w.id || w.a.join() + w.b.join(), seen = V.wallSeen[id], ax = w.a[0], ay = w.a[1], bx = w.b[0], by = w.b[1];
+        if (seen === undefined) { if (V.primed && !RM) V.wallT[id] = now; }
+        else if (seen !== !!w.open && !RM) V.rings.push({ x: (ax + bx) / 2, y: (ay + by) / 2, t0: now, color: w.open ? '#5fe08a' : '#ff5d5d', dur: 600, r: s.g * .9 });
+        V.wallSeen[id] = !!w.open;
+        if (V.wallT[id]) { var k = (now - V.wallT[id]) / 240; if (k >= 1) delete V.wallT[id]; else { V.busy = true; k = easeOut(k); bx = ax + (bx - ax) * k; by = ay + (by - ay) * k; } }
+        ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by);
+        ctx.lineWidth = (w.t === 'wall' ? 4 : 6) / cam.z;
+        ctx.strokeStyle = w.t === 'wall' ? '#ff9f43' : w.t === 'window' ? '#6ec1ff' : w.open ? '#5fe08a' : '#ff5d5d';
+        if (w.t === 'door' && w.open) ctx.setLineDash([8 / cam.z, 6 / cam.z]);
+        ctx.stroke(); ctx.setLineDash([]);
+      });
+    }
+    function draw() {
+      var s = sc(), dpr = V.dpr, now = Date.now();
+      V.busy = false;
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, V.size.w, V.size.h);
+      ctx.fillStyle = '#0c0b0d'; ctx.fillRect(0, 0, V.size.w, V.size.h);
+      if (!s) { V.lastT = now; if (o.onFrame) o.onFrame(); return; }
+      stepCam(now);
+      var m = o.mask ? o.mask() : null;
+      ctx.save(); ctx.scale(cam.z, cam.z); ctx.translate(-cam.x, -cam.y);
+      ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.6)'; ctx.shadowBlur = 24; ctx.fillStyle = s.bg || '#2a2622'; ctx.fillRect(0, 0, s.w, s.h); ctx.restore();
+      var im = o.mapSrc ? pic(o.mapSrc(s), redraw) : null;
+      if (im) ctx.drawImage(im, 0, 0, s.w, s.h);
+      drawGrid(s);
+      drawPins(s, m, now);
+      if (o.ref && !V.player) drawWalls(s, now);
+      stepTokens(s, now);
+      V.leaving = V.leaving.filter(function (l) {
+        var k = (now - l.t0) / 380; if (k >= 1) return false;
+        V.busy = true; drawToken(s, l.t, { p: l.p, scale: 1 - .35 * easeOut(k), alpha: 1 - k }); return true;
+      });
       tokens().filter(function (t) { return tokenSize(t) >= 1; }).sort(function (a, b) { return tokenSize(b) - tokenSize(a); }).concat(tokens().filter(function (t) { return tokenSize(t) < 1; })).forEach(function (t) { drawToken(s, t); });
       // fog
-      var fi = fogImage(s, m);
+      var fi = fogImage(m);
       if (fi) {
         ctx.save(); ctx.imageSmoothingEnabled = true; ctx.imageSmoothingQuality = 'high';
-        if ('filter' in ctx) ctx.filter = 'blur(' + Math.min(12, m.cell * cam.z * .55) + 'px)';
-        ctx.drawImage(fi, 0, 0, m.cw * m.cell, m.ch * m.cell); ctx.restore();
-      }
-      overlays(s);
+        ctx.drawImage(fi, 0, 0, V.fogW, V.fogH);
+        if (V.fogPrev) {
+          var fk = (now - V.fogT0) / 480;
+          if (fk >= 1) V.fogPrev = null; else { V.busy = true; ctx.globalAlpha = 1 - easeOut(fk); ctx.drawImage(V.fogPrev.img, 0, 0, V.fogPrev.w, V.fogPrev.h); }
+        }
+        ctx.restore();
+      } else V.fogPrev = null;
+      overlays(s, now);
       ctx.restore();
-      if (V.pings.length) { var now = Date.now(); V.pings = V.pings.filter(function (p) { return now - p.t0 < 2200; }); if (V.pings.length) redraw(); }
-      if (Object.keys(V.ghost).length) { var n2 = Date.now(); Object.keys(V.ghost).forEach(function (k) { if (V.ghost[k].until <= n2) delete V.ghost[k]; }); }
+      if (V.sceneT0) {
+        var sk = (now - V.sceneT0) / 450;
+        if (sk >= 1) V.sceneT0 = 0; else { V.busy = true; ctx.fillStyle = 'rgba(12,11,13,' + (1 - easeOut(sk)) + ')'; ctx.fillRect(0, 0, V.size.w, V.size.h); }
+      }
+      if (V.pings.length) { V.pings = V.pings.filter(function (p) { return now - p.t0 < 2200; }); if (V.pings.length) V.busy = true; }
+      if (Object.keys(V.ghost).length) { Object.keys(V.ghost).forEach(function (k) { if (V.ghost[k].until <= now) delete V.ghost[k]; }); }
+      V.lastT = now;
+      if (o.onFrame) o.onFrame();
+      if (V.busy) redraw();
     }
-    function overlays(s) {
+    function overlays(s, now) {
       var d = V.drag;
       if (V.tool === 'select' && d && d.type === 'token') {
         var t = d.token, from = d.from, to = d.to;
@@ -453,11 +631,27 @@
       if (V.hover && (V.tool === 'reveal' || V.tool === 'hide') && !(d && d.type === 'poly')) {
         ctx.save(); ctx.beginPath(); ctx.arc(V.hover.x, V.hover.y, V.brush * s.g, 0, 7); ctx.strokeStyle = V.tool === 'reveal' ? '#7ee787' : '#ff8a8a'; ctx.lineWidth = 2 / cam.z; ctx.stroke(); ctx.restore();
       }
-      var now = Date.now();
       V.pings.forEach(function (p) {
-        var k = (now - p.t0) / 2200; ctx.save(); ctx.globalAlpha = 1 - k; ctx.strokeStyle = p.color || '#ffd25a'; ctx.lineWidth = 4 / cam.z;
-        for (var i = 0; i < 2; i++) { ctx.beginPath(); ctx.arc(p.x, p.y, (k * 1.6 + i * .5 * k) * s.g * 1.5 + s.g * .1, 0, 7); ctx.stroke(); }
+        var k = (now - p.t0) / 2200; ctx.save(); ctx.globalAlpha = 1 - k; ctx.strokeStyle = ctx.fillStyle = p.color || '#ffd25a'; ctx.lineWidth = 4 / cam.z;
+        for (var i = 0; i < 3; i++) { var ki = (k * 2.2 + i / 3) % 1; ctx.globalAlpha = (1 - ki) * (1 - k); ctx.beginPath(); ctx.arc(p.x, p.y, easeOut(ki) * s.g * 1.8 + s.g * .1, 0, 7); ctx.stroke(); }
+        ctx.globalAlpha = 1 - k; ctx.beginPath(); ctx.arc(p.x, p.y - Math.abs(Math.sin(k * 9)) * s.g * .25 * (1 - k), s.g * .14, 0, 7); ctx.fill();
         ctx.restore();
+      });
+      V.rings = V.rings.filter(function (g) {
+        var k = (now - g.t0) / g.dur; if (k >= 1) return false;
+        V.busy = true; ctx.save(); ctx.globalAlpha = 1 - k; ctx.strokeStyle = g.color; ctx.lineWidth = 3 / cam.z;
+        ctx.beginPath(); ctx.arc(g.x, g.y, g.r * (.2 + easeOut(k)), 0, 7); ctx.stroke(); ctx.restore(); return true;
+      });
+      // numbers rising from a token (damage, healing)
+      V.floats = V.floats.filter(function (f) {
+        var k = (now - f.t0) / 1400; if (k >= 1) return false;
+        if (k < 0) { V.busy = true; return true; }
+        var t = s.tokens.filter(function (x) { return x.id === f.id; })[0], p = t ? pos(t) : f.p; if (!p) return false;
+        f.p = { x: p.x, y: p.y }; V.busy = true;
+        var r = t ? radius(s, t) : s.g * .4, sz = Math.max(15 / cam.z, s.g * .34) * (k < .15 ? backOut(k / .15) : 1);
+        ctx.save(); ctx.globalAlpha = k < .65 ? 1 : 1 - (k - .65) / .35; ctx.font = '800 ' + sz + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
+        var y = p.y - r - easeOut(k) * s.g * .9; ctx.lineWidth = 4 / cam.z; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(f.text, p.x, y); ctx.fillStyle = f.color; ctx.fillText(f.text, p.x, y);
+        ctx.restore(); return true;
       });
     }
     function line(a, b, color, text) {
@@ -476,18 +670,19 @@
       var t = hitToken(toWorld(e)); if (t && o.onMenu) o.onMenu(t, e);
     });
     cv.addEventListener('wheel', function (e) {
-      e.preventDefault(); var r = cv.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
+      e.preventDefault(); V.camTw = null; var r = cv.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
     }, { passive: false });
     cv.addEventListener('pointerdown', function (e) {
+      showTip(null);
       cv.focus(); pointers[e.pointerId] = { x: e.clientX, y: e.clientY };
       try { cv.setPointerCapture(e.pointerId); } catch (x) { /* ignore */ }
       if (Object.keys(pointers).length === 2) {
         var ps = Object.keys(pointers).map(function (k) { return pointers[k]; });
-        pinch = { d: Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y) }; V.drag = null; return;
+        pinch = { d: Math.hypot(ps[0].x - ps[1].x, ps[0].y - ps[1].y) }; V.drag = null; V.camTw = null; return;
       }
       var s = sc(); if (!s) return;
       var w = toWorld(e), tool = V.tool;
-      if (e.button === 1 || V.spaceDown || e.button === 2) { V.drag = { type: 'pan', sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y }; return; }
+      if (e.button === 1 || V.spaceDown || e.button === 2) { V.camTw = null; V.drag = { type: 'pan', sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y }; return; }
       if (e.altKey && o.onPing) { ping(w.x, w.y, true); return; }
       if (tool === 'ping') { ping(w.x, w.y, true); return; }
       if (tool === 'measure') { var a = isHex(s) || s.grid === 'none' ? snap(s, w.x, w.y, 1) : snap(s, w.x, w.y, 1); V.ruler = { a: a, b: a }; V.drag = { type: 'ruler' }; redraw(); return; }
@@ -513,6 +708,7 @@
       }
       var t = hitToken(w);
       if (t) {
+        if (V.sel !== t.id) V.selT0 = Date.now();
         V.sel = t.id; if (o.onSelect) o.onSelect(t);
         if (movable(t)) { var p = pos(t); V.drag = { type: 'token', token: t, from: { x: p.x, y: p.y }, to: { x: p.x, y: p.y }, off: { x: w.x - p.x, y: w.y - p.y }, moved: false }; }
         redraw(); return;
@@ -520,7 +716,7 @@
       var pin = hitPin(w);
       if (pin && o.onPin) { o.onPin(pin); return; }
       if (o.onSelect && V.sel) { V.sel = null; o.onSelect(null); }
-      V.drag = { type: 'pan', sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y, click: true }; redraw();
+      V.camTw = null; V.drag = { type: 'pan', sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y, click: true }; redraw();
     });
     cv.addEventListener('pointermove', function (e) {
       if (pointers[e.pointerId]) { pointers[e.pointerId].x = e.clientX; pointers[e.pointerId].y = e.clientY; }
@@ -530,6 +726,7 @@
       }
       var s = sc(); if (!s) return;
       var w = toWorld(e), d = V.drag; V.hover = w;
+      showTip(d || e.pointerType === 'touch' ? null : hitToken(w), e);
       if (d) {
         if (d.type === 'pan') { cam.x = d.cx - (e.clientX - d.sx) / cam.z; cam.y = d.cy - (e.clientY - d.sy) / cam.z; if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 4) d.click = false; }
         else if (d.type === 'token') { var pt = snap(s, w.x - d.off.x, w.y - d.off.y, tokenSize(d.token)); d.to = s.grid === 'none' ? { x: w.x - d.off.x, y: w.y - d.off.y } : pt; d.moved = true; V.ghost[d.token.id] = { x: d.to.x, y: d.to.y, until: Date.now() + 60000, drag: true }; }
@@ -575,13 +772,38 @@
       if (e.key === ' ') { V.spaceDown = true; e.preventDefault(); }
       if (e.key === 'Escape') { V.chain = null; V.ruler = null; V.drag = null; redraw(); }
       if (e.key === 'Enter') { V.chain = null; if (V.drag && V.drag.type === 'poly') finishPoly(); redraw(); }
-      if (e.key === '+' || e.key === '=') zoomAt(1.2, V.size.w / 2, V.size.h / 2);
-      if (e.key === '-') zoomAt(1 / 1.2, V.size.w / 2, V.size.h / 2);
-      if (e.key === '0') fit();
+      if (e.key === '+' || e.key === '=') zoomAt(1.25, V.size.w / 2, V.size.h / 2, true);
+      if (e.key === '-') zoomAt(.8, V.size.w / 2, V.size.h / 2, true);
+      if (e.key === '0') fit(true);
       if (o.onKey) o.onKey(e);
     });
     cv.addEventListener('keyup', function (e) { if (e.key === ' ') V.spaceDown = false; });
-    cv.addEventListener('pointerleave', function () { V.hover = null; });
+    cv.addEventListener('pointerleave', function () { V.hover = null; showTip(null); });
+    /* The tooltip over a hovered token: its name, how it is doing, and its conditions named (o.tooltip can add lines; o.condInfo explains one). */
+    function showTip(t, e) {
+      if (!t || t.kind === 'obj' && !(t.conds || []).length) { if (!tip.hidden) { tip.hidden = true; V.tipId = null; } return; }
+      var key = t.id + '|' + (t.conds || []).join(',') + '|' + t.hpf + '|' + t.hw + '|' + t.vit + '|' + t.dead;
+      if (V.tipId !== key) {
+        V.tipId = key; tip.innerHTML = '';
+        var add = function (cls, text) { var n = document.createElement('div'); n.className = cls; n.textContent = text; tip.appendChild(n); return n; };
+        add('tt-name', t.name || 'Token');
+        (o.tooltip ? o.tooltip(t) || [] : []).forEach(function (line) { add('tt-line', line); });
+        if (!o.tooltip && t.dead) add('tt-line', 'dead');
+        else if (!o.tooltip && t.hw) add('tt-line', t.hw);
+        (t.conds || []).forEach(function (c) {
+          var row = add('tt-cond', ''), dot = document.createElement('span'), st = condStyle(c), info = (o.condInfo && o.condInfo(c)) || COND_INFO[c] || '';
+          dot.className = 'tt-dot'; dot.style.background = st[0]; dot.textContent = st[1];
+          var b = document.createElement('b'); b.textContent = c;
+          row.appendChild(dot); row.appendChild(b);
+          if (info) { var i = document.createElement('span'); i.className = 'tt-info'; i.textContent = info; row.appendChild(i); }
+        });
+      }
+      var r = host.getBoundingClientRect(), x = e.clientX - r.left, y = e.clientY - r.top;
+      tip.hidden = false;
+      var tw = tip.offsetWidth, th = tip.offsetHeight;
+      tip.style.left = Math.round(Math.min(r.width - tw - 6, Math.max(6, x + 16))) + 'px';
+      tip.style.top = Math.round(y + 18 + th > r.height ? Math.max(6, y - th - 12) : y + 18) + 'px';
+    }
 
     function ping(x, y, send) {
       V.pings.push({ x: x, y: y, t0: Date.now() }); redraw();
@@ -591,16 +813,33 @@
     setTimeout(resize, 0);
 
     return {
-      canvas: cv, redraw: redraw, fit: fit, centerOn: centerOn, resize: resize, zoom: function (f) { zoomAt(f, V.size.w / 2, V.size.h / 2); },
+      canvas: cv, redraw: redraw, fit: fit, centerOn: centerOn, resize: resize, zoom: function (f) { zoomAt(f, V.size.w / 2, V.size.h / 2, true); },
       tool: function (t) { V.tool = t; V.chain = null; V.ruler = null; if (!/poly/.test(t)) V.drag = null; cv.style.cursor = t === 'select' ? 'default' : t === 'ping' || t === 'measure' ? 'crosshair' : 'cell'; redraw(); },
       getTool: function () { return V.tool; },
       brush: function (n) { V.brush = n; redraw(); },
       player: function (on) { V.player = !!on; V.fogMask = null; redraw(); },
       isPlayer: function () { return V.player; },
-      select: function (id) { V.sel = id; redraw(); },
+      select: function (id) { if (V.sel !== id) V.selT0 = Date.now(); V.sel = id; redraw(); },
       selected: function () { return V.sel; },
       ping: function (x, y, color) { V.pings.push({ x: x, y: y, t0: Date.now(), color: color }); redraw(); },
-      sceneChanged: function (id) { if (V.sceneId !== id) { V.sceneId = id; V.fogMask = null; V.ghost = {}; V.sel = null; V.chain = null; V.ruler = null; fit(); } else redraw(); },
+      sceneChanged: function (id) {
+        if (V.sceneId === id) { redraw(); return; }
+        V.sceneId = id; V.fogMask = null; V.fogImg = null; V.fogPrev = null; V.ghost = {}; V.sel = null; V.chain = null; V.ruler = null;
+        V.shown = {}; V.tw = {}; V.seen = {}; V.born = {}; V.leaving = []; V.fx = {}; V.condT = {}; V.alpha = {}; V.floats = []; V.rings = [];
+        V.wallSeen = {}; V.wallT = {}; V.pinSeen = {}; V.pinT = {}; V.primed = false; V.intro = 0; V.sceneT0 = RM ? 0 : Date.now();
+        fit();
+      },
+      /* Where a token is on the screen (CSS px from the canvas's top left) and its radius there, or null. */
+      screenOf: function (id) {
+        var s = sc(), t = s && s.tokens.filter(function (k) { return k.id === id; })[0]; if (!t) return null;
+        var p = pos(t); return { x: (p.x - cam.x) * cam.z, y: (p.y - cam.y) * cam.z, r: radius(s, t) * cam.z };
+      },
+      /* A few words rising from a token: damage dealt, Stamina regained. */
+      floatText: function (id, text, color, delay) { if (RM) return; V.floats.push({ id: id, text: text, color: color || '#fff', t0: Date.now() + (delay || 0) }); redraw(); },
+      /* A ring spreading from a point on the map. */
+      flash: function (x, y, color) { if (RM) return; var s = sc(); V.rings.push({ x: x, y: y, t0: Date.now(), color: color || '#fff', dur: 600, r: (s ? s.g : 70) * .9 }); redraw(); },
+      /* How the map is zoomed now (1 = one map pixel per screen pixel). */
+      zoomLevel: function () { return cam.z; },
       center: function () { return { x: cam.x + V.size.w / cam.z / 2, y: cam.y + V.size.h / cam.z / 2 }; },
       /* Drop the local (optimistic) position of tokens whose published position has caught up, or that the Ref never accepted. */
       settle: function () {
@@ -618,7 +857,36 @@
     };
   }
 
-  T.SIZES = SIZES; T.KIND_COLOR = KIND_COLOR; T.uid = uid; T.newScene = newScene; T.isHex = isHex; T.hexAt = hexAt; T.hexCenter = hexCenter; T.snap = snap;
+  // ------------------------------------------------------------------ icons for the buttons floating on the map (24 px line drawings)
+  var ICONS = {
+    select: 'M5 3l14 8-6 2-2 6z', measure: 'M3 17L17 3l4 4L7 21z M7 13l2 2 M10 10l2 2 M13 7l2 2',
+    ping: 'M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0 M12 12m-8 0a8 8 0 1 0 16 0a8 8 0 1 0-16 0', wall: 'M3 6h18v12H3z M3 12h18 M9 6v6 M15 12v6',
+    door: 'M6 21V3h12v18 M3 21h18 M14 12h.01', window: 'M4 4h16v16H4z M12 4v16 M4 12h16', room: 'M4 4h16v16H4z M4 4m-1.5 0h3 M20 20m-1.5 0h3',
+    eraser: 'M16 3l5 5-11 11H5l-2-2z M9 9l6 6 M10 21h11', reveal: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0',
+    hide: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z M3 3l18 18', 'rect-reveal': 'M4 4h4 M12 4h4 M20 4v4 M20 12v4 M20 20h-4 M12 20H8 M4 20v-4 M4 12V8 M9 12h6',
+    'poly-reveal': 'M12 3l9 7-4 11H7L3 10z M12 3h.01 M21 10h.01 M3 10h.01', pin: 'M12 22s7-7 7-12a7 7 0 1 0-14 0c0 5 7 12 7 12z M12 10m-2.5 0a2.5 2.5 0 1 0 5 0a2.5 2.5 0 1 0-5 0',
+    plus: 'M12 5v14 M5 12h14', minus: 'M5 12h14', fit: 'M4 9V4h5 M20 9V4h-5 M4 15v5h5 M20 15v5h-5', full: 'M14 4h6v6 M10 20H4v-6 M20 4l-7 7 M4 20l7-7',
+    gear: 'M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0 M12 2v3 M12 19v3 M2 12h3 M19 12h3 M4.9 4.9L7 7 M17 17l2.1 2.1 M4.9 19.1L7 17 M17 7l2.1-2.1',
+    show: 'M12 12m-2 0a2 2 0 1 0 4 0a2 2 0 1 0-4 0 M7.8 7.8a6 6 0 0 0 0 8.4 M16.2 7.8a6 6 0 0 1 0 8.4 M4.9 4.9a10 10 0 0 0 0 14.2 M19.1 4.9a10 10 0 0 1 0 14.2',
+    eye: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0', eyeOff: 'M2 12s4-7 10-7 10 7 10 7-4 7-10 7S2 12 2 12z M3 3l18 18',
+    crows: 'M9 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M2 21v-1a6 6 0 0 1 12 0v1 M16 3.1a4 4 0 0 1 0 7.8 M22 21v-1a6 6 0 0 0-4-5.7',
+    person: 'M12 11a4 4 0 1 0 0-8 4 4 0 0 0 0 8z M4 21v-1a8 8 0 0 1 16 0v1', sword: 'M14.5 17.5L3 6V3h3l11.5 11.5 M13 19l6-6 M16 16l4 4 M19 21l2-2',
+    pierce: 'M4 20L20 4 M13 4h7v7 M4 14l6 6', heart: 'M20.8 4.6a5.5 5.5 0 0 0-7.8 0L12 5.7l-1-1.1a5.5 5.5 0 0 0-7.8 7.8L12 21.2l8.8-8.8a5.5 5.5 0 0 0 0-7.8z',
+    lock: 'M5 11h14v10H5z M8 11V7a4 4 0 0 1 8 0v4', unlock: 'M5 11h14v10H5z M8 11V7a4 4 0 0 1 7.5-2', copy: 'M9 9h11v11H9z M5 15H4V4h11v1',
+    trash: 'M3 6h18 M8 6V4h8v2 M6 6l1 15h10l1-15', sun: 'M12 12m-4 0a4 4 0 1 0 8 0a4 4 0 1 0-8 0 M12 2v2 M12 20v2 M4.9 4.9l1.4 1.4 M17.7 17.7l1.4 1.4 M2 12h2 M20 12h2 M4.9 19.1l1.4-1.4 M17.7 6.3l1.4-1.4',
+    flag: 'M5 21V4 M5 4h11l-2 4 2 4H5', marker: 'M12 3l7 9-7 9-7-9z', dice: 'M4 4h16v16H4z M8.5 8.5h.01 M15.5 15.5h.01 M12 12h.01 M15.5 8.5h.01 M8.5 15.5h.01',
+    next: 'M5 4l10 8-10 8z M19 5v14', play: 'M6 4l14 8-14 8z', pause: 'M7 4v16 M17 4v16', hourglass: 'M6 2h12 M6 22h12 M7 2v3l5 7-5 7v3 M17 2v3l-5 7 5 7v3',
+    sliders: 'M4 6h10 M18 6h2 M4 12h4 M12 12h8 M4 18h12 M20 18h0 M16 4v4 M10 10v4 M18 16v4', x: 'M6 6l12 12 M18 6L6 18',
+    target: 'M12 12m-7 0a7 7 0 1 0 14 0a7 7 0 1 0-14 0 M12 2v4 M12 18v4 M2 12h4 M18 12h4', check: 'M5 12l5 5 9-10',
+    map: 'M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z M9 4v14 M15 6v14', list: 'M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01',
+    day: 'M4 5h16v16H4z M4 10h16 M9 3v4 M15 3v4', go: 'M5 12h14 M13 6l6 6-6 6', cond: 'M12 2l2.6 6.4L21 9l-5 4.4L17.5 20 12 16.6 6.5 20 8 13.4 3 9l6.4-.6z',
+    beast: 'M6 3l2 7 M12 2v8 M18 3l-2 7 M5 15c0 3.9 3.1 6 7 6s7-2.1 7-6-3.1-4-7-4-7 .1-7 4z', mine: 'M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0 M12 2v5 M12 17v5 M2 12h5 M17 12h5'
+  };
+  /* An icon as an inline SVG string (it takes the text color). */
+  function icon(name) { return '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="' + (ICONS[name] || ICONS.marker) + '"/></svg>'; }
+
+  T.icon = icon; T.REDUCED_MOTION = RM;
+  T.SIZES = SIZES; T.KIND_COLOR = KIND_COLOR; T.COND_STYLE = COND_STYLE; T.condStyle = condStyle; T.uid = uid; T.newScene = newScene; T.isHex = isHex; T.hexAt = hexAt; T.hexCenter = hexCenter; T.snap = snap;
   T.dist = dist; T.distText = distText; T.fogDims = fogDims; T.seenOf = seenOf; T.paintSeen = paintSeen; T.paintPoly = paintPoly; T.fillSeen = fillSeen; T.computeVision = computeVision;
   T.packMask = packMask; T.unpackMask = unpackMask; T.maskAt = maskAt; T.pathBlocked = pathBlocked; T.los = los; T.view = view; T.tokenArt = tokenArt; T.lightsOf = lightsOf;
   T.viewers = viewers;

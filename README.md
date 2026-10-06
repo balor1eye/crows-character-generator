@@ -65,6 +65,13 @@ left), the greed bonus, Resting, and Encounter signalled.
   torches and lanterns, with walls and closed doors blocking sight; what you've explored stays dimly visible, and creatures out of sight aren't
   shown. Drag your crow's token to move it (the Ref's walls stop you, and it shows the distance against your speed while you drag), measure,
   ping (Alt-click in any tool), click a creature to target it for your next attack, and pan and zoom (scroll, or pinch on a phone).
+  Your crow has its health bar, and so do the other crows and your allies; foes show only how hurt they look (their Stamina bars too,
+  when the Ref shows foes' Stamina). Condition markers sit around each token, and hovering names them. When the Ref's creature misses
+  you (a counter) or a hit on you waits to be applied (say how you defend), a pop-up on the map asks you, then shows what happened.
+  **Monster Expert**: if your crow has the trait and a Lore Book (Monster Lore) in hand, you see the Stamina, power, and the names of the
+  attacks and traits of each monster (not humans or animals) in its line of effect: on the Combat card, on the map (a Stamina bar), and
+  when you hover it. Walls, closed doors, and windows on the Ref's map block the line; with no map, every monster in the fight counts. Only
+  your screen gets it: the server hands each player just their own crow's part.
 - **Live combat** (accounts site): when the Ref runs a fight with your linked crow in the Ref Screen's combat
   tracker, a **Combat** card appears at the top of Play within a second or two. It offers every option the combat
   rules give at that moment: your turn (an action and a maneuver, or two maneuvers; a crit adds an action; one
@@ -130,10 +137,16 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
   board with walls, doors, and windows; fog of war by line of sight and light, with ambient light bright/dim/dark, torch 5/5 and lantern
   10/10 as light on a crow or a token left on the map, and a crow's own sight radius for Dark Senses), a **Battle map** (tokens tied to the combat
   tracker: names, health bars, conditions, who has acted, hurt/heal/conditions from the token, creatures added from the Bestiary into the tracker
-  in one step, and initiative and Next round on the strip above), an **Overland hex map** (Cornath or your own: the party marker, the day's hexes
+  in one step, and initiative and Next round on the strip above; the Add drawer's **Crows** puts every crow in the session on the map and in
+  the tracker, and its **Encounter** section puts the current encounter's creatures on the map, or loads a saved encounter onto it: it starts
+  running, the crows and its creatures go into the tracker, and the tokens are placed, crows on one side and creatures on the other), an **Overland hex map** (Cornath or your own: the party marker, the day's hexes
   from the Travel tab against the hexes moved, and hexes revealed as it travels), a **Village or town** (pins for places and institutions, tokens
   for NPCs), or a **Blank board**. Tokens show the art assigned to them: a crow's portrait and a creature's Bestiary (or your own) art. Tools:
   select/move, measure (squares or hexes), ping, walls, doors, windows, room, erase, reveal and hide the fog by brush, box, or shape, and pins.
+  Tokens carry a Stamina bar (and a thin AD bar) for every crow and creature, and small colored markers around the edge for their
+  conditions; hover a token for its conditions named and explained. **Vitals** shows each one's Stamina, AD, and wounds under its token
+  (only on the Ref's screen). When a hit or effect waits for the Ref, a pop-up on the map shows it with Apply, Negate, the damage, and the
+  player's defense, then what it did (with Undo).
   **Player view** shows exactly what the players see (good for a shared screen or TV: Fullscreen); in Tabletop Mode, where nothing is shared, it is
   the table's own display. **Show to players** publishes the scene with the live fight: only the fog (as a mask, never the walls) and the tokens
   the party can see are sent, and players' moves and pings come back like their combat actions. Dungeon scenes also carry the dungeon turn clock
@@ -142,9 +155,10 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
 - **Session**: Start session and End session (ending one fills in the XP award from the players' claims, with the greed
   bonus, and reminds you of the village cycle; starting the next archives the log), the shared dungeon-turn timer (60/30/20 minutes or every 1d6 rooms), Encounter Number with
   crowded/chaos adjustments, greed bonus, End DT (ends DT conditions, rolls the encounter check and the monster
-  table, tracks signalled encounters, and ends the DT on each linked crow's sheet; rests do the same), a combat tracker shared live with the players' Play pages (their attacks land on the targets they pick with one click, and can be undone; damage is never dealt automatically: a hit waits as a pending hit, so a crow's player can tell the Ref how they defend (their Play page shows the incoming hit, with Sacrifice Armor / Break the Blade when they have them, a readied action, or anything in words) and the Ref can lower or negate the damage, or spend an enemy's reaction, before applying it; after a player's miss or doom, buttons for the counter, the stray shot at a random ally, or the backlash roll), creatures that attack a target the Ref picks (or a random one), with each hit waiting to be applied and undoable (initiative, Stamina/AD/wounds, conditions, one-click
-  monster attacks, X/Rest uses), and the rest procedure. While an encounter is running its tracker is on the Encounters
-  tab, and the Session tab shows a summary with a link to it.
+  table, tracks signalled encounters, and ends the DT on each linked crow's sheet; rests do the same), and the rest procedure.
+- **Encounters**: roll or build encounters, save them, and run them. The combat tracker is here (a running encounter has it in its own
+  card; otherwise a Combat card holds it), and the Tabletop's tokens are tied to it. It is shared live with the players' Play pages (their attacks land on the targets they pick with one click, and can be undone; damage is never dealt automatically: a hit waits as a pending hit, so a crow's player can tell the Ref how they defend (their Play page shows the incoming hit, with Sacrifice Armor / Break the Blade when they have them, a readied action, or anything in words) and the Ref can lower or negate the damage, or spend an enemy's reaction, before applying it; after a player's miss or doom, buttons for the counter, the stray shot at a random ally, or the backlash roll). Creatures attack a target the Ref picks (or a random one), with each hit waiting to be applied and undoable (initiative, Stamina/AD/wounds, conditions, one-click
+  monster attacks, X/Rest uses).
 - **Travel**: hexes and EN from pace, speed, roads, water, and weather; travel encounters with every sub-table;
   the secret lost-direction roll; Miasma RRs and effects for each crow; the travel roles.
 - **Village**: Prosperity, sale percentage, cycles and village events, institutions with levels and stewards,

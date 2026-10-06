@@ -87,13 +87,14 @@ def main():
         r("var s = q('select[aria-label=\"New scene\"]'); s.value = 'dungeon'; s.dispatchEvent(new Event('change'));")
         rwait("return !!scene() && !!q('.vtt-canvas')", "the scene and its canvas")
         ok("Ref makes a Dungeon scene on the Tabletop tab")
-        r("button('Crows', q('#sec-vtt-side')).click();")
+        r("q('#sec-vtt [aria-label^=\"Add tokens\"]').click();")   # the + at the start of the token strip opens the Add drawer
+        r("button('Crows', q('#sec-vtt .vtt-drawer')).click();")
         rwait("return scene().tokens.some(function (t) { return t.pcId; })", "the crow's token")
         r("""var sc = scene(), g = sc.g, W = function (a, b, c, d, t) { sc.walls.push({ id: 'w' + sc.walls.length, a: [a * g, b * g], b: [c * g, d * g], t: t || 'wall', open: false }); };
              W(1, 1, 10, 1); W(10, 1, 10, 3); W(10, 3, 10, 4, 'door'); W(10, 4, 10, 8); W(10, 8, 1, 8); W(1, 8, 1, 1);
              var me = sc.tokens.filter(function (t) { return t.pcId; })[0]; me.x = 3.5 * g; me.y = 3.5 * g; me.light = { b: 5, d: 5, on: true }; me.speed = 5;
              window.CrowsRefApp.save(); window.CrowsRefApp.render();""")
-        r("""var box = q('#sec-vtt-side'), s = q('select[aria-label=Creature]', box); s.value = 'Blood Creature A'; s.dispatchEvent(new Event('change'));
+        r("""var box = q('#sec-vtt .vtt-drawer'), s = q('select[aria-label=Creature]', box); s.value = 'Blood Creature A'; s.dispatchEvent(new Event('change'));
              var n = q('input[aria-label=\"How many\"]', box); n.value = '2'; button('Add', box, true).click();""")
         rwait("return scene().tokens.filter(function (t) { return t.kind === 'foe'; }).length === 2", "two creature tokens")
         r("""var sc = scene(), g = sc.g, foes = sc.tokens.filter(function (t) { return t.kind === 'foe'; });

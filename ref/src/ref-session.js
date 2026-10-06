@@ -10,7 +10,7 @@
       encounterResultBox = f('encounterResultBox'), field = f('field'), greedBonus = f('greedBonus'), inp = f('inp'), log = f('log'),
       logItem = f('logItem'), lookup = f('lookup'), more = f('more'), nowStamp = f('nowStamp'), pauseTimer = f('pauseTimer'),
       pendingEnc = f('pendingEnc'), pendingFrom = f('pendingFrom'), pendingText = f('pendingText'), render = f('render'),
-      renderCombat = f('renderCombat'), restChoiceText = f('restChoiceText'), resetTimer = f('resetTimer'), rollDungeonTable = f('rollDungeonTable'), runEncBtn = f('runEncBtn'),
+      renderTable = f('renderTable'), restChoiceText = f('restChoiceText'), resetTimer = f('resetTimer'), rollDungeonTable = f('rollDungeonTable'), runEncBtn = f('runEncBtn'),
       S = f('S'), save = f('save'), sel = f('sel'), setTab = f('setTab'), sheetOp = f('sheetOp'), startTimer = f('startTimer'), today = f('today'),
       travelCalc = f('travelCalc');
   var $ = A.$, d = A.d, el = A.el, fmt = A.fmt, plural = A.plural, Rules = A.Rules, toast = A.toast, ui = A.ui;
@@ -165,7 +165,7 @@
       ])])
     ]);
     renderSessionCard();
-    renderCombat();
+    renderTable();
     renderRest();
     card('sec-quick', 'Quick Reference', [el('dl', { class: 'kv' }, REF.QUICK.reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, [])),
       more('Conditions', [el('dl', { class: 'kv' }, REF.CONDITIONS.reduce(function (a, q) { return a.concat([el('dt', { text: q[0] }), el('dd', { text: q[1] })]); }, []))])]);

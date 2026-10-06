@@ -55,7 +55,6 @@
     ['rules', 'Rules tab', 'The rules summary.', 'Tabs', { tab: 'rules' }],
     ['sess', 'Session card', 'Session number and title, Start and End session, Export log.', 'Session tab', { ids: ['sec-sess'] }],
     ['dt', 'Dungeon turns', 'The turn timer card, encounter checks, and the greed bonus.', 'Session tab', { ids: ['sec-dt'] }],
-    ['combat', 'Combat tracker', 'The Session tab\u2019s tracker for crows, foes, and allies.', 'Session tab', { ids: ['sec-combat'] }],
     ['rest', 'Resting', 'Rests, Stamina recovery, and the party\u2019s rest choices.', 'Session tab', { ids: ['sec-rest'] }],
     ['quick', 'Quick Reference', 'The reference list and conditions at the bottom of the Session tab.', 'Session tab', { ids: ['sec-quick'] }],
     ['status', 'Party status', 'Live vitals tiles for the crows.', 'Party tab', { ids: ['sec-status'] }],
@@ -65,6 +64,7 @@
     ['timer', 'Timer in the sidebar', 'The dungeon turn clock and End DT button.', 'Sidebar', { ids: ['side-timer'] }],
     ['dice', 'Dice in the sidebar', 'Tests, dice, initiative, usage dice, and roll results.', 'Sidebar', { ids: ['side-dice'] }],
     ['log', 'Log in the sidebar', 'The running log and the note box.', 'Sidebar', { ids: ['side-log'] }],
+    ['combat', 'Combat tracker', 'The Encounters tab\u2019s tracker for fights outside a running encounter (the Tabletop puts creatures in it too).', 'Combat', { ids: ['sec-combat'] }],
     ['sit', 'Battlefield buttons', 'Flanking, cover, darkness, and the other modifiers on a creature\u2019s next roll.', 'Combat', {}],
     ['items', 'Items on the ground', 'Loose items, and what creatures hold and drop.', 'Combat', {}],
     ['live', 'Live fight with players', 'Share the fight with the players\u2019 Play pages and take their actions (accounts site).', 'Combat', {}]
@@ -333,8 +333,8 @@
   }
   function tabButton(t) {
       var badge = null;
-      if (t[0] === 'session' && (S().pending || S().combat.list.some(function (c) { return !c.dead && c.kind === 'foe'; }))) badge = el('span', { class: 'badge', text: S().pending ? '!' : '⚔' });
-      if (t[0] === 'encounters' && runningEnc()) badge = el('span', { class: 'badge', text: '⚔', title: 'An encounter is running' });
+      if (t[0] === 'session' && S().pending) badge = el('span', { class: 'badge', text: '!', title: 'An encounter is due' });
+      if (t[0] === 'encounters' && (runningEnc() || S().combat.list.some(function (c) { return !c.dead && c.kind === 'foe'; }))) badge = el('span', { class: 'badge', text: '⚔', title: runningEnc() ? 'An encounter is running' : 'Foes in the combat tracker' });
       if (t[0] === 'party' && inv.requests.length && inv.id === (window.CrowsCloud && window.CrowsCloud.recordId)) badge = el('span', { class: 'badge', text: String(inv.requests.length), title: 'Join requests waiting' });
       else if (t[0] === 'party' && allClaims().length) badge = el('span', { class: 'badge', text: 'XP', title: plural(allClaims().length, 'XP claim') + ' from players waiting' });
       return el('button', { type: 'button', role: 'tab', 'aria-selected': tab === t[0] ? 'true' : 'false', onclick: function () { setTab(t[0]); } }, [t[1], badge]);

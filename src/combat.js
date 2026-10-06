@@ -407,19 +407,35 @@
     Object.keys(extra || {}).forEach(function (k) { o[k] = extra[k]; });
     Play.rollTest(o);
   }
+  /* A creature missed this crow (or failed a grab or knockback on it): the player may counter. */
+  function promptBanner(p) {
+    var mine = me(), ws = Play.meleeWeapons().sort(function (a, b) { return b.t2 - a.t2; }), w = ws[0], can = w && rxLeft() > 0 && !(mine && mine.conds.indexOf('Unconscious') >= 0);
+    return el('div', { class: 'banner ok cbt-prompt' }, [
+      el('b', { text: 'Reaction: ' }), p.fromName + (p.what ? ' failed ' + p.what + ' against you' : ' missed you') + (p.doom ? ' with a doom' : '') + '. You may counter with your wielded melee weapon: its tier ' + (p.doom ? 3 : 2) + ' damage. ',
+      countered[p.id] ? el('span', { class: 'fine', text: 'Counter sent.' }) :
+      can ? btn('Counter ' + p.fromName + ' (' + (p.doom ? w.t3 : w.t2) + ' with ' + w.key + ')', function () { counter(p); }, 'btn-small btn-primary') :
+        el('span', { class: 'fine', text: !w ? 'You have no melee weapon in hand to counter with.' : rxLeft() <= 0 ? 'You’ve used your reaction this round.' : '' })]);
+  }
+  var countered = {};   // prompt id → when this page sent a counter for it
   function counter(p) {
     var ws = Play.meleeWeapons().sort(function (a, b) { return b.t2 - a.t2; }), w = ws[0];
     if (!w) return;
     var n = p.doom ? w.t3 : w.t2, foe = find(p.from);
+    countered[p.id] = Date.now();
     act({ type: 'attack', label: 'Counter with ' + w.key, tier: p.doom ? 3 : 2, damage: n, melee: true, target: p.from, targetName: foe ? foe.name : p.fromName,
       targets: foe ? [{ id: foe.id, name: foe.name }] : [], rxn: true, prompt: p.id, text: p.doom ? 'they rolled a doom: tier 3 damage' : '' })
-      .then(function (ok) { if (ok) C.toast('Counter: ' + n + ' damage to ' + p.fromName + '.'); });
+      .then(function (ok) { if (ok) C.toast('Counter: ' + n + ' damage to ' + p.fromName + '.'); else delete countered[p.id]; update(); });
   }
 
   // ------------------------------------------------------------------ the Combat card
   function healthChip(x) {
     var cls = x.dead || x.health === 'down' ? 'bad' : x.health === 'badly hurt' ? 'warn' : x.health === 'hurt' || x.health === 'armor dented' ? 'mid' : 'ok';
     return el('span', { class: 'hp-chip ' + cls, text: x.health });
+  }
+  /* What this crow knows about a creature through Monster Expert (the server sends a player only their own crow's part), or null. */
+  function known(id) { var c = cur(); return c && c.expert && c.expert[id] || null; }
+  function knownText(k) {
+    return 'Stamina ' + k.st + '/' + k.stMax + ' · power ' + k.p + (k.atk.length ? ' · attacks: ' + k.atk.join(', ') : '') + (k.traits.length ? ' · traits: ' + k.traits.join(', ') : '');
   }
   function rich(text) {
     return el('span', null, String(text).split('**').map(function (part, i) { return i % 2 ? el('b', { text: part }) : document.createTextNode(part); }));
@@ -434,7 +450,8 @@
         x.art ? el('button', { type: 'button', class: 'cbt-art', title: 'View ' + x.name + ' full size', 'aria-label': 'View ' + x.name + ' full size', onclick: function () { artPopup(x.name, x.art); } }, [el('img', { src: x.art, alt: x.name, loading: 'lazy' })]) : null,
       el('div', { class: 'cbt-who' }, [
         el('b', { text: x.name + (mine ? ' (you)' : '') }),
-        el('div', { class: 'fine', text: [x.type, x.size, nums].filter(Boolean).join(' · ') })]),
+        el('div', { class: 'fine', text: [x.type, x.size, nums].filter(Boolean).join(' · ') }),
+        known(x.id) ? el('div', { class: 'fine cbt-known', title: 'Monster Expert: you wield a monster lore book and it is in your line of effect', text: '📖 ' + knownText(known(x.id)) }) : null]),
       el('div', { class: 'cbt-tags' }, [healthChip(x)].concat(
         (x.conds || []).map(function (k) { return el('span', { class: 'chip', text: k }); }),
         x.surprised ? [el('span', { class: 'chip warn', text: 'surprised', title: 'No turn in round 1; attacks against them get +1' })] : [],
@@ -475,13 +492,7 @@
     var as = myAssist();
     if (as) bans.push(['ok', as.fromName + ' assists you: ' + signed(as.bonus) + ' on your next test (it lapses after this turn).']);
     bans.forEach(function (b) { box.appendChild(el('div', { class: 'banner ' + b[0], text: b[1] })); });
-    myPrompts().forEach(function (p) {
-      var ws = Play.meleeWeapons().sort(function (a, b) { return b.t2 - a.t2; }), w = ws[0], can = w && rxLeft() > 0 && !(mine && mine.conds.indexOf('Unconscious') >= 0);
-      box.appendChild(el('div', { class: 'banner ok cbt-prompt' }, [
-        el('b', { text: 'Reaction: ' }), p.fromName + (p.what ? ' failed ' + p.what + ' against you' : ' missed you') + (p.doom ? ' with a doom' : '') + '. You may counter with your wielded melee weapon: its tier ' + (p.doom ? 3 : 2) + ' damage. ',
-        can ? btn('Counter ' + p.fromName + ' (' + (p.doom ? w.t3 : w.t2) + ' with ' + w.key + ')', function () { counter(p); }, 'btn-small btn-primary') :
-          el('span', { class: 'fine', text: !w ? 'You have no melee weapon in hand to counter with.' : rxLeft() <= 0 ? 'You’ve used your reaction this round.' : '' })]));
-    });
+    myPrompts().forEach(function (p) { box.appendChild(promptBanner(p)); });
     myHits().forEach(function (h) { box.appendChild(hitBanner(h)); });
     if (mine && c.round) box.appendChild(turnBox(c, mine));
     box.appendChild(el('h3', { text: 'Enemies' }));
@@ -645,7 +656,10 @@
   window.CrowsCombat = { load: load, render: update, rolled: rolled, updated: updated, superseded: superseded, rollNote: rollNote,
     session: session, resting: resting, restSent: restSent, sendRest: sendRest,
     ground: ground, pickUp: pickUp, cantPickUp: cantPickUp, drop: drop,
-    tableData: tableData, sendTable: sendTable, setTarget: setTarget, rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };
+    tableData: tableData, sendTable: sendTable, setTarget: setTarget,
+    // What waits on this crow's player (for the Table tab's pop-up): counters it may make, hits it may defend against.
+    approvals: function () { return cur() ? { prompts: myPrompts(), hits: myHits(), me: me(), feed: cur().feed || [], countered: countered } : null; },
+    promptBanner: promptBanner, hitBanner: hitBanner, known: known, knownText: knownText, rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };
   document.addEventListener('visibilitychange', function () { if (document.visibilityState === 'visible') load(); });
   // A crow that gets its record id later (a new crow, saved as a draft) starts being watched then.
   setInterval(function () { var id = charId(); if (id && (!fight || fight.charId !== id)) load(); }, 2000);

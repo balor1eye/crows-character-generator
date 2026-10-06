@@ -9,7 +9,7 @@
       beastCard = f('beastCard'), btn = f('btn'), card = f('card'), chk = f('chk'), clamp = f('clamp'), clearCombat = f('clearCombat'),
       combatUI = f('combatUI'), currentPlace = f('currentPlace'), dungeonEN = f('dungeonEN'), field = f('field'), greedBonus = f('greedBonus'),
       groundText = f('groundText'), inp = f('inp'), int = f('int'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'),
-      nowStamp = f('nowStamp'), render = f('render'), rollMerchant = f('rollMerchant'), rollMiasmaTouched = f('rollMiasmaTouched'),
+      nowStamp = f('nowStamp'), render = f('render'), renderCombat = f('renderCombat'), rollMerchant = f('rollMerchant'), rollMiasmaTouched = f('rollMiasmaTouched'),
       rollTravelEncounter = f('rollTravelEncounter'), rollTravelers = f('rollTravelers'), rollWildAnimal = f('rollWildAnimal'), S = f('S'),
       save = f('save'), sel = f('sel'), setTab = f('setTab'), test = f('test'), testLine = f('testLine'), today = f('today'),
       travelResultBox = f('travelResultBox');
@@ -70,7 +70,7 @@
       adds.forEach(function (a) { addCombatant(a[0], a[1], 'foe'); });
       log('', 'Added to combat: ' + addsText(adds) + '.');
       toast('Added to the combat tracker.');
-      setTab('session');
+      setTab('encounters');
     }, 'btn-small btn-primary');
   }
 
@@ -122,8 +122,8 @@
       e.creatures.forEach(function (c) { addCombatant(c.n, clamp(int(c.k, 1), 1, 30), c.side); });
       log('', 'Encounter **' + (e.name || 'untitled') + '** joins combat: ' + encSummary(e) + '.');
       toast('Added to the combat tracker.');
-      setTab('session');
-    }, cls || 'btn-small btn-primary', 'Only add its creatures to the combat tracker in the Session tab');
+      setTab('encounters');
+    }, cls || 'btn-small btn-primary', 'Only add its creatures to the combat tracker (on this tab, and on the Tabletop)');
   }
 
   /*
@@ -132,10 +132,11 @@
    */
   var ENC_OUTCOMES = [['won', 'The crows won'], ['foesFled', 'The foes fled or surrendered'], ['fled', 'The crows fled'], ['avoided', 'Talked, traded, or sneaked past'], ['other', 'Something else']];
   function runningEnc() { var id = S().combat.encId; return id ? findEncounter(id) : null; }
-  function runEncounter(e) {
+  /* stay: start it without leaving the tab (the Tabletop loads encounters onto the map). Returns whether it is running. */
+  function runEncounter(e, stay) {
     var s = S(), c = s.combat, cur = runningEnc();
-    if (cur === e) { setTab('encounters'); return; }
-    if (cur && !confirm((cur.name || 'Another encounter') + ' is still running. Switch to ' + (e.name || 'this one') + '? Creatures already in the tracker stay there.')) return;
+    if (cur === e) { if (!stay) setTab('encounters'); return true; }
+    if (cur && !confirm((cur.name || 'Another encounter') + ' is still running. Switch to ' + (e.name || 'this one') + '? Creatures already in the tracker stay there.')) return false;
     var others = c.list.filter(function (x) { return x.kind !== 'pc' && x.enc !== e.id; });
     if (others.length && confirm('The combat tracker still has ' + plural(others.length, 'creature') + ' in it. Remove them before this encounter starts?\n\nCancel keeps them in the fight.')) {
       c.list = c.list.filter(function (x) { return others.indexOf(x) < 0; });
@@ -147,7 +148,8 @@
     addParty();
     if (s.pending && s.pending.encId === e.id) s.pending = null;
     log('enc', '**Encounter begins: ' + (e.name || 'untitled') + '**' + (e.where ? ' at ' + e.where : '') + (e.creatures.length ? ' (' + encSummary(e) + ')' : '') + '.');
-    save(); setTab('encounters');
+    save(); if (stay) render(); else setTab('encounters');
+    return true;
   }
   function runEncBtn(e, cls) {
     return runningEnc() === e ? btn('Go to the fight', function () { setTab('encounters'); }, 'btn-small ' + (cls || ''))
@@ -226,6 +228,7 @@
   }
   function renderEncounters() {
     renderEncRun();
+    renderCombat();
     if (!ui.encSrc) ui.encSrc = REF.DUNGEON_TABLES[S().table] ? S().table : 'Travel';
     var dr = ui.encDraft;
     function srcLabel() { return ENC_SOURCES.filter(function (o) { return o[0] === ui.encSrc; })[0][1]; }

@@ -50,7 +50,7 @@ function attack(attacker, label, v) { force(v); try { button(label, row(attacker
 function cond(name, k) { button(k, q('.conds', row(name))).click(); }
 
 try {
-  if (document.body.getAttribute('data-tab') !== 'session') button('Session', q('#tabbar')).click();
+  if (document.body.getAttribute('data-tab') !== 'encounters') button('Encounters', q('#tabbar')).click();   // the tracker for fights outside an encounter
   add('Sword Warrior (P4)', 2, 'ally');
   add('Crocodile', 1, 'foe');
   check(who('Sword Warrior (P4) 1') && who('Crocodile 1'), 'two allied sword warriors and a crocodile in the tracker');
