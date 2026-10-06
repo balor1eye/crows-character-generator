@@ -140,6 +140,17 @@ def main():
         pwait("return names().indexOf('Blood Creature A 2') >= 0", "the creature beyond the door to appear")
         ok("opening the door shows the creature beyond it")
 
+        # The party's marker: any player can move it.
+        r("q('#sec-vtt [aria-label^=\"Add tokens\"]').click(); button('Party marker', q('#sec-vtt .vtt-drawer')).click();")
+        rwait("return scene().tokens.some(function (t) { return t.marker; })", "the party marker")
+        r("var sc = scene(), m = sc.tokens.filter(function (t) { return t.marker; })[0]; m.x = 4.5 * sc.g; m.y = 4.5 * sc.g; window.CrowsRefApp.save(); window.CrowsRefApp.render();")
+        pwait("return pub().tokens.some(function (k) { return k.party; })", "the party marker on the player's map")
+        ok("the party's marker reaches the player's map, flagged as the party's")
+        pm = p("return pub().tokens.filter(function (k) { return k.party; })[0].id;")
+        p("window.CrowsCombat.sendTable({ type: 'move', token: arguments[0], x: 7.5 * arguments[1], y: 6.5 * arguments[1] });", pm, g)
+        rwait("var m = scene().tokens.filter(function (t) { return t.marker; })[0]; return Math.round(m.x) === Math.round(7.5 * scene().g)", "the party marker to move")
+        ok("a player moves the party's marker")
+
         # Hide a token.
         r("scene().tokens.filter(function (t) { return t.name === 'Blood Creature A 1'; })[0].hidden = true; window.CrowsRefApp.save(); window.CrowsRefApp.render();")
         pwait("return names().indexOf('Blood Creature A 1') < 0", "the hidden token to vanish")

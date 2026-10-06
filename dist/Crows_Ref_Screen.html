@@ -8976,6 +8976,7 @@ CROWS.NAME_IDEAS = {
       var o = { id: t.id, name: t.name, kind: t.kind, x: Math.round(t.x), y: Math.round(t.y), size: t.size || 1 };
       var cx = combatant(t); if (cx) o.cid = cx.id;
       if (t.link) o.link = t.link;
+      if (t.marker) o.party = true;   // any player may move the party's marker
       // Health as the rules let the players know it: crows' and allies' Stamina and AD (the fight shares them), foes' only when the Ref
       // shows foes' Stamina, otherwise how hurt they look.
       var full = t.pcId || cx && (cx.kind === 'ally' || S().combat.showSt);
@@ -9031,7 +9032,7 @@ CROWS.NAME_IDEAS = {
       changed(); return;
     }
     var t = tok(sc, a.token);
-    if (!p || !t || t.pcId !== p.id || t.locked || sc.playerMove === false) return;
+    if (!p || !t || !(t.pcId === p.id || t.marker) || t.locked || sc.playerMove === false) return;
     var s = Tbl.snap(sc, clamp(+a.x || 0, 0, sc.w), clamp(+a.y || 0, 0, sc.h), t.size);
     var n = moveToken(sc, t, s.x, s.y, true);
     if (n === false) { feed('**' + (p.name || 'A crow') + '** can’t go that way: a wall is in the way.'); changed(); return; }
@@ -9738,7 +9739,7 @@ CROWS.NAME_IDEAS = {
       el('div', { class: 'row center' }, [el('label', { class: 'field' }, ['Squares across', colsIn]), el('label', { class: 'field grow' }, ['Grid', grid]), el('label', { class: 'field' }, ['Board', bg])]),
       el('div', { class: 'row center' }, [el('span', { class: 'fine', text: 'Offset' }), numIn(sc, 'ox', -400, 400, function () { sc.seen = ''; }), numIn(sc, 'oy', -400, 400, function () { sc.seen = ''; }),
         sc.kind === 'travel' ? null : el('label', { class: 'field inline' }, ['Feet/square ', numIn(sc, 'unit', 0, 100)])]),
-      el('div', { class: 'checks' }, [checkIn(sc, 'showGrid', 'Show the grid'), checkIn(sc, 'playerMove', 'Players move their own tokens', 'Their drops arrive as moves you can see; walls stop them.')]),
+      el('div', { class: 'checks' }, [checkIn(sc, 'showGrid', 'Show the grid'), checkIn(sc, 'playerMove', 'Players move their own tokens and the party marker', 'Their drops arrive as moves you can see; walls stop them.')]),
       el('h4', { text: 'Fog and light' }),
       el('div', { class: 'row' }, [el('label', { class: 'field grow' }, ['Fog of war', fog]), el('label', { class: 'field grow' }, ['Ambient light', amb])]),
       sc.kind === 'travel' ? el('label', { class: 'field inline' }, ['Reveal radius (hexes) ', numIn(sc, 'revealR', 0, 5)]) : null,

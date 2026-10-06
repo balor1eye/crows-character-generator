@@ -13533,7 +13533,7 @@ var CROWS_TRAIT_TREES = [
       mask: function () { return P.mask; },
       mapSrc: mapSrc,
       tokenSrc: function (t) { return t.art && P.scene && P.scene.art ? P.scene.art[t.art] || null : null; },
-      canMove: function (t) { return mine(t) && P.scene && P.scene.move; },
+      canMove: function (t) { return (mine(t) || t.party) && P.scene && P.scene.move; },
       speedOf: function (t) { return mine(t) ? t.speed || 0 : 0; },
       onSelect: function (t) { P.sel = t ? t.id : null; renderInfo(); },
       onMove: function (t, x, y) { Combat.sendTable({ type: 'move', token: t.id, x: Math.round(x), y: Math.round(y) }); },
