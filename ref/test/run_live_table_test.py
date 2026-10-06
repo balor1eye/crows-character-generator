@@ -8,6 +8,8 @@ Tabletop tab (a walled room with a closed door, a creature inside and one outsid
 players. Then the player's Table must show: the crow and the creature in the room, but not the creature beyond the wall
 (fog of war); the fog mask must hide the far room; a move from the player must reach the Ref's token, and a move through the
 wall must not; opening the door must reveal the creature; hiding a token must remove it; a ping must reach the Ref.
+Then a fight on the map: the player's turn strip and Fight drawer, an attack from the map's Attack drawer reaching the Ref, the
+text lists (the player's own choice, then the Ref's default) and back, and the strip going when the Ref ends the fight.
 Everything it made is deleted. Logs in through server/test_instance.py (never typing a password into a browser).
 """
 import argparse, os, sys
@@ -147,6 +149,34 @@ def main():
         p("window.CrowsCombat.sendTable({ type: 'ping', x: 400, y: 300 });")
         rwait("return (scene().pings || []).some(function (k) { return Math.round(k.x) === 400 && Math.round(k.y) === 300; })", "the ping to reach the Ref")
         ok("a ping from the player reaches the Ref")
+
+        # A fight on the map (the battle map is the players' default view).
+        r("""var A = window.CrowsRefApp; scene().tokens.forEach(function (t) { t.hidden = false; }); A.addParty();
+             var c = window.CrowsRef.state.session.combat, me = c.list.filter(function (x) { return x.kind === 'pc'; })[0];
+             c.list.forEach(function (x) { if (x.kind === 'foe') x.tgt = me.id; }); A.nextRound();""")
+        pwait("return /Round 1/.test(text(q('#play-table .vtt-turn')))", "the turn strip on the player's map")
+        assert p("return window.CrowsCombat.fight().view") == "map"
+        ok("in a fight the player's map has the turn strip (the battle map is the default view)")
+        p("button('Fight', q('#play-table .vtt-turn')).click();")
+        pwait("return /Blood Creature A 1/.test(text(q('#play-table .vtt-drawer')))", "the map's Fight drawer")
+        ok("the map's Fight drawer lists the fight")
+        p("""button('Attack', q('#play-table .dr-tabs')).click(); button('Attack', q('#play-table .dr-body'), true).click();
+             var b = qa('#play-table button').filter(function (x) { return text(x) === 'Send as it is'; })[0]; if (b) b.click();""")
+        rwait("return (window.CrowsRef.state.session.combat.acts || []).some(function (a) { return a.type === 'attack'; })", "the attack from the map to reach the Ref")
+        ok("an attack from the map's Attack drawer reaches the Ref")
+        p("window.CrowsCombat.setView('text');")
+        pwait("return q('#play-table').hidden && qa('#play-combat .cbt-row').length >= 3", "the fight as text lists")
+        ok("As lists: the map steps aside and the Combat card lists the enemies and allies")
+        p("window.CrowsCombat.setView('map');")
+        pwait("return !q('#play-table').hidden", "the map to come back")
+        r("window.CrowsRefApp.setPlayerView('text');")
+        pwait("return q('#play-table').hidden", "the Ref's default (text lists) to reach the player")
+        r("window.CrowsRefApp.setPlayerView('map');")
+        pwait("return !q('#play-table').hidden", "the battle map default to come back")
+        ok("the Ref's default view reaches the player, who follows it")
+        r("window.CrowsRefApp.endCombat();")
+        pwait("return !q('#play-table .ts-bar')", "the turn strip to go when the fight ends")
+        ok("ending the fight takes the turn strip off the map")
         # Hide it all.
         r("button('Shown to players', q('#sec-vtt')).click();")
         pwait("return !pub()", "the scene to go away")

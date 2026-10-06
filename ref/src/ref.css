@@ -391,6 +391,9 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 /* Preferences and Tabletop Mode */
 .pref-mode { border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: 6px; padding: .6rem .8rem; background: var(--slot); }
 .pref-mode.on { border-left-color: var(--accent); }
+.pref-view { margin-top: .6rem; border-left-color: var(--sel); }
+.pref-view .row { gap: .5rem .8rem; }
+.pref-view.off { opacity: .7; }
 .pref-main { font-size: 1.05rem; }
 .pref-points { margin: .3rem 0 0; padding-left: 1.2rem; font-size: .88rem; color: var(--muted); }
 .pref-points li { margin: .15rem 0; }

@@ -116,7 +116,7 @@
       village: freshVillage(),
       party: [], xpLog: [], hirelings: [], ledger: [], places: [], npcs: [], encounters: [], notes: '', hooks: '', history: [],
       dice: { mod: 0, net: 0, expr: '3d6', ud: 1 },
-      prefs: { tabletop: false, off: {} },
+      prefs: { tabletop: false, off: {}, playerView: 'map' },
       vtt: { scenes: [], cur: '', shown: false, clean: true }
     };
   }
@@ -364,17 +364,7 @@
     ]));
 
     var dc = state.dice, box = $('side-dice'); box.innerHTML = '';
-    var res = null;
-    if (ui.dice) {
-      var r = ui.dice;
-      res = el('div', { class: 'result' }, [el('div', { class: 'r-head', text: r.label }),
-        r.r ? el('div', null, [el('div', { class: 'r-roll', text: testLine(r.r) }), tierChip(r.r), r.dmg ? el('div', null, [el('b', { text: r.dmg })]) : null, r.note ? el('div', { class: 'fine', text: r.note }) : null, hitControls(r.hit)].concat((r.counters || []).map(function (k) {
-            if (k.act) return el('div', null, [el('span', { class: 'fine', text: k.by.name + '\u2019s counter: ' }), hitControls(k.act)]);
-            var cd = counterDamage(k.by, k.doom);
-            return cd && rxLeft(k.by) > 0 && !k.by.dead ? btn(k.by.name + ' counters ' + k.vs.name + ' (' + cd.n + ')', function () { k.act = counterAct(k.by, k.vs, k.doom); save(); render(); }, 'btn-small', 'A counter (reaction): its melee attack\u2019s tier 2 damage, tier 3 on a doom') : null;
-          })))
-          : el('div', null, [el('b', { text: r.text })])]);
-    }
+    var res = diceResult();
     box.appendChild(el('div', null, [
       el('h3', { text: 'Dice' }),
       el('div', { class: 'row center' }, [field('Bonus', inp(dc, 'mod', { type: 'number', min: -10, max: 20, class: 'tiny' }, { dflt: 0 })), segEB(dc, 'net')]),
@@ -399,6 +389,19 @@
       res
     ]));
     renderSideLog();
+  }
+  /* The last roll (ui.dice), with Apply/Undo for its hit and the counters it allows: in the sidebar's Dice panel and floating on the Tabletop.
+     opts.noHit leaves out the hit's own Apply (the Tabletop's approval pop-up has it). */
+  function diceResult(opts) {
+    var r = ui.dice;
+    if (!r) return null;
+    return el('div', { class: 'result' }, [el('div', { class: 'r-head', text: r.label }),
+      r.r ? el('div', null, [el('div', { class: 'r-roll', text: testLine(r.r) }), tierChip(r.r), r.dmg ? el('div', null, [el('b', { text: r.dmg })]) : null, r.note ? el('div', { class: 'fine', text: r.note }) : null, opts && opts.noHit ? null : hitControls(r.hit)].concat((r.counters || []).map(function (k) {
+          if (k.act) return el('div', null, [el('span', { class: 'fine', text: k.by.name + '\u2019s counter: ' }), hitControls(k.act)]);
+          var cd = counterDamage(k.by, k.doom);
+          return cd && rxLeft(k.by) > 0 && !k.by.dead ? btn(k.by.name + ' counters ' + k.vs.name + ' (' + cd.n + ')', function () { k.act = counterAct(k.by, k.vs, k.doom); save(); render(); }, 'btn-small', 'A counter (reaction): its melee attack\u2019s tier 2 damage, tier 3 on a doom') : null;
+        })))
+        : el('div', null, [el('b', { text: r.text })])]);
   }
   /* What an action does, in words: "5 damage, prone", "regains 4 Stamina", "grabbed". */
   function fxText(items) {
@@ -455,7 +458,7 @@
       area: area, sel: sel, chk: chk, field: field, segEB: segEB, btn: btn, card: card, more: more, rowsTable: rowsTable, currentPlace: currentPlace,
       dungeonEN: dungeonEN, travelCalc: travelCalc, greedBonus: greedBonus, activePCs: activePCs, salePct: salePct, nextES: nextES,
       remainMs: remainMs, clockText: clockText, startTimer: startTimer, pauseTimer: pauseTimer, resetTimer: resetTimer, beep: beep, tick: tick,
-      setTab: setTab, renderTabbar: renderTabbar, render: render, renderSide: renderSide, fxText: fxText, hitControls: hitControls, diceBtn: diceBtn,
+      setTab: setTab, renderTabbar: renderTabbar, render: render, renderSide: renderSide, diceResult: diceResult, fxText: fxText, hitControls: hitControls, diceBtn: diceBtn,
       rollInitiative: rollInitiative, renderSideLog: renderSideLog, STORAGE_KEY: STORAGE_KEY, TAB_KEY: TAB_KEY, TABS: TABS, TAB_GROUPS: TAB_GROUPS, tabButton: tabButton, SIZES: SIZES,
       EB_LABELS: EB_LABELS, ui: ui, Dom: Dom, Dice: Dice, Rules: Rules, $: $, el: el, fmt: fmt, signed: signed, clone: clone, plural: plural,
       toast: toast, d: d, pick: pick, rollDice: rollDice, d100: d100, netEdges: netEdges, ebWord: ebWord, esBonusCount: esBonusCount,
