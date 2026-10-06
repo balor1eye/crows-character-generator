@@ -8681,13 +8681,100 @@ CROWS.NAME_IDEAS = {
       return out;
     }
     var minP = Math.max(10 * s, 8), maxP = Math.min(w, h) / 3;
-    var X = profilePeriod(flat(cp), minP, maxP), Y = profilePeriod(flat(rp), minP, maxP), r;
+    var X = profilePeriod(flat(cp), minP, maxP), Y = profilePeriod(flat(rp), minP, maxP), r = null;
     if (X && Y && Math.abs(X.p - Y.p) / X.p < .04) r = { p: (X.p + Y.p) / 2, ox: X.phase, oy: Y.phase };
     else if (X && !Y && X.z > 2.5) r = { p: X.p, ox: X.phase, oy: 0 };
     else if (Y && !X && Y.z > 2.5) r = { p: Y.p, ox: 0, oy: Y.phase };
-    else return null;
+    if (r && X && Y) { var g0 = r.p / s; return { grid: 'square', g: g0, ox: (r.ox / s) % g0, oy: (r.oy / s) % g0 }; }
+    // Hexes: the picture's edges repeat across and down at a ratio of 1 : root 3 (pointy-top: upright sides every half hex across, rows of
+    // corners every 1.5 radii down; flat-top: the other way round). Size the grid from that, then test where its outline sits.
+    var fx = acfPeaks(flat(cp), minP * .5, maxP), fy = acfPeaks(flat(rp), minP * .5, maxP), kind = null, hg = 0, pairs = [], pc = 0, pr = 0;
+    fx.forEach(function (a) { fy.forEach(function (b) {
+      var k = Math.abs(b[0] / a[0] / Math.sqrt(3) - 1) < .06 ? 'hexp' : Math.abs(a[0] / b[0] / Math.sqrt(3) - 1) < .06 ? 'hexf' : null;
+      if (k) pairs.push({ k: k, px: a[0], py: b[0], v: a[1] + b[1] });
+    }); });
+    if (pairs.length) {   // the shortest pair that repeats nearly as strongly as the best (its multiples repeat too)
+      var top = pairs.reduce(function (m, q) { return Math.max(m, q.v); }, 0), pick = null;
+      pairs.forEach(function (q) { if (q.v >= top * .6 && (!pick || q.px + q.py < pick.px + pick.py)) pick = q; });
+      kind = pick.k; hg = 2 * (kind === 'hexp' ? pick.px : pick.py); pc = pick.px; pr = pick.py;
+    }
+    if (!r && fx.length && fy.length && Math.abs(fx[0][0] - fy[0][0]) / fx[0][0] < .04) {   // a plain square grid the first test missed
+      var sq = (fx[0][0] + fy[0][0]) / 2; return { grid: 'square', g: sq / s, ox: (foldPhase(flat(cp), sq) / s) % (sq / s), oy: (foldPhase(flat(rp), sq) / s) % (sq / s) };
+    }
+    if (kind) {
+      var mag = new Float32Array(w * h), bl, bg, line = new Float32Array(w * h), i0;
+      for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) { i0 = y * w + x; mag[i0] = Math.abs(gray[i0 + 1] - gray[i0 - 1]) + Math.abs(gray[i0 + w] - gray[i0 - w]); }
+      bl = boxBlur(mag, w, h, 1); bg = boxBlur(mag, w, h, 6);   // thin lines: a little blurred, minus the broad surroundings
+      for (i0 = 0; i0 < line.length; i0++) line[i0] = Math.max(0, bl[i0] - bg[i0]);
+      var f = fitHex(line, w, h, hg, kind);
+      if (f && f.z >= 4) return { grid: kind, g: f.g / s, ox: f.ox / s, oy: f.oy / s };
+    }
+    if (!r) return null;
     var g = r.p / s;
-    return { g: g, ox: (r.ox / s) % g, oy: (r.oy / s) % g };
+    return { grid: 'square', g: g, ox: (r.ox / s) % g, oy: (r.oy / s) % g };
+  }
+  /* The repeat lengths of a profile (peaks of its autocorrelation, strongest first by position), as [lag, strength]. */
+  function acfPeaks(a, minLag, maxLag) {
+    var n = a.length, mean = 0, v0 = 0, i, L;
+    for (i = 0; i < n; i++) mean += a[i]; mean /= n;
+    var z = new Float64Array(n); for (i = 0; i < n; i++) { z[i] = a[i] - mean; v0 += z[i] * z[i]; }
+    if (!v0) return [];
+    var prev = 0, cur = 0, peaks = [], c;
+    for (L = Math.max(2, Math.floor(minLag)); L <= Math.min(maxLag, n - 2); L++) {
+      c = 0; for (i = 0; i + L < n; i++) c += z[i] * z[i + L];
+      c /= v0;
+      if (cur > prev && cur >= c && cur >= .3) peaks.push([L - 1, cur]);
+      prev = cur; cur = c;
+    }
+    return peaks;
+  }
+  /* Where a profile's peaks fall within one repeat of length p. */
+  function foldPhase(a, p) {
+    var nb = Math.max(4, Math.floor(p)), sum = new Float64Array(nb), cnt = new Float64Array(nb), i;
+    for (i = 0; i < a.length; i++) { var b = Math.floor((i % p) / p * nb); sum[b] += a[i]; cnt[b]++; }
+    var top = -1e9, at = 0;
+    for (var k = 0; k < nb; k++) { var m = (sum[k] + sum[(k + 1) % nb] + sum[(k + nb - 1) % nb]) / Math.max(1, cnt[k] + cnt[(k + 1) % nb] + cnt[(k + nb - 1) % nb]); if (m > top) { top = m; at = k; } }
+    return (at + .5) / nb * p;
+  }
+  function boxBlur(src, w, h, r) {
+    var out = new Float32Array(w * h), tmp = new Float32Array(w * h), x, y, k, sum, n = 2 * r + 1;
+    for (y = 0; y < h; y++) { sum = 0; for (k = -r; k <= r; k++) sum += src[y * w + Math.min(w - 1, Math.max(0, k))];
+      for (x = 0; x < w; x++) { tmp[y * w + x] = sum / n; sum += src[y * w + Math.min(w - 1, x + r + 1)] - src[y * w + Math.max(0, x - r)]; } }
+    for (x = 0; x < w; x++) { sum = 0; for (k = -r; k <= r; k++) sum += tmp[Math.min(h - 1, Math.max(0, k)) * w + x];
+      for (y = 0; y < h; y++) { out[y * w + x] = sum / n; sum += tmp[Math.min(h - 1, y + r + 1) * w + x] - tmp[Math.max(0, y - r) * w + x]; } }
+    return out;
+  }
+  /* Where a hex grid of about flat-to-flat width g0 sits on a picture of line strength: the width (within a few percent of g0) and offset whose
+     hex sides lie on the strongest lines, and how far above the average offset that is (in standard deviations: low means no hex grid here). */
+  function fitHex(line, w, h, g0, kind) {
+    var pointy = kind === 'hexp', st = 3, found = null;
+    function at(x, y) { x = Math.round(x); y = Math.round(y); return x < 1 || y < 1 || x >= w - 1 || y >= h - 1 ? -1 : line[y * w + x]; }
+    function search(g, step, around) {   // the best offset for this width (all of them, or a pixel or so around `around`)
+      var R = g / Math.sqrt(3), stepX = pointy ? g : 1.5 * R, stepY = pointy ? 1.5 * R : g, ap = g / 2, rows = Math.ceil(h / stepY) + 2, cols = Math.ceil(w / stepX) + 2;
+      var oxMax = pointy ? g : 3 * R, oyMax = pointy ? 3 * R : g, scores = [], best = null, ox, oy;
+      function score(ox, oy) {
+        var sum = 0, cnt = 0, rr, qq, k, cx, cy, a, v;
+        for (rr = -1; rr < rows; rr++) for (qq = -1; qq < cols; qq++) {
+          cx = pointy ? ox + g * (qq + rr / 2) : ox + 1.5 * R * qq; cy = pointy ? oy + 1.5 * R * rr : oy + g * (rr + qq / 2);
+          for (k = 0; k < 3; k++) { a = Math.PI / 180 * (60 * k + (pointy ? 0 : 30)); v = at(cx + ap * Math.cos(a), cy + ap * Math.sin(a)); if (v >= 0) { sum += v; cnt++; } }
+        }
+        return cnt < 40 ? -1 : sum / cnt;
+      }
+      function tryAt(ox, oy) { var sc = score(ox, oy); if (sc >= 0) { scores.push(sc); if (!best || sc > best.sc) best = { sc: sc, ox: ox, oy: oy }; } }
+      if (around) { for (oy = -1; oy <= 1; oy++) for (ox = -1; ox <= 1; ox++) tryAt(around.ox + ox, around.oy + oy); }
+      else for (oy = 0; oy < oyMax; oy += step) for (ox = 0; ox < oxMax; ox += step) tryAt(ox, oy);
+      if (!best || (!around && scores.length < 20)) return null;
+      var mean = 0, sd = 0; scores.forEach(function (v) { mean += v; }); mean /= scores.length;
+      scores.forEach(function (v) { sd += (v - mean) * (v - mean); }); sd = Math.sqrt(sd / scores.length);
+      return { g: g, sc: best.sc, ox: best.ox, oy: best.oy, oxMax: oxMax, oyMax: oyMax, z: sd ? (best.sc - mean) / sd : 0 };
+    }
+    for (var d = -.03; d <= .0301; d += .01) { var t = search(g0 * (1 + d), st); if (t && (!found || t.sc > found.sc)) found = t; }   // the period from the profile is a whole number of pixels: find the exact width
+    if (!found) return null;
+    var fine = search(found.g, 2), z = fine ? fine.z : found.z, g = found.g;
+    var tight = search(found.g, 1, fine || found);
+    if (tight && tight.sc >= (fine || found).sc) fine = tight;
+    fine = fine || found;
+    return { g: g, ox: ((fine.ox % fine.oxMax) + fine.oxMax) % fine.oxMax, oy: ((fine.oy % fine.oyMax) + fine.oyMax) % fine.oyMax, z: z };
   }
   /* "42x65" in a file name: squares across and down. */
   function sizeFromName(title) {
@@ -8706,11 +8793,18 @@ CROWS.NAME_IDEAS = {
       sc.w = img.naturalWidth; sc.h = img.naturalHeight;
       if (v && v.cols) { sc.g = sc.w / v.cols; sc.grid = 'square'; sc.showGrid = !v.printed; U.cols = v.cols; }   // exact (fractional) squares so the grid meets the artwork's edges
       else {
-        var rec = m.k ? customMaps().filter(function (r) { return r.key === m.k; })[0] : null, nm = rec ? sizeFromName(rec.title) : null, dg = rec && sc.kind !== 'travel' ? detectGrid(img) : null;
+        var rec = m.k ? customMaps().filter(function (r) { return r.key === m.k; })[0] : null, nm = rec ? sizeFromName(rec.title) : null;
+        var memo = U.gridMemo || (U.gridMemo = {}), id = m.b || m.k, dg = id in memo ? memo[id] : (memo[id] = detectGrid(img));   // squares or hexes: whatever the picture draws
         sc.ox = sc.oy = 0;
-        if (dg && sc.w / dg.g >= 4 && sc.w / dg.g <= 400) { sc.g = dg.g; sc.grid = 'square'; sc.showGrid = false; sc.ox = dg.ox; sc.oy = dg.oy; U.cols = Math.round(sc.w / dg.g); toast('Found a grid of ' + Math.round(sc.w / dg.g) + ' squares across; adjust it in Scene settings if it is off.'); }   // the picture draws its own grid: ours only snaps
-        else if (nm && nm.cols >= 4 && nm.cols <= 400) { sc.g = sc.w / nm.cols; sc.grid = 'square'; U.cols = nm.cols; }
-        else sc.g = Math.max(10, Math.round(sc.w / (sc.kind === 'travel' ? 28 : U.cols)));
+        if (dg && sc.w / dg.g >= 4 && sc.w / dg.g <= 400) {
+          sc.g = dg.g; sc.grid = dg.grid; sc.showGrid = false; sc.ox = dg.ox; sc.oy = dg.oy; U.cols = Math.round(sc.w / dg.g);   // the picture draws its own: ours only snaps
+          toast(dg.grid === 'square' ? 'Found a grid of ' + U.cols + ' squares across; adjust it in Scene settings if it is off.'
+            : 'Found ' + (dg.grid === 'hexp' ? 'pointy-top' : 'flat-top') + ' hexes about ' + U.cols + ' across; adjust them in Scene settings if they are off.');
+        }
+        else {
+          if (nm && nm.cols >= 4 && nm.cols <= 400) { sc.g = sc.w / nm.cols; sc.grid = 'square'; U.cols = nm.cols; }
+          else { sc.g = Math.max(10, Math.round(sc.w / (sc.kind === 'travel' ? 28 : U.cols))); sc.grid = sc.kind === 'travel' ? 'hexp' : Tbl.isHex(sc) ? 'square' : sc.grid; }   // nothing found: a travel scene's hexes, otherwise squares
+        }
       }
       sc.seen = ''; sc.seenDims = ''; changed(); if (U.view) U.view.sceneChanged(sc.id + 'm'); render();
     };
