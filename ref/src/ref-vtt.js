@@ -91,6 +91,22 @@
     if (kind === 'travel' && REFD && REFD.ART && REFD.ART.maps.length) setMap(sc, { b: (REFD.ART.maps.filter(function (m) { return /cornath/i.test(m.title); })[0] || REFD.ART.maps[0]).variants[0].file });
     changed(); render();
   }
+  function sameMap(a, b) { return !!a && !!b && (a.b ? a.b === b.b : a.k === b.k); }
+  /* The scene that has this map (the first one), or a new battle-map scene made for it. */
+  function sceneForMap(m, title) {
+    var sc = V().scenes.filter(function (s) { return sameMap(s.map, m); })[0];
+    if (sc) return sc;
+    sc = makeScene('open', (title || 'Map').slice(0, 60));
+    V().scenes.push(sc); setMap(sc, m);
+    return sc;
+  }
+  /* Make a map the live scene on the tabletop right now and go to it. */
+  function showMapOnTabletop(m, title) {
+    var sc = sceneForMap(m, title);
+    V().cur = sc.id; U.sel = null; U.sig = ''; U.mask = null; changed();
+    toast('"' + sc.name + '" is the tabletop scene now.');
+    setTab('vtt');
+  }
   function mapChoices() {
     var out = [['', 'No map (plain board)']];
     (REFD.ART.maps || []).forEach(function (m) { m.variants.forEach(function (v) { out.push(['b|' + v.file, m.title + (m.variants.length > 1 ? ' — ' + v.label : '')]); }); });
@@ -261,6 +277,7 @@
      left, its creatures on the right (hidden from the players when "Tracker foes start hidden" is on). */
   function loadEncounter(sc, e) {
     if (!e) return;
+    if (e.map) { var ms = sceneForMap(e.map, e.mapTitle); if (ms !== sc) { sc = ms; V().cur = ms.id; U.sig = ''; U.mask = null; } }
     if (runningEnc() !== e && !e.creatures.length) { toast('That encounter has no creatures yet: add them on the Encounters tab.'); return; }
     if (!runEncounter(e, true)) return;
     var crows = placeCrows(sc, -1), them = 0; U.spawn = 0;
@@ -1120,5 +1137,5 @@
     var c = document.querySelector('[data-clock-vtt]'); if (c) c.textContent = clockText(remainMs());
   }, 500);
 
-  A.add({ renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect });
+  A.add({ renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
 })();

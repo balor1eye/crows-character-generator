@@ -11,7 +11,7 @@
       rollDungeonTable = f('rollDungeonTable'), rollInText = f('rollInText'), rollMerchant = f('rollMerchant'),
       rollMiasmaTouched = f('rollMiasmaTouched'), rollTravelEncounter = f('rollTravelEncounter'), rollTravelers = f('rollTravelers'),
       rollWeather = f('rollWeather'), rollWildAnimal = f('rollWildAnimal'), rowsTable = f('rowsTable'), S = f('S'), save = f('save'), sel = f('sel'),
-      setTab = f('setTab');
+      setTab = f('setTab'), showMapOnTabletop = f('showMapOnTabletop'), newEncounter = f('newEncounter'), openEncounter = f('openEncounter');
   var $ = A.$, d = A.d, d100 = A.d100, el = A.el, fmt = A.fmt, pick = A.pick, plural = A.plural, rollDice = A.rollDice, Rules = A.Rules,
       signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -240,28 +240,71 @@
         btn('Close', close, 'btn-small')].reduce(function (all, k) { return all.concat(k); }, [])), msg, wrap]);
     document.body.appendChild(box); document.addEventListener('keydown', onKey); show(0);
   }
+  /* A small right-click menu: items are { label, fn } or { label, sub: [items] } or { sep: true }. */
+  function popMenu(x, y, items) {
+    var old = $('popmenu'); if (old) old.remove();
+    var box = el('div', { id: 'popmenu', class: 'popmenu', role: 'menu' });
+    function close() { box.remove(); document.removeEventListener('mousedown', away, true); document.removeEventListener('keydown', onKey); window.removeEventListener('blur', close); }
+    function away(e) { if (!box.contains(e.target)) close(); }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    function fill(list) {
+      box.innerHTML = '';
+      list.forEach(function (it) {
+        if (it.sep) return box.appendChild(el('hr'));
+        if (it.head) return box.appendChild(el('div', { class: 'pm-head', text: it.head }));
+        box.appendChild(el('button', { type: 'button', role: 'menuitem', class: it.danger ? 'danger' : null, text: it.label + (it.sub ? ' ▸' : ''),
+          onclick: function () { if (it.sub) fill([{ head: it.label }, { label: '◂ Back', back: true }].concat(it.sub)); else if (it.back) fill(items); else { close(); it.fn(); } } }));
+      });
+    }
+    fill(items);
+    document.body.appendChild(box);
+    box.style.left = Math.max(4, Math.min(x, window.innerWidth - box.offsetWidth - 4)) + 'px';
+    box.style.top = Math.max(4, Math.min(y, window.innerHeight - box.offsetHeight - 4)) + 'px';
+    document.addEventListener('mousedown', away, true); document.addEventListener('keydown', onKey); window.addEventListener('blur', close);
+    var first = box.querySelector('button'); if (first) first.focus();
+  }
+  function mapMenu(ev, spec) {
+    ev.preventDefault();
+    var views = spec.views, items = [{ head: spec.title }];
+    views.forEach(function (v) { items.push({ label: 'Open full size' + (views.length > 1 ? ': ' + v.label : ''), fn: function () { lightbox(spec.title, views, spec.thumb, spec.actions); } }); });
+    items.push({ sep: true });
+    views.forEach(function (v) { items.push({ label: 'Make it the tabletop scene now' + (views.length > 1 ? ': ' + v.label : ''), fn: function () { showMapOnTabletop(v.map, spec.title + (views.length > 1 && v.label ? ' (' + v.label + ')' : '')); } }); });
+    var open = state.encounters.filter(function (e) { return !e.done; });
+    function attach(e, v) { e.map = v.map; e.mapTitle = spec.title + (views.length > 1 && v.label ? ' (' + v.label + ')' : ''); save(); toast('Map set on "' + (e.name || 'the encounter') + '": it goes up on the tabletop when the encounter is put on the map.'); render(); }
+    views.forEach(function (v) {
+      var tag = views.length > 1 ? ' (' + v.label + ')' : '';
+      items.push({ label: 'Add to an encounter' + tag, sub: open.map(function (e) { return { label: e.name || 'untitled', fn: function () { attach(e, v); } }; })
+        .concat(open.length ? [{ sep: true }] : [], [{ label: 'New encounter with this map', fn: function () { var e = newEncounter({ name: spec.title, src: 'Manual' }); attach(e, v); openEncounter(e.id, true); } }]) });
+    });
+    if (spec.menu && spec.menu.length) items.push({ sep: true }), spec.menu.forEach(function (m) { items.push(m); });
+    popMenu(ev.clientX, ev.clientY, items);
+  }
   function renderMaps() {
     var ART = REF.ART;
     function mine(m) {
-      return el('button', { type: 'button', class: 'map-tile', onclick: function () {
-        lightbox(m.title, [{ label: '', file: blobUrl(m) }], m.thumb, [
-          { label: 'Rename', fn: function () { var t = prompt('Map name', m.title); if (t && t.trim()) { var old = m.title; m.title = t.trim().slice(0, 60); putArt(m).then(render, function (e) { m.title = old; toast('Couldn\'t rename it: ' + e.message); }); } } },
-          { label: 'Delete', fn: function () { if (confirm('Delete the map "' + m.title + '" from this device?')) removeArt(m.key); } }]);
-      } }, [el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }), el('span', { class: 'b-name', text: m.title }), el('span', { class: 'fine', text: 'Yours' })]);
+      var actions = [
+        { label: 'Rename', fn: function () { var t = prompt('Map name', m.title); if (t && t.trim()) { var old = m.title; m.title = t.trim().slice(0, 60); putArt(m).then(render, function (e) { m.title = old; toast('Couldn\'t rename it: ' + e.message); }); } } },
+        { label: 'Delete', fn: function () { if (confirm('Delete the map "' + m.title + '" from this device?')) removeArt(m.key); } }];
+      var views = [{ label: '', file: blobUrl(m), map: { k: m.key } }];
+      return el('button', { type: 'button', class: 'map-tile', oncontextmenu: function (ev) { mapMenu(ev, { title: m.title, views: views, thumb: m.thumb, actions: actions, menu: actions.map(function (a) { return { label: a.label, fn: a.fn, danger: a.label === 'Delete' }; }) }); },
+        onclick: function () { lightbox(m.title, views, m.thumb, actions); }
+      }, [el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }), el('span', { class: 'b-name', text: m.title }), el('span', { class: 'fine', text: 'Yours' })]);
     }
     var mk = custom.maps.slice().sort(function (a, b) { return a.at - b.at; });
-    card('sec-maps', el('h2', null, ['Maps', el('small', { text: 'tap a map to open it full size' })]), [
+    card('sec-maps', el('h2', null, ['Maps', el('small', { text: 'tap a map to open it full size; right-click for more' })]), [
       el('div', { class: 'row' }, [btn('Add a map…', addMap, 'btn-small btn-primary'),
         el('span', { class: 'fine', text: remote ? 'Pictures you add are kept in your account, so they follow you to other devices.' : 'Not logged in: pictures you add are kept in this browser only.' })]),
       el('div', { class: 'map-list' }, mk.map(mine).concat(ART.maps.map(function (m) {
-        return el('button', { type: 'button', class: 'map-tile', onclick: function () { lightbox(m.title, m.variants, m.thumb); } }, [
+        var views = m.variants.map(function (v) { return { label: v.label, file: v.file, map: { b: v.file } }; });
+        return el('button', { type: 'button', class: 'map-tile', oncontextmenu: function (ev) { mapMenu(ev, { title: m.title, views: views, thumb: m.thumb }); }, onclick: function () { lightbox(m.title, m.variants, m.thumb); } }, [
           el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }),
           el('span', { class: 'b-name', text: m.title }),
           el('span', { class: 'fine', text: (m.note || '') + (m.variants.length > 1 ? ' ' + m.variants.map(function (v) { return v.label; }).join(' / ') : '') })]);
       }))),
       ART.extras.length ? el('h3', { text: 'Entrances' }) : null,
       ART.extras.length ? el('div', { class: 'map-list' }, ART.extras.map(function (x) {
-        return el('button', { type: 'button', class: 'map-tile', onclick: function () { lightbox(x.title, [{ label: '', file: x.file }], x.thumb); } }, [
+        var views = [{ label: '', file: x.file, map: { b: x.file } }];
+        return el('button', { type: 'button', class: 'map-tile', oncontextmenu: function (ev) { mapMenu(ev, { title: x.title, views: views, thumb: x.thumb }); }, onclick: function () { lightbox(x.title, [{ label: '', file: x.file }], x.thumb); } }, [
           el('img', { src: x.thumb, alt: x.title, loading: 'lazy' }), el('span', { class: 'b-name', text: x.title })]);
       })) : null]);
   }

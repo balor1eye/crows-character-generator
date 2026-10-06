@@ -780,6 +780,13 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 /* The Tabletop tab has the clock floating on its map. */
 body[data-tab="vtt"] .side-timer { display: none; }
 
+.popmenu { position: fixed; z-index: 1100; min-width: 14rem; max-width: 90vw; max-height: 80vh; overflow: auto; background: var(--paper); color: var(--ink); border: 1px solid var(--ink); border-radius: 6px; box-shadow: 0 4px 16px rgba(0, 0, 0, .35); padding: .25rem; display: flex; flex-direction: column; }
+.popmenu button { text-align: left; background: none; border: 0; border-radius: 4px; padding: .4rem .6rem; font: inherit; color: inherit; cursor: pointer; }
+.popmenu button:hover, .popmenu button:focus-visible { background: rgba(127, 127, 127, .25); outline: none; }
+.popmenu button.danger { color: #b3261e; }
+.popmenu hr { border: 0; border-top: 1px solid rgba(127, 127, 127, .4); margin: .25rem 0; width: 100%; }
+.popmenu .pm-head { font-weight: 700; padding: .3rem .6rem; opacity: .75; }
+
 </style>
 <script>
 /*
@@ -5408,7 +5415,7 @@ CROWS.NAME_IDEAS = {
     var end = ui.encEnd || (ui.encEnd = { outcome: 'won', resolve: true });
 
     card('sec-enc-run', el('h2', null, ['Running: ' + (e.name || 'untitled'), el('small', { text: c.round ? 'round ' + c.round : 'not started' })]), [
-      el('div', { class: 'fine', text: [e.where, e.src, e.roll].filter(Boolean).join(' · ') }),
+      el('div', { class: 'fine', text: [e.where, e.mapTitle ? 'map: ' + e.mapTitle : '', e.src, e.roll].filter(Boolean).join(' · ') }),
       e.text ? el('div', { class: 'run-text', text: e.text }) : null,
       c.round ? null : el('div', { class: 'row center run-setup' }, [
         el('span', { class: 'fine', text: 'Surprise:' }),
@@ -5458,7 +5465,7 @@ CROWS.NAME_IDEAS = {
         runningEnc() === e ? el('span', { class: 'chip warn', text: 'running' }) : null,
         due ? el('span', { class: 'chip accent', text: 'due this DT' }) : null,
         e.done ? el('span', { class: 'chip ok', text: 'resolved' + (e.outcome ? ': ' + e.outcome.toLowerCase() : '') }) : null,
-        el('span', { class: 'enc-sum', text: [encSummary(e), e.where, 'session ' + e.session + (e.dt ? ', DT ' + e.dt : '')].filter(Boolean).join(' · ') })]),
+        el('span', { class: 'enc-sum', text: [encSummary(e), e.mapTitle ? 'map: ' + e.mapTitle : '', e.where, 'session ' + e.session + (e.dt ? ', DT ' + e.dt : '')].filter(Boolean).join(' · ') })]),
       runningEnc() === e ? el('div', { class: 'enc-body' }, [el('p', { class: 'fine' }, ['Running now: its notes and creatures are in the card at the top of this tab. ',
         el('a', { href: '#sec-enc-run', class: 'enc-link', onclick: function (ev) { ev.preventDefault(); $('sec-enc-run').scrollIntoView({ block: 'start' }); }, text: 'Go to the fight' })])]) :
       el('div', { class: 'enc-body' }, [
@@ -7849,7 +7856,7 @@ CROWS.NAME_IDEAS = {
       rollDungeonTable = f('rollDungeonTable'), rollInText = f('rollInText'), rollMerchant = f('rollMerchant'),
       rollMiasmaTouched = f('rollMiasmaTouched'), rollTravelEncounter = f('rollTravelEncounter'), rollTravelers = f('rollTravelers'),
       rollWeather = f('rollWeather'), rollWildAnimal = f('rollWildAnimal'), rowsTable = f('rowsTable'), S = f('S'), save = f('save'), sel = f('sel'),
-      setTab = f('setTab');
+      setTab = f('setTab'), showMapOnTabletop = f('showMapOnTabletop'), newEncounter = f('newEncounter'), openEncounter = f('openEncounter');
   var $ = A.$, d = A.d, d100 = A.d100, el = A.el, fmt = A.fmt, pick = A.pick, plural = A.plural, rollDice = A.rollDice, Rules = A.Rules,
       signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -8078,28 +8085,71 @@ CROWS.NAME_IDEAS = {
         btn('Close', close, 'btn-small')].reduce(function (all, k) { return all.concat(k); }, [])), msg, wrap]);
     document.body.appendChild(box); document.addEventListener('keydown', onKey); show(0);
   }
+  /* A small right-click menu: items are { label, fn } or { label, sub: [items] } or { sep: true }. */
+  function popMenu(x, y, items) {
+    var old = $('popmenu'); if (old) old.remove();
+    var box = el('div', { id: 'popmenu', class: 'popmenu', role: 'menu' });
+    function close() { box.remove(); document.removeEventListener('mousedown', away, true); document.removeEventListener('keydown', onKey); window.removeEventListener('blur', close); }
+    function away(e) { if (!box.contains(e.target)) close(); }
+    function onKey(e) { if (e.key === 'Escape') close(); }
+    function fill(list) {
+      box.innerHTML = '';
+      list.forEach(function (it) {
+        if (it.sep) return box.appendChild(el('hr'));
+        if (it.head) return box.appendChild(el('div', { class: 'pm-head', text: it.head }));
+        box.appendChild(el('button', { type: 'button', role: 'menuitem', class: it.danger ? 'danger' : null, text: it.label + (it.sub ? ' ▸' : ''),
+          onclick: function () { if (it.sub) fill([{ head: it.label }, { label: '◂ Back', back: true }].concat(it.sub)); else if (it.back) fill(items); else { close(); it.fn(); } } }));
+      });
+    }
+    fill(items);
+    document.body.appendChild(box);
+    box.style.left = Math.max(4, Math.min(x, window.innerWidth - box.offsetWidth - 4)) + 'px';
+    box.style.top = Math.max(4, Math.min(y, window.innerHeight - box.offsetHeight - 4)) + 'px';
+    document.addEventListener('mousedown', away, true); document.addEventListener('keydown', onKey); window.addEventListener('blur', close);
+    var first = box.querySelector('button'); if (first) first.focus();
+  }
+  function mapMenu(ev, spec) {
+    ev.preventDefault();
+    var views = spec.views, items = [{ head: spec.title }];
+    views.forEach(function (v) { items.push({ label: 'Open full size' + (views.length > 1 ? ': ' + v.label : ''), fn: function () { lightbox(spec.title, views, spec.thumb, spec.actions); } }); });
+    items.push({ sep: true });
+    views.forEach(function (v) { items.push({ label: 'Make it the tabletop scene now' + (views.length > 1 ? ': ' + v.label : ''), fn: function () { showMapOnTabletop(v.map, spec.title + (views.length > 1 && v.label ? ' (' + v.label + ')' : '')); } }); });
+    var open = state.encounters.filter(function (e) { return !e.done; });
+    function attach(e, v) { e.map = v.map; e.mapTitle = spec.title + (views.length > 1 && v.label ? ' (' + v.label + ')' : ''); save(); toast('Map set on "' + (e.name || 'the encounter') + '": it goes up on the tabletop when the encounter is put on the map.'); render(); }
+    views.forEach(function (v) {
+      var tag = views.length > 1 ? ' (' + v.label + ')' : '';
+      items.push({ label: 'Add to an encounter' + tag, sub: open.map(function (e) { return { label: e.name || 'untitled', fn: function () { attach(e, v); } }; })
+        .concat(open.length ? [{ sep: true }] : [], [{ label: 'New encounter with this map', fn: function () { var e = newEncounter({ name: spec.title, src: 'Manual' }); attach(e, v); openEncounter(e.id, true); } }]) });
+    });
+    if (spec.menu && spec.menu.length) items.push({ sep: true }), spec.menu.forEach(function (m) { items.push(m); });
+    popMenu(ev.clientX, ev.clientY, items);
+  }
   function renderMaps() {
     var ART = REF.ART;
     function mine(m) {
-      return el('button', { type: 'button', class: 'map-tile', onclick: function () {
-        lightbox(m.title, [{ label: '', file: blobUrl(m) }], m.thumb, [
-          { label: 'Rename', fn: function () { var t = prompt('Map name', m.title); if (t && t.trim()) { var old = m.title; m.title = t.trim().slice(0, 60); putArt(m).then(render, function (e) { m.title = old; toast('Couldn\'t rename it: ' + e.message); }); } } },
-          { label: 'Delete', fn: function () { if (confirm('Delete the map "' + m.title + '" from this device?')) removeArt(m.key); } }]);
-      } }, [el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }), el('span', { class: 'b-name', text: m.title }), el('span', { class: 'fine', text: 'Yours' })]);
+      var actions = [
+        { label: 'Rename', fn: function () { var t = prompt('Map name', m.title); if (t && t.trim()) { var old = m.title; m.title = t.trim().slice(0, 60); putArt(m).then(render, function (e) { m.title = old; toast('Couldn\'t rename it: ' + e.message); }); } } },
+        { label: 'Delete', fn: function () { if (confirm('Delete the map "' + m.title + '" from this device?')) removeArt(m.key); } }];
+      var views = [{ label: '', file: blobUrl(m), map: { k: m.key } }];
+      return el('button', { type: 'button', class: 'map-tile', oncontextmenu: function (ev) { mapMenu(ev, { title: m.title, views: views, thumb: m.thumb, actions: actions, menu: actions.map(function (a) { return { label: a.label, fn: a.fn, danger: a.label === 'Delete' }; }) }); },
+        onclick: function () { lightbox(m.title, views, m.thumb, actions); }
+      }, [el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }), el('span', { class: 'b-name', text: m.title }), el('span', { class: 'fine', text: 'Yours' })]);
     }
     var mk = custom.maps.slice().sort(function (a, b) { return a.at - b.at; });
-    card('sec-maps', el('h2', null, ['Maps', el('small', { text: 'tap a map to open it full size' })]), [
+    card('sec-maps', el('h2', null, ['Maps', el('small', { text: 'tap a map to open it full size; right-click for more' })]), [
       el('div', { class: 'row' }, [btn('Add a map…', addMap, 'btn-small btn-primary'),
         el('span', { class: 'fine', text: remote ? 'Pictures you add are kept in your account, so they follow you to other devices.' : 'Not logged in: pictures you add are kept in this browser only.' })]),
       el('div', { class: 'map-list' }, mk.map(mine).concat(ART.maps.map(function (m) {
-        return el('button', { type: 'button', class: 'map-tile', onclick: function () { lightbox(m.title, m.variants, m.thumb); } }, [
+        var views = m.variants.map(function (v) { return { label: v.label, file: v.file, map: { b: v.file } }; });
+        return el('button', { type: 'button', class: 'map-tile', oncontextmenu: function (ev) { mapMenu(ev, { title: m.title, views: views, thumb: m.thumb }); }, onclick: function () { lightbox(m.title, m.variants, m.thumb); } }, [
           el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }),
           el('span', { class: 'b-name', text: m.title }),
           el('span', { class: 'fine', text: (m.note || '') + (m.variants.length > 1 ? ' ' + m.variants.map(function (v) { return v.label; }).join(' / ') : '') })]);
       }))),
       ART.extras.length ? el('h3', { text: 'Entrances' }) : null,
       ART.extras.length ? el('div', { class: 'map-list' }, ART.extras.map(function (x) {
-        return el('button', { type: 'button', class: 'map-tile', onclick: function () { lightbox(x.title, [{ label: '', file: x.file }], x.thumb); } }, [
+        var views = [{ label: '', file: x.file, map: { b: x.file } }];
+        return el('button', { type: 'button', class: 'map-tile', oncontextmenu: function (ev) { mapMenu(ev, { title: x.title, views: views, thumb: x.thumb }); }, onclick: function () { lightbox(x.title, [{ label: '', file: x.file }], x.thumb); } }, [
           el('img', { src: x.thumb, alt: x.title, loading: 'lazy' }), el('span', { class: 'b-name', text: x.title })]);
       })) : null]);
   }
@@ -8395,6 +8445,22 @@ CROWS.NAME_IDEAS = {
     if (kind === 'travel' && REFD && REFD.ART && REFD.ART.maps.length) setMap(sc, { b: (REFD.ART.maps.filter(function (m) { return /cornath/i.test(m.title); })[0] || REFD.ART.maps[0]).variants[0].file });
     changed(); render();
   }
+  function sameMap(a, b) { return !!a && !!b && (a.b ? a.b === b.b : a.k === b.k); }
+  /* The scene that has this map (the first one), or a new battle-map scene made for it. */
+  function sceneForMap(m, title) {
+    var sc = V().scenes.filter(function (s) { return sameMap(s.map, m); })[0];
+    if (sc) return sc;
+    sc = makeScene('open', (title || 'Map').slice(0, 60));
+    V().scenes.push(sc); setMap(sc, m);
+    return sc;
+  }
+  /* Make a map the live scene on the tabletop right now and go to it. */
+  function showMapOnTabletop(m, title) {
+    var sc = sceneForMap(m, title);
+    V().cur = sc.id; U.sel = null; U.sig = ''; U.mask = null; changed();
+    toast('"' + sc.name + '" is the tabletop scene now.');
+    setTab('vtt');
+  }
   function mapChoices() {
     var out = [['', 'No map (plain board)']];
     (REFD.ART.maps || []).forEach(function (m) { m.variants.forEach(function (v) { out.push(['b|' + v.file, m.title + (m.variants.length > 1 ? ' — ' + v.label : '')]); }); });
@@ -8565,6 +8631,7 @@ CROWS.NAME_IDEAS = {
      left, its creatures on the right (hidden from the players when "Tracker foes start hidden" is on). */
   function loadEncounter(sc, e) {
     if (!e) return;
+    if (e.map) { var ms = sceneForMap(e.map, e.mapTitle); if (ms !== sc) { sc = ms; V().cur = ms.id; U.sig = ''; U.mask = null; } }
     if (runningEnc() !== e && !e.creatures.length) { toast('That encounter has no creatures yet: add them on the Encounters tab.'); return; }
     if (!runEncounter(e, true)) return;
     var crows = placeCrows(sc, -1), them = 0; U.spawn = 0;
@@ -9424,7 +9491,7 @@ CROWS.NAME_IDEAS = {
     var c = document.querySelector('[data-clock-vtt]'); if (c) c.textContent = clockText(remainMs());
   }, 500);
 
-  A.add({ renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect });
+  A.add({ renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
 })();
 
 </script>

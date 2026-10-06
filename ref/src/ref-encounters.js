@@ -291,7 +291,7 @@
     var end = ui.encEnd || (ui.encEnd = { outcome: 'won', resolve: true });
 
     card('sec-enc-run', el('h2', null, ['Running: ' + (e.name || 'untitled'), el('small', { text: c.round ? 'round ' + c.round : 'not started' })]), [
-      el('div', { class: 'fine', text: [e.where, e.src, e.roll].filter(Boolean).join(' · ') }),
+      el('div', { class: 'fine', text: [e.where, e.mapTitle ? 'map: ' + e.mapTitle : '', e.src, e.roll].filter(Boolean).join(' · ') }),
       e.text ? el('div', { class: 'run-text', text: e.text }) : null,
       c.round ? null : el('div', { class: 'row center run-setup' }, [
         el('span', { class: 'fine', text: 'Surprise:' }),
@@ -341,7 +341,7 @@
         runningEnc() === e ? el('span', { class: 'chip warn', text: 'running' }) : null,
         due ? el('span', { class: 'chip accent', text: 'due this DT' }) : null,
         e.done ? el('span', { class: 'chip ok', text: 'resolved' + (e.outcome ? ': ' + e.outcome.toLowerCase() : '') }) : null,
-        el('span', { class: 'enc-sum', text: [encSummary(e), e.where, 'session ' + e.session + (e.dt ? ', DT ' + e.dt : '')].filter(Boolean).join(' · ') })]),
+        el('span', { class: 'enc-sum', text: [encSummary(e), e.mapTitle ? 'map: ' + e.mapTitle : '', e.where, 'session ' + e.session + (e.dt ? ', DT ' + e.dt : '')].filter(Boolean).join(' · ') })]),
       runningEnc() === e ? el('div', { class: 'enc-body' }, [el('p', { class: 'fine' }, ['Running now: its notes and creatures are in the card at the top of this tab. ',
         el('a', { href: '#sec-enc-run', class: 'enc-link', onclick: function (ev) { ev.preventDefault(); $('sec-enc-run').scrollIntoView({ block: 'start' }); }, text: 'Go to the fight' })])]) :
       el('div', { class: 'enc-body' }, [
