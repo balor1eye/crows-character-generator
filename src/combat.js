@@ -476,7 +476,9 @@
     var surprise = c.round <= 1 && c.surprise === 'crows' ? 'The crows and their allies are surprised: no turn in round 1.' :
       c.round <= 1 && c.surprise === 'foes' ? 'The foes are surprised: no turn in round 1, and attacks against them get +1.' : '';
     var names = targets.map(function (id) { var x = find(id); return x ? x.name : null; }).filter(Boolean);
-    box.appendChild(el('div', { class: 'cbt-head' }, [
+    var onTable = !!(window.CrowsVTTPlay && window.CrowsVTTPlay.live());   // the tabletop above shows the fight; this card keeps what's left to do
+    if (onTable) box.appendChild(el('div', { class: 'fine', text: names.length ? 'Your target' + (names.length > 1 ? 's' : '') + ': ' + names.join(', ') + ' (click a creature on the map to change it).' : 'No target chosen: click a creature on the map.' }));
+    else box.appendChild(el('div', { class: 'cbt-head' }, [
       el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: 'Round' }), el('div', { class: 'val' }, [el('b', { text: String(c.round || '—') })])]),
       el('div', { class: 'grow' }, [
         el('div', null, [el('b', { text: c.name || 'A fight' }), fight.campaign ? ' · ' + fight.campaign.name : '']),
@@ -492,12 +494,11 @@
     var as = myAssist();
     if (as) bans.push(['ok', as.fromName + ' assists you: ' + signed(as.bonus) + ' on your next test (it lapses after this turn).']);
     bans.forEach(function (b) { box.appendChild(el('div', { class: 'banner ' + b[0], text: b[1] })); });
-    myPrompts().forEach(function (p) { box.appendChild(promptBanner(p)); });
-    myHits().forEach(function (h) { box.appendChild(hitBanner(h)); });
+    if (!onTable) { myPrompts().forEach(function (p) { box.appendChild(promptBanner(p)); }); myHits().forEach(function (h) { box.appendChild(hitBanner(h)); }); }   // on the table they pop up over the map
     if (mine && c.round) box.appendChild(turnBox(c, mine));
-    box.appendChild(el('h3', { text: 'Enemies' }));
-    box.appendChild(el('div', { class: 'cbt-list' }, foes.length ? foes.map(row) : [el('p', { class: 'fine', text: 'No enemies in the fight yet.' })]));
-    if (friends.length) {
+    if (!onTable) box.appendChild(el('h3', { text: 'Enemies' }));
+    if (!onTable) box.appendChild(el('div', { class: 'cbt-list' }, foes.length ? foes.map(row) : [el('p', { class: 'fine', text: 'No enemies in the fight yet.' })]));
+    if (friends.length && !onTable) {
       box.appendChild(el('h3', { text: 'Crows and allies' }));
       box.appendChild(el('div', { class: 'cbt-list' }, friends.map(row)));
     }

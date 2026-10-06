@@ -115,7 +115,7 @@ def main():
         ok("the player's data holds no walls")
 
         # The player's Table.
-        p("window.CrowsPlay.showTab('table');")
+        p("window.CrowsPlay.showTab('now');")
         pwait("return !!q('#play-table .vtt-canvas')", "the Table tab's canvas")
         ok("the player's Table tab shows the map")
 

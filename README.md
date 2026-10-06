@@ -32,9 +32,9 @@ What it does:
 A progress bar over the steps shows which are ready (click one to jump to it; each card ends with a Next button), and the
 checklist of what's left stays visible on a phone too.
 
-**Play mode** (the *Play* tab in the header) turns the app into a character manager for the table. A sticky
+**Play mode** (the default on the accounts site; **⋯ More → Edit build** and **Back to play** switch between it and Build) turns the app into a character manager for the table. A sticky
 **vitals strip** (Stamina, AD, wounds, speed, active conditions) stays visible at the top, and the page is split
-into sub-tabs: **Now** (combat, Vitals, Attacks & spells), **Rest & turns**, **Items**, **Growth** (Experience,
+into sections on a tab bar in the header, as on the Ref Screen: **Now** (the tabletop when the Ref shows a map, combat actions, Vitals, Attacks & spells), **Rest & turns**, **Items**, **Growth** (Experience,
 Expertise & Stamina bonuses, and trait buying), and **Log**. On the accounts site, a crow in a Ref's campaign also
 gets a **session bar** above the strip, live from the Ref Screen: the dungeon turn, the DT timer counting down (or rooms
 left), the greed bonus, Resting, and Encounter signalled.
@@ -60,7 +60,7 @@ left), the greed bonus, Resting, and Encounter signalled.
   notification, it's pinned at the top, and the Ref can tick Also email every player) with one-click templates such as
   "Session starts in 15 minutes", and can send a private message to one player. Announcements and private messages also
   pop up on the Play page and Ref Screen, and can be emailed (players can turn chat emails off on their Account page).
-- **Table** (accounts site, the Table sub-tab, with a dot when the Ref is showing a map): the graphical tabletop the Ref shares (see
+- **Tabletop** (accounts site, at the top of the Now tab while the Ref is showing a map; it replaces the text list of enemies and allies, and counters and defenses pop up over the map): the graphical tabletop the Ref shares (see
   **Tabletop** below). You see the map with **fog of war**: only what your party's crows can see, by their own light and the party's
   torches and lanterns, with walls and closed doors blocking sight; what you've explored stays dimly visible, and creatures out of sight aren't
   shown. Drag your crow's token to move it (the Ref's walls stop you, and it shows the distance against your speed while you drag), measure,

@@ -11,7 +11,7 @@
   var el = C.el, $ = C.$, d = C.d, fmt = C.fmt, signed = C.signed, item = C.item;
   var MODE_KEY = 'crows-pt2-mode';
   var SUBTAB_KEY = 'crows-pt2-play-subtab';
-  var SUBTABS = [['now', 'Now'], ['rest', 'Rest & turns'], ['items', 'Items'], ['growth', 'Growth'], ['table', 'Table'], ['log', 'Log']];
+  var SUBTABS = [['now', 'Now'], ['rest', 'Rest & turns'], ['items', 'Items'], ['growth', 'Growth'], ['log', 'Log']];
   var Dice = window.CrowsDice, Rules = window.CrowsRules, Sheet = window.CrowsSheet;   // src/shared/
   var CONDITIONS = Sheet.CONDITIONS;
   var DT_CONDITIONS = Rules.DT_CONDITIONS; // end at the end of a dungeon turn
@@ -58,8 +58,7 @@
     document.body.setAttribute('data-mode', m);
     if (m === 'play') { document.body.setAttribute('data-subtab', subtab()); renderSubtabs(); }
     layoutSync();
-    $('tab-build').setAttribute('aria-pressed', String(m === 'build'));
-    $('tab-play').setAttribute('aria-pressed', String(m === 'play'));
+    $('btn-mode').textContent = m === 'play' ? 'Edit build' : 'Back to play';
     var what = m === 'play' ? 'Play' : 'Character Generator', camp = m === 'play' ? campaignName() : null;
     document.title = 'The Nest · ' + what + (camp ? ' · ' + camp : '');
     var sub = document.querySelector('.brand-sub');
@@ -84,8 +83,8 @@
     box.innerHTML = '';
     var cur = subtab();
     SUBTABS.forEach(function (t) {
-      box.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': String(cur === t[0]), 'aria-pressed': String(cur === t[0]),
-        text: t[1] + (t[0] === 'table' && window.CrowsVTTPlay && window.CrowsVTTPlay.live() ? ' \u25CF' : ''), onclick: function () { setSubtab(t[0]); } }));
+      box.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': String(cur === t[0]),
+        text: t[1], onclick: function () { setSubtab(t[0]); } }));
     });
   }
   /* Show this mode's address. Only where the accounts server answered: elsewhere there's no play address to go to. */
@@ -941,13 +940,12 @@
       containers: ['main.layout > .steps', 'main.layout > .play-main'],
       current: function () { return document.body.getAttribute('data-mode') === 'play' ? 'gen-play-' + subtab() : 'gen-build'; },
       narrow: 'clamp(300px, 22vw, 420px)', breakpoint: 1000, nav: document.querySelector('.masthead .actions'),
-      titles: { summary: 'Crow (summary, dice, saving)', 'play-combat': 'Combat', 'sec-advance': 'Bonus choices', 'sec-traits': 'Traits' }
+      titles: { summary: 'Crow (summary, dice, saving)', 'play-table': 'Tabletop', 'play-combat': 'Combat', 'sec-advance': 'Bonus choices', 'sec-traits': 'Traits' }
     });
     layoutOn = true;
   }
 
-  $('tab-build').addEventListener('click', function () { setMode('build'); });
-  $('tab-play').addEventListener('click', function () { setMode('play'); });
+  $('btn-mode').addEventListener('click', function () { setMode(mode() === 'play' ? 'build' : 'play'); });
   applyMode(mode());
   window.CrowsPlay = { render: render, setMode: setMode, showTab: setSubtab, syncAddress: syncAddress, loadCampaign: loadCampaign, joined: joined,
     /* For tests and combat.js: this crow's vitals as the sheet has them (AD from worn armor and parry weapons). */

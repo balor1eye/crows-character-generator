@@ -52,7 +52,7 @@ def main():
                 break
             if page == "Crows_Character_Generator.html":
                 # The Play sub-tab choice (src/play.js SUBTAB_KEY) is its own localStorage key, independent of the block layout.
-                wd.js("document.getElementById('tab-play').click();")
+                wd.js("document.getElementById('btn-mode').click();")
                 wd.wait("return !!document.querySelector('#play-subtabs button')", "Play's sub-tabs to render")
                 wd.js("""Array.prototype.filter.call(document.querySelectorAll('#play-subtabs button'), function (b) {
                     return b.textContent.trim() === 'Growth'; })[0].click();""")

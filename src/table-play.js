@@ -1,5 +1,5 @@
 /*
- * The Table tab on the Play page (accounts site): the tabletop scene the Ref is showing, with the fog of war as the Ref's screen works it out.
+ * The tabletop at the top of the Play page's Now tab (accounts site): the tabletop scene the Ref is showing, with the fog of war as the Ref's screen works it out.
  * The scene arrives with the live fight (combat.js keeps it: tableData). The player drags their own crow's token (it goes to the Ref
  * as a move, which the Ref's screen checks against walls), measures, pings, and picks a target by clicking a creature (the same target as
  * the Combat card). The map shows only what the party can see; the engine is src/shared/table.js.
@@ -41,8 +41,7 @@
     P.host.appendChild(P.ui);
     P.ui.classList.add('enter'); setTimeout(function () { if (P.ui) P.ui.classList.remove('enter'); }, 600);
     var box = $('play-table');
-    box.innerHTML = '';
-    box.appendChild(el('h2', { text: 'Table' }));
+    box.innerHTML = ''; box.hidden = false;
     box.appendChild(P.host);
     if (!P.fsBound) { P.fsBound = true; document.addEventListener('fullscreenchange', function () { if (P.host) renderBar(); }); }
     renderBar();
@@ -189,11 +188,12 @@
     P.data = d; P.live = !!d;
     if (!d) {
       P.scene = null; P.mask = null; P.you = null;
-      if (was) { var box = $('play-table'); if (box) { box.innerHTML = ''; P.view = null; P.host = null; P.L = null; } C.render(); }
-      else if ($('play-table') && !$('play-table').firstChild) emptyNote();
+      var box = $('play-table');
+      if (box) { box.innerHTML = ''; box.hidden = true; }
+      if (was) { P.view = null; P.host = null; P.L = null; C.render(); }
       return;
     }
-    if (!was) { emptyNote(false); C.render(); }
+    if (!was) C.render();
     if (d.version === P.version && P.view && P.scene) { renderAsk(); return; }
     P.version = d.version; P.you = d.you; P.campaign = d.campaign ? d.campaign.id : 0;
     var t = d.table, fog = t.fog;
@@ -216,14 +216,6 @@
     if (changedScene) { var mt = P.scene.tokens.filter(mine)[0]; if (mt) setTimeout(function () { P.view.centerOn(mt.x, mt.y, true); }, 60); }
     renderBar(); renderInfo(); renderAsk();
   }
-  function emptyNote(on) {
-    var box = $('play-table'); if (!box) return;
-    if (on === false) { if (!P.host) box.innerHTML = ''; return; }
-    box.innerHTML = '';
-    box.appendChild(el('h2', { text: 'Table' }));
-    box.appendChild(el('p', { class: 'hint', text: 'Your Ref isn’t showing a map right now. When they do, it appears here, with fog of war: you see what your crow and its light show. You need to be playing a linked crow in a campaign on the accounts site.' }));
-  }
-
   window.CrowsVTTPlay = { refresh: refresh, live: function () { return P.live; } };
   refresh();
 })();

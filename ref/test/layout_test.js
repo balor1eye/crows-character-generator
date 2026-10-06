@@ -90,7 +90,7 @@ async function gen() {
   var s = saved();
   check(s && s['gen-build'] && s['gen-build'].cols[1].indexOf('sec-notes') >= 0 && s['gen-build'].cols[1].indexOf('sec-equipment') >= 0, 'the arrangement is saved (in this browser, offline)');
   // Play has its own arrangement.
-  document.getElementById('tab-play').click();
+  document.getElementById('btn-mode').click();
   await wait(100);
   check(colOf('play-vitals') === 0 && colOf('summary') === 1 && document.getElementById('summary').parentNode.classList.contains('play-main'), 'Play is its own page, with its usual arrangement');
   lay.click();
@@ -109,7 +109,7 @@ async function gen() {
   await wait(50);
   check(cols().length === 2, 'back to two columns');
   button('Lock page', q('.lay-bar')).click();
-  document.getElementById('tab-build').click();
+  document.getElementById('btn-mode').click();
   await wait(100);
   check(colOf('sec-notes') === 1 && colOf('summary') === 1, 'Build still has its own arrangement');
 }

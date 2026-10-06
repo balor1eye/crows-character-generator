@@ -53,7 +53,7 @@
 body[data-tab="vtt"] #page-vtt { display: flex; }
 
 /* The Ref's stage: the map fills the tab and the controls float on it. */
-#sec-vtt { padding: 0; border: 0; background: none; box-shadow: none; }
+#sec-vtt, #play-table { padding: 0; border: 0; background: none; box-shadow: none; }
 .vtt-stage { container: vtt / size; height: max(480px, calc(100vh - 150px)); margin: 0; border-radius: 12px; box-shadow: 0 6px 30px rgba(0,0,0,.28); }
 .vtt-stage:fullscreen { height: 100vh; }
 
@@ -379,7 +379,7 @@ textarea { width: 100%; resize: vertical; }
 .bg-details dd { margin: 0; }
 
 /* Build steps: a progress bar, Next buttons, and the header's More menu */
-.stepbar { grid-column: 1 / -1; position: sticky; top: 76px; z-index: 10; display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; background: var(--card);
+.stepbar { grid-column: 1 / -1; position: sticky; top: 104px; z-index: 10; display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; background: var(--card);
   border: 1px solid var(--line); border-radius: var(--radius); padding: .45rem .6rem; box-shadow: var(--shadow); }
 .stepbar .meter { flex: 1 0 100%; height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
 .stepbar .meter span { display: block; height: 100%; background: var(--ok); transition: width .2s; }
@@ -545,22 +545,19 @@ body[data-mode="play"] .more-pop .build-only { display: none; }
 .coins { display: flex; gap: .6rem; align-items: flex-end; flex-wrap: wrap; }
 
 /* ---------------------------------------------------------------- Mode tabs + Play mode */
-.mode-tabs { display: inline-flex; border: 1px solid #5a5354; border-radius: 6px; overflow: hidden; }
-.mode-tabs button { background: transparent; color: #f4efe6; border: 0; padding: .4rem .95rem; cursor: pointer; font-weight: 600; min-height: 36px; }
-.mode-tabs button[aria-pressed="true"] { background: var(--accent); color: #fff; }
-.mode-tabs button:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
 .play-main { display: none; flex-direction: column; gap: 1rem; min-width: 0; }
 .play-only { display: none; }
 body[data-mode="play"] .steps, body[data-mode="play"] .build-only { display: none; }
 body[data-mode="play"] .play-main { display: flex; }
-body:not([data-mode="play"]) .vstrip, body:not([data-mode="play"]) .subtabs { display: none; }
-body[data-mode="play"] .vstrip, body[data-mode="play"] .subtabs { display: flex; }
+body:not([data-mode="play"]) .vstrip { display: none; }
+body[data-mode="play"] .vstrip { display: flex; }
+body[data-mode="play"] .tabbar.play-only { display: block; }
 body[data-mode="play"] .play-only { display: block; }
 .play-main h3 { font-family: var(--font); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 1rem 0 .4rem; }
 
 /* Sticky vitals strip + sub-tabs: sit outside the rearrangeable columns, spanning all of them. */
-.vstrip, .subtabs { grid-column: 1 / -1; }
-.vstrip { display: flex; flex-wrap: wrap; gap: .5rem .9rem; align-items: center; position: sticky; top: 76px; z-index: 10;
+.vstrip { grid-column: 1 / -1; }
+.vstrip { display: flex; flex-wrap: wrap; gap: .5rem .9rem; align-items: center; position: sticky; top: 104px; z-index: 10;
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .5rem .8rem; box-shadow: var(--shadow); }
 .vstrip-item { display: flex; align-items: center; gap: .35rem; font-size: .9rem; }
 .vstrip-item.danger b { color: var(--bad); }
@@ -584,13 +581,18 @@ body[data-mode="play"] .sessbar.play-only { display: flex; }
 button.sess-chip { cursor: pointer; font: inherit; font-size: .78rem; font-weight: 600; }
 .chip.accent { background: var(--accent); color: var(--accent-ink); }
 .chip.bad { background: var(--bad); color: #fff; }
-.subtabs { display: flex; gap: .3rem; flex-wrap: wrap; }
-.subtabs button { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: .35rem .9rem; cursor: pointer; font-weight: 600; min-height: 36px; }
-.subtabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+body[data-mode="play"] .masthead-inner { padding-bottom: .3rem; }
+/* The Play sections: a tab bar in the header, as on the Ref Screen. */
+.tabbar { margin: 0 auto; padding: 0 clamp(16px, 2vw, 40px); }
+.tabbar-inner { display: flex; flex-wrap: wrap; gap: 2px; }
+.tabbar button { background: transparent; color: #f4efe6; border: 0; border-radius: 6px 6px 0 0; padding: .45rem .9rem; cursor: pointer; font-weight: 600; min-height: 38px; white-space: nowrap; opacity: .8; }
+.tabbar button:hover { opacity: 1; background: #2c292a; }
+.tabbar button[aria-selected="true"] { background: var(--accent); color: #fff; opacity: 1; }
+.tabbar button:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
 /* Fallback grouping for sub-tab content when layout.js is inactive (the Ref's embedded view of a linked sheet). */
 .sub-page { display: none; flex-direction: column; gap: 1rem; min-width: 0; }
 body[data-subtab="now"] #sub-now, body[data-subtab="rest"] #sub-rest, body[data-subtab="items"] #sub-items,
-body[data-subtab="growth"] #sub-growth, body[data-subtab="table"] #sub-table, body[data-subtab="log"] #sub-log { display: flex; }
+body[data-subtab="growth"] #sub-growth, body[data-subtab="log"] #sub-log { display: flex; }
 /* The bonus/trait blocks are shared with Build's step numbering, which doesn't apply once they're shown in Play. */
 body[data-mode="play"] #sec-advance .step, body[data-mode="play"] #sec-traits .step { display: none; }
 .muted { color: var(--muted); }
@@ -702,7 +704,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
 }
 
 /* Live combat (combat.js): the fight the Ref is running, with targets */
-#play-combat[hidden], #cbt-target-bar[hidden] { display: none !important; }
+#play-combat[hidden], #play-table[hidden], #cbt-target-bar[hidden] { display: none !important; }
 #play-combat { border-left: 4px solid var(--accent); }
 .cbt-head { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; }
 .cbt-head .vital { min-width: 4.5rem; text-align: center; }
@@ -809,15 +811,12 @@ button.cbt-art { padding: 0; background: none; cursor: zoom-in; flex: none; bord
       <span class="brand-mark">THE NEST</span>
       <span class="brand-sub">Crows Playtest 2 · Character Generator</span>
     </div>
-    <div class="mode-tabs" role="group" aria-label="Mode">
-      <button type="button" id="tab-build" aria-pressed="true">Build</button>
-      <button type="button" id="tab-play" aria-pressed="false">Play</button>
-    </div>
     <nav class="actions">
       <button type="button" id="btn-random" class="btn build-only">Random crow</button>
       <div class="more-menu" id="more-menu">
         <button type="button" class="btn btn-ghost more-btn" id="more-btn" aria-haspopup="true" aria-expanded="false" title="Start over, save or load a file">&#8943; More</button>
         <div class="more-pop" id="more-pop">
+          <button type="button" id="btn-mode" class="btn btn-ghost">Edit build</button>
           <button type="button" id="btn-new" class="btn btn-ghost build-only">Start over</button>
           <button type="button" id="btn-save" class="btn btn-ghost">Save file</button>
           <label class="btn btn-ghost file-btn">Load file<input type="file" id="file-load" accept=".json,application/json"></label>
@@ -827,12 +826,14 @@ button.cbt-art { padding: 0; background: none; cursor: zoom-in; flex: none; bord
       <button type="button" class="btn btn-ghost theme-toggle" title="Theme">&#9680; Auto</button>
     </nav>
   </div>
+  <div class="tabbar play-only" role="tablist" aria-label="Play section">
+    <div class="tabbar-inner" id="play-subtabs"></div>
+  </div>
 </header>
 
 <main class="layout">
   <div class="sessbar play-only" id="play-session" hidden></div>
   <div class="vstrip play-only" id="play-vstrip"></div>
-  <nav class="subtabs play-only" id="play-subtabs" role="tablist" aria-label="Play section"></nav>
   <nav class="stepbar build-only" id="stepbar" aria-label="Build steps"></nav>
   <div class="steps">
 
@@ -982,6 +983,7 @@ button.cbt-art { padding: 0; background: none; cursor: zoom-in; flex: none; bord
 
   <div class="play-main" id="play">
     <div class="sub-page" id="sub-now">
+      <section class="card" id="play-table" hidden></section>
       <section class="card" id="play-combat" hidden></section>
       <section class="card" id="play-vitals"></section>
       <section class="card" id="play-attacks"></section>
@@ -996,9 +998,6 @@ button.cbt-art { padding: 0; background: none; cursor: zoom-in; flex: none; bord
     </div>
     <div class="sub-page" id="sub-growth">
       <section class="card" id="play-advance"></section>
-    </div>
-    <div class="sub-page" id="sub-table">
-      <section class="card" id="play-table"></section>
     </div>
     <div class="sub-page" id="sub-log">
       <section class="card" id="play-log"></section>
@@ -11584,7 +11583,7 @@ var CROWS_TRAIT_TREES = [
   var el = C.el, $ = C.$, d = C.d, fmt = C.fmt, signed = C.signed, item = C.item;
   var MODE_KEY = 'crows-pt2-mode';
   var SUBTAB_KEY = 'crows-pt2-play-subtab';
-  var SUBTABS = [['now', 'Now'], ['rest', 'Rest & turns'], ['items', 'Items'], ['growth', 'Growth'], ['table', 'Table'], ['log', 'Log']];
+  var SUBTABS = [['now', 'Now'], ['rest', 'Rest & turns'], ['items', 'Items'], ['growth', 'Growth'], ['log', 'Log']];
   var Dice = window.CrowsDice, Rules = window.CrowsRules, Sheet = window.CrowsSheet;   // src/shared/
   var CONDITIONS = Sheet.CONDITIONS;
   var DT_CONDITIONS = Rules.DT_CONDITIONS; // end at the end of a dungeon turn
@@ -11631,8 +11630,7 @@ var CROWS_TRAIT_TREES = [
     document.body.setAttribute('data-mode', m);
     if (m === 'play') { document.body.setAttribute('data-subtab', subtab()); renderSubtabs(); }
     layoutSync();
-    $('tab-build').setAttribute('aria-pressed', String(m === 'build'));
-    $('tab-play').setAttribute('aria-pressed', String(m === 'play'));
+    $('btn-mode').textContent = m === 'play' ? 'Edit build' : 'Back to play';
     var what = m === 'play' ? 'Play' : 'Character Generator', camp = m === 'play' ? campaignName() : null;
     document.title = 'The Nest · ' + what + (camp ? ' · ' + camp : '');
     var sub = document.querySelector('.brand-sub');
@@ -11657,8 +11655,8 @@ var CROWS_TRAIT_TREES = [
     box.innerHTML = '';
     var cur = subtab();
     SUBTABS.forEach(function (t) {
-      box.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': String(cur === t[0]), 'aria-pressed': String(cur === t[0]),
-        text: t[1] + (t[0] === 'table' && window.CrowsVTTPlay && window.CrowsVTTPlay.live() ? ' \u25CF' : ''), onclick: function () { setSubtab(t[0]); } }));
+      box.appendChild(el('button', { type: 'button', role: 'tab', 'aria-selected': String(cur === t[0]),
+        text: t[1], onclick: function () { setSubtab(t[0]); } }));
     });
   }
   /* Show this mode's address. Only where the accounts server answered: elsewhere there's no play address to go to. */
@@ -12514,13 +12512,12 @@ var CROWS_TRAIT_TREES = [
       containers: ['main.layout > .steps', 'main.layout > .play-main'],
       current: function () { return document.body.getAttribute('data-mode') === 'play' ? 'gen-play-' + subtab() : 'gen-build'; },
       narrow: 'clamp(300px, 22vw, 420px)', breakpoint: 1000, nav: document.querySelector('.masthead .actions'),
-      titles: { summary: 'Crow (summary, dice, saving)', 'play-combat': 'Combat', 'sec-advance': 'Bonus choices', 'sec-traits': 'Traits' }
+      titles: { summary: 'Crow (summary, dice, saving)', 'play-table': 'Tabletop', 'play-combat': 'Combat', 'sec-advance': 'Bonus choices', 'sec-traits': 'Traits' }
     });
     layoutOn = true;
   }
 
-  $('tab-build').addEventListener('click', function () { setMode('build'); });
-  $('tab-play').addEventListener('click', function () { setMode('play'); });
+  $('btn-mode').addEventListener('click', function () { setMode(mode() === 'play' ? 'build' : 'play'); });
   applyMode(mode());
   window.CrowsPlay = { render: render, setMode: setMode, showTab: setSubtab, syncAddress: syncAddress, loadCampaign: loadCampaign, joined: joined,
     /* For tests and combat.js: this crow's vitals as the sheet has them (AD from worn armor and parry weapons). */
@@ -13030,7 +13027,9 @@ var CROWS_TRAIT_TREES = [
     var surprise = c.round <= 1 && c.surprise === 'crows' ? 'The crows and their allies are surprised: no turn in round 1.' :
       c.round <= 1 && c.surprise === 'foes' ? 'The foes are surprised: no turn in round 1, and attacks against them get +1.' : '';
     var names = targets.map(function (id) { var x = find(id); return x ? x.name : null; }).filter(Boolean);
-    box.appendChild(el('div', { class: 'cbt-head' }, [
+    var onTable = !!(window.CrowsVTTPlay && window.CrowsVTTPlay.live());   // the tabletop above shows the fight; this card keeps what's left to do
+    if (onTable) box.appendChild(el('div', { class: 'fine', text: names.length ? 'Your target' + (names.length > 1 ? 's' : '') + ': ' + names.join(', ') + ' (click a creature on the map to change it).' : 'No target chosen: click a creature on the map.' }));
+    else box.appendChild(el('div', { class: 'cbt-head' }, [
       el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: 'Round' }), el('div', { class: 'val' }, [el('b', { text: String(c.round || '—') })])]),
       el('div', { class: 'grow' }, [
         el('div', null, [el('b', { text: c.name || 'A fight' }), fight.campaign ? ' · ' + fight.campaign.name : '']),
@@ -13046,12 +13045,11 @@ var CROWS_TRAIT_TREES = [
     var as = myAssist();
     if (as) bans.push(['ok', as.fromName + ' assists you: ' + signed(as.bonus) + ' on your next test (it lapses after this turn).']);
     bans.forEach(function (b) { box.appendChild(el('div', { class: 'banner ' + b[0], text: b[1] })); });
-    myPrompts().forEach(function (p) { box.appendChild(promptBanner(p)); });
-    myHits().forEach(function (h) { box.appendChild(hitBanner(h)); });
+    if (!onTable) { myPrompts().forEach(function (p) { box.appendChild(promptBanner(p)); }); myHits().forEach(function (h) { box.appendChild(hitBanner(h)); }); }   // on the table they pop up over the map
     if (mine && c.round) box.appendChild(turnBox(c, mine));
-    box.appendChild(el('h3', { text: 'Enemies' }));
-    box.appendChild(el('div', { class: 'cbt-list' }, foes.length ? foes.map(row) : [el('p', { class: 'fine', text: 'No enemies in the fight yet.' })]));
-    if (friends.length) {
+    if (!onTable) box.appendChild(el('h3', { text: 'Enemies' }));
+    if (!onTable) box.appendChild(el('div', { class: 'cbt-list' }, foes.length ? foes.map(row) : [el('p', { class: 'fine', text: 'No enemies in the fight yet.' })]));
+    if (friends.length && !onTable) {
       box.appendChild(el('h3', { text: 'Crows and allies' }));
       box.appendChild(el('div', { class: 'cbt-list' }, friends.map(row)));
     }
@@ -13222,7 +13220,7 @@ var CROWS_TRAIT_TREES = [
 </script>
 <script>
 /*
- * The Table tab on the Play page (accounts site): the tabletop scene the Ref is showing, with the fog of war as the Ref's screen works it out.
+ * The tabletop at the top of the Play page's Now tab (accounts site): the tabletop scene the Ref is showing, with the fog of war as the Ref's screen works it out.
  * The scene arrives with the live fight (combat.js keeps it: tableData). The player drags their own crow's token (it goes to the Ref
  * as a move, which the Ref's screen checks against walls), measures, pings, and picks a target by clicking a creature (the same target as
  * the Combat card). The map shows only what the party can see; the engine is src/shared/table.js.
@@ -13264,8 +13262,7 @@ var CROWS_TRAIT_TREES = [
     P.host.appendChild(P.ui);
     P.ui.classList.add('enter'); setTimeout(function () { if (P.ui) P.ui.classList.remove('enter'); }, 600);
     var box = $('play-table');
-    box.innerHTML = '';
-    box.appendChild(el('h2', { text: 'Table' }));
+    box.innerHTML = ''; box.hidden = false;
     box.appendChild(P.host);
     if (!P.fsBound) { P.fsBound = true; document.addEventListener('fullscreenchange', function () { if (P.host) renderBar(); }); }
     renderBar();
@@ -13412,11 +13409,12 @@ var CROWS_TRAIT_TREES = [
     P.data = d; P.live = !!d;
     if (!d) {
       P.scene = null; P.mask = null; P.you = null;
-      if (was) { var box = $('play-table'); if (box) { box.innerHTML = ''; P.view = null; P.host = null; P.L = null; } C.render(); }
-      else if ($('play-table') && !$('play-table').firstChild) emptyNote();
+      var box = $('play-table');
+      if (box) { box.innerHTML = ''; box.hidden = true; }
+      if (was) { P.view = null; P.host = null; P.L = null; C.render(); }
       return;
     }
-    if (!was) { emptyNote(false); C.render(); }
+    if (!was) C.render();
     if (d.version === P.version && P.view && P.scene) { renderAsk(); return; }
     P.version = d.version; P.you = d.you; P.campaign = d.campaign ? d.campaign.id : 0;
     var t = d.table, fog = t.fog;
@@ -13439,14 +13437,6 @@ var CROWS_TRAIT_TREES = [
     if (changedScene) { var mt = P.scene.tokens.filter(mine)[0]; if (mt) setTimeout(function () { P.view.centerOn(mt.x, mt.y, true); }, 60); }
     renderBar(); renderInfo(); renderAsk();
   }
-  function emptyNote(on) {
-    var box = $('play-table'); if (!box) return;
-    if (on === false) { if (!P.host) box.innerHTML = ''; return; }
-    box.innerHTML = '';
-    box.appendChild(el('h2', { text: 'Table' }));
-    box.appendChild(el('p', { class: 'hint', text: 'Your Ref isn’t showing a map right now. When they do, it appears here, with fog of war: you see what your crow and its light show. You need to be playing a linked crow in a campaign on the accounts site.' }));
-  }
-
   window.CrowsVTTPlay = { refresh: refresh, live: function () { return P.live; } };
   refresh();
 })();

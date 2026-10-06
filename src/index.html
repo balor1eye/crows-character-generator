@@ -15,15 +15,12 @@
       <span class="brand-mark">THE NEST</span>
       <span class="brand-sub">Crows Playtest 2 · Character Generator</span>
     </div>
-    <div class="mode-tabs" role="group" aria-label="Mode">
-      <button type="button" id="tab-build" aria-pressed="true">Build</button>
-      <button type="button" id="tab-play" aria-pressed="false">Play</button>
-    </div>
     <nav class="actions">
       <button type="button" id="btn-random" class="btn build-only">Random crow</button>
       <div class="more-menu" id="more-menu">
         <button type="button" class="btn btn-ghost more-btn" id="more-btn" aria-haspopup="true" aria-expanded="false" title="Start over, save or load a file">&#8943; More</button>
         <div class="more-pop" id="more-pop">
+          <button type="button" id="btn-mode" class="btn btn-ghost">Edit build</button>
           <button type="button" id="btn-new" class="btn btn-ghost build-only">Start over</button>
           <button type="button" id="btn-save" class="btn btn-ghost">Save file</button>
           <label class="btn btn-ghost file-btn">Load file<input type="file" id="file-load" accept=".json,application/json"></label>
@@ -33,12 +30,14 @@
       <button type="button" class="btn btn-ghost theme-toggle" title="Theme">&#9680; Auto</button>
     </nav>
   </div>
+  <div class="tabbar play-only" role="tablist" aria-label="Play section">
+    <div class="tabbar-inner" id="play-subtabs"></div>
+  </div>
 </header>
 
 <main class="layout">
   <div class="sessbar play-only" id="play-session" hidden></div>
   <div class="vstrip play-only" id="play-vstrip"></div>
-  <nav class="subtabs play-only" id="play-subtabs" role="tablist" aria-label="Play section"></nav>
   <nav class="stepbar build-only" id="stepbar" aria-label="Build steps"></nav>
   <div class="steps">
 
@@ -188,6 +187,7 @@
 
   <div class="play-main" id="play">
     <div class="sub-page" id="sub-now">
+      <section class="card" id="play-table" hidden></section>
       <section class="card" id="play-combat" hidden></section>
       <section class="card" id="play-vitals"></section>
       <section class="card" id="play-attacks"></section>
@@ -202,9 +202,6 @@
     </div>
     <div class="sub-page" id="sub-growth">
       <section class="card" id="play-advance"></section>
-    </div>
-    <div class="sub-page" id="sub-table">
-      <section class="card" id="play-table"></section>
     </div>
     <div class="sub-page" id="sub-log">
       <section class="card" id="play-log"></section>

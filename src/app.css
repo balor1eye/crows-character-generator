@@ -63,7 +63,7 @@ textarea { width: 100%; resize: vertical; }
 .bg-details dd { margin: 0; }
 
 /* Build steps: a progress bar, Next buttons, and the header's More menu */
-.stepbar { grid-column: 1 / -1; position: sticky; top: 76px; z-index: 10; display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; background: var(--card);
+.stepbar { grid-column: 1 / -1; position: sticky; top: 104px; z-index: 10; display: flex; flex-wrap: wrap; gap: .3rem; align-items: center; background: var(--card);
   border: 1px solid var(--line); border-radius: var(--radius); padding: .45rem .6rem; box-shadow: var(--shadow); }
 .stepbar .meter { flex: 1 0 100%; height: 6px; border-radius: 3px; background: var(--soft); overflow: hidden; }
 .stepbar .meter span { display: block; height: 100%; background: var(--ok); transition: width .2s; }
@@ -229,22 +229,19 @@ body[data-mode="play"] .more-pop .build-only { display: none; }
 .coins { display: flex; gap: .6rem; align-items: flex-end; flex-wrap: wrap; }
 
 /* ---------------------------------------------------------------- Mode tabs + Play mode */
-.mode-tabs { display: inline-flex; border: 1px solid #5a5354; border-radius: 6px; overflow: hidden; }
-.mode-tabs button { background: transparent; color: #f4efe6; border: 0; padding: .4rem .95rem; cursor: pointer; font-weight: 600; min-height: 36px; }
-.mode-tabs button[aria-pressed="true"] { background: var(--accent); color: #fff; }
-.mode-tabs button:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
 .play-main { display: none; flex-direction: column; gap: 1rem; min-width: 0; }
 .play-only { display: none; }
 body[data-mode="play"] .steps, body[data-mode="play"] .build-only { display: none; }
 body[data-mode="play"] .play-main { display: flex; }
-body:not([data-mode="play"]) .vstrip, body:not([data-mode="play"]) .subtabs { display: none; }
-body[data-mode="play"] .vstrip, body[data-mode="play"] .subtabs { display: flex; }
+body:not([data-mode="play"]) .vstrip { display: none; }
+body[data-mode="play"] .vstrip { display: flex; }
+body[data-mode="play"] .tabbar.play-only { display: block; }
 body[data-mode="play"] .play-only { display: block; }
 .play-main h3 { font-family: var(--font); font-size: .78rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); margin: 1rem 0 .4rem; }
 
 /* Sticky vitals strip + sub-tabs: sit outside the rearrangeable columns, spanning all of them. */
-.vstrip, .subtabs { grid-column: 1 / -1; }
-.vstrip { display: flex; flex-wrap: wrap; gap: .5rem .9rem; align-items: center; position: sticky; top: 76px; z-index: 10;
+.vstrip { grid-column: 1 / -1; }
+.vstrip { display: flex; flex-wrap: wrap; gap: .5rem .9rem; align-items: center; position: sticky; top: 104px; z-index: 10;
   background: var(--card); border: 1px solid var(--line); border-radius: var(--radius); padding: .5rem .8rem; box-shadow: var(--shadow); }
 .vstrip-item { display: flex; align-items: center; gap: .35rem; font-size: .9rem; }
 .vstrip-item.danger b { color: var(--bad); }
@@ -268,13 +265,18 @@ body[data-mode="play"] .sessbar.play-only { display: flex; }
 button.sess-chip { cursor: pointer; font: inherit; font-size: .78rem; font-weight: 600; }
 .chip.accent { background: var(--accent); color: var(--accent-ink); }
 .chip.bad { background: var(--bad); color: #fff; }
-.subtabs { display: flex; gap: .3rem; flex-wrap: wrap; }
-.subtabs button { background: var(--card); border: 1px solid var(--line); border-radius: 999px; padding: .35rem .9rem; cursor: pointer; font-weight: 600; min-height: 36px; }
-.subtabs button[aria-pressed="true"] { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
+body[data-mode="play"] .masthead-inner { padding-bottom: .3rem; }
+/* The Play sections: a tab bar in the header, as on the Ref Screen. */
+.tabbar { margin: 0 auto; padding: 0 clamp(16px, 2vw, 40px); }
+.tabbar-inner { display: flex; flex-wrap: wrap; gap: 2px; }
+.tabbar button { background: transparent; color: #f4efe6; border: 0; border-radius: 6px 6px 0 0; padding: .45rem .9rem; cursor: pointer; font-weight: 600; min-height: 38px; white-space: nowrap; opacity: .8; }
+.tabbar button:hover { opacity: 1; background: #2c292a; }
+.tabbar button[aria-selected="true"] { background: var(--accent); color: #fff; opacity: 1; }
+.tabbar button:focus-visible { outline: 2px solid var(--sel); outline-offset: -2px; }
 /* Fallback grouping for sub-tab content when layout.js is inactive (the Ref's embedded view of a linked sheet). */
 .sub-page { display: none; flex-direction: column; gap: 1rem; min-width: 0; }
 body[data-subtab="now"] #sub-now, body[data-subtab="rest"] #sub-rest, body[data-subtab="items"] #sub-items,
-body[data-subtab="growth"] #sub-growth, body[data-subtab="table"] #sub-table, body[data-subtab="log"] #sub-log { display: flex; }
+body[data-subtab="growth"] #sub-growth, body[data-subtab="log"] #sub-log { display: flex; }
 /* The bonus/trait blocks are shared with Build's step numbering, which doesn't apply once they're shown in Play. */
 body[data-mode="play"] #sec-advance .step, body[data-mode="play"] #sec-traits .step { display: none; }
 .muted { color: var(--muted); }
@@ -386,7 +388,7 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
 }
 
 /* Live combat (combat.js): the fight the Ref is running, with targets */
-#play-combat[hidden], #cbt-target-bar[hidden] { display: none !important; }
+#play-combat[hidden], #play-table[hidden], #cbt-target-bar[hidden] { display: none !important; }
 #play-combat { border-left: 4px solid var(--accent); }
 .cbt-head { display: flex; gap: .8rem; align-items: center; flex-wrap: wrap; }
 .cbt-head .vital { min-width: 4.5rem; text-align: center; }

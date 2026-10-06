@@ -46,7 +46,7 @@
 body[data-tab="vtt"] #page-vtt { display: flex; }
 
 /* The Ref's stage: the map fills the tab and the controls float on it. */
-#sec-vtt { padding: 0; border: 0; background: none; box-shadow: none; }
+#sec-vtt, #play-table { padding: 0; border: 0; background: none; box-shadow: none; }
 .vtt-stage { container: vtt / size; height: max(480px, calc(100vh - 150px)); margin: 0; border-radius: 12px; box-shadow: 0 6px 30px rgba(0,0,0,.28); }
 .vtt-stage:fullscreen { height: 100vh; }
 
