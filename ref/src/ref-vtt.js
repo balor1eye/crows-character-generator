@@ -30,7 +30,7 @@
       setTab = f('setTab'), sizeOf = f('sizeOf'), startTimer = f('startTimer'), tabletop = f('tabletop'), travelCalc = f('travelCalc'),
       addPartyToCombat = f('addPartyToCombat'), combatRow = f('combatRow'), diceResult = f('diceResult'), doomOptions = f('doomOptions'), endCombat = f('endCombat'),
       endEncounter = f('endEncounter'), itemsPanel = f('itemsPanel'), livePanel = f('livePanel'), playerView = f('playerView'), setPlayerView = f('setPlayerView'),
-      rxLeft = f('rxLeft'), sitRow = f('sitRow'), targetOf = f('targetOf'), targetsFor = f('targetsFor'), twoTargets = f('twoTargets');
+      practiceOn = f('practiceOn'), endPractice = f('endPractice'), rxLeft = f('rxLeft'), sitRow = f('sitRow'), targetOf = f('targetOf'), targetsFor = f('targetsFor'), twoTargets = f('twoTargets');
   var $ = A.$, el = A.el, S = A.S, toast = A.toast, plural = A.plural, ui = A.ui, clamp = A.clamp, REFD = window.REF;
   var state = A.state; A.share('state', function (v) { state = v; });
   var Tbl = window.CrowsTable;
@@ -727,7 +727,8 @@
         foes.length ? chip(acted + '/' + foes.length + ' foes acted', acted === foes.length ? 'ok' : 'dim', { title: 'Foes that have taken their turn this round (Acted on each one’s HUD)' }) : null,
         crows.length ? chip(done + '/' + crows.length + ' crows done', done === crows.length ? 'ok' : 'dim', { title: 'Crows whose players said they are done for the round' }) : null,
         fab('next', 'Next round: roll initiative again', function () { nextRound(); }, 'sm', 'Next round'), fightBtn,
-        fab('x', runningEnc() ? 'End the encounter: say how it ended (the Fight drawer)' : 'End the fight: clear the tracker', function () {
+        fab('x', practiceOn() ? 'End the practice: the fight and the map go back to how they were' : runningEnc() ? 'End the encounter: say how it ended (the Fight drawer)' : 'End the fight: clear the tracker', function () {
+          if (practiceOn()) { endPractice(); return; }
           if (runningEnc()) { U.endOpen = true; openDrawer('fight'); return; }
           if (confirm('End the fight? The combat tracker clears (the log keeps what happened).')) endCombat();
         }, 'sm ghost', 'End')]));
@@ -1036,8 +1037,10 @@
     var fd = (c.feed || []).slice(-15).reverse();
     if (fd.length) out.push(el('h4', { text: 'What the players see happen' }), el('ol', { class: 'dr-feed' }, fd.map(function (x) { return el('li', null, [rich(x.s)]); })));
     // the end
-    var end = el('div', { class: 'dr-end' }, [el('h4', { text: e ? 'End the encounter' : 'End the fight' })]);
-    if (e) {
+    var end = el('div', { class: 'dr-end' }, [el('h4', { text: practiceOn() ? 'End the practice' : e ? 'End the encounter' : 'End the fight' })]);
+    if (practiceOn()) end.appendChild(el('div', { class: 'row' }, [btn('End practice', function () { endPractice(); }, 'btn-small btn-primary', 'The practice crows leave, and the fight and the map go back to how they were before it'),
+      el('span', { class: 'fine', text: 'Nothing from a practice fight is kept (see the sidebar).' })]));
+    else if (e) {
       var how = ui.encEnd || (ui.encEnd = { outcome: 'won', resolve: true });
       var outSel = el('select', { class: 'in', 'aria-label': 'How it ended', onchange: function () { how.outcome = this.value; } }, (A.ENC_OUTCOMES || []).map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
       outSel.value = how.outcome;
@@ -1252,5 +1255,8 @@
     var c = document.querySelector('[data-clock-vtt]'); if (c) c.textContent = clockText(remainMs());
   }, 500);
 
-  A.add({ renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
+  /* For practice fights (ref-practice.js): the current scene, tokens, and moves. */
+  var vtt = { cur: cur, tokOf: tokOf, addToken: addToken, moveToken: moveToken, nextSpot: nextSpot, changed: changed,
+    resetSpawn: function () { U.spawn = 0; }, view: function () { return U.view; }, deselect: function () { U.sel = null; } };
+  A.add({ vtt: vtt, renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
 })();

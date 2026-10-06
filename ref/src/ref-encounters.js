@@ -9,7 +9,7 @@
       beastCard = f('beastCard'), btn = f('btn'), card = f('card'), chk = f('chk'), clamp = f('clamp'), clearCombat = f('clearCombat'),
       combatUI = f('combatUI'), currentPlace = f('currentPlace'), dungeonEN = f('dungeonEN'), field = f('field'), greedBonus = f('greedBonus'),
       groundText = f('groundText'), inp = f('inp'), int = f('int'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'),
-      nowStamp = f('nowStamp'), render = f('render'), renderCombat = f('renderCombat'), rollMerchant = f('rollMerchant'), rollMiasmaTouched = f('rollMiasmaTouched'),
+      nowStamp = f('nowStamp'), endPractice = f('endPractice'), practiceOn = f('practiceOn'), render = f('render'), renderCombat = f('renderCombat'), rollMerchant = f('rollMerchant'), rollMiasmaTouched = f('rollMiasmaTouched'),
       rollTravelEncounter = f('rollTravelEncounter'), rollTravelers = f('rollTravelers'), rollWildAnimal = f('rollWildAnimal'), S = f('S'),
       save = f('save'), sel = f('sel'), setTab = f('setTab'), test = f('test'), testLine = f('testLine'), today = f('today'),
       travelResultBox = f('travelResultBox');
@@ -134,6 +134,7 @@
   function runningEnc() { var id = S().combat.encId; return id ? findEncounter(id) : null; }
   /* stay: start it without leaving the tab (the Tabletop loads encounters onto the map). Returns whether it is running. */
   function runEncounter(e, stay) {
+    if (practiceOn()) { toast('A practice fight is running: end it in the sidebar first.'); return false; }
     var s = S(), c = s.combat, cur = runningEnc();
     if (cur === e) { if (!stay) setTab('encounters'); return true; }
     if (cur && !confirm((cur.name || 'Another encounter') + ' is still running. Switch to ' + (e.name || 'this one') + '? Creatures already in the tracker stay there.')) return false;
@@ -157,6 +158,7 @@
   }
   /* Stop running without a result: its creatures leave the tracker; the encounter stays open. */
   function cancelRun(e) {
+    if (practiceOn()) { endPractice(); return; }
     var c = S().combat;
     if (!confirm('Stop running ' + (e.name || 'this encounter') + '? Its creatures leave the combat tracker, and the encounter stays open.')) return;
     c.list = c.list.filter(function (x) { return x.enc !== e.id; });
@@ -171,6 +173,7 @@
   }
   /* stay: end it without leaving the tab (the Tabletop ends fights on the map). */
   function endEncounter(e, outcome, resolve, stay) {
+    if (practiceOn()) { endPractice(); return; }   // a practice fight leaves no result: the encounter is as it was before it
     var s = S(), c = s.combat, label = ENC_OUTCOMES.filter(function (o) { return o[0] === outcome; })[0][1];
     var them = c.list.filter(function (x) { return x.kind !== 'pc'; }), fallen = them.filter(function (x) { return x.dead; }),
       standing = them.filter(function (x) { return !x.dead && x.kind === 'foe'; }), allies = them.filter(function (x) { return !x.dead && x.kind === 'ally'; });

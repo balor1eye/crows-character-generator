@@ -87,6 +87,19 @@ the round and who has acted, a creature's Act drawer (its combat tracker row), i
 scrolls by, Apply and Undo, Acted and the count, the Fight drawer (everyone in it, the battlefield buttons, the items, the end;
 a name selects that creature), Next round, and End (the tracker clears, the log notes it, the crows stay on the map).
 
+## A practice fight (`practice_test.js`, run by `run_practice_test.py`)
+
+```bash
+python3 ref/test/run_practice_test.py
+```
+
+On a battle map with two crows and three thieves: the sidebar's Practice block appears only on the Tabletop, and only once there's a scene.
+It sets three crows (the Fighters mix, then one changed to Archer, with its gear shown), with the computer running the foes at a fast pace.
+Start puts three practice crows in the real crows' places (the Bodyguard's AD 14 from light armor, shield, and sword parry) and doesn't
+publish the fight. The computer plays it to a result, which goes under Past results. Restart goes back to round 1, and Simulate plays it
+8 times and leaves it at its start. Then, step by step with the Ref running the foes, each crow takes its turn, a foe's roll marks it
+acted, Foes done ends the round, and End practice restores the tracker, the tokens, and the log exactly.
+
 ## The combat tracker's rules (`combat_engine.js`, run by `run_engine_test.py`)
 
 Creatures fight allied NPCs in the local build with the dice forced for each roll (no accounts or server), checking

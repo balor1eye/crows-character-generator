@@ -178,6 +178,14 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
 - **Encounters**: roll or build encounters, save them, and run them. The combat tracker is here (a running encounter has it in its own
   card; otherwise a Combat card holds it), and the Tabletop's tokens are tied to it. It is shared live with the players' Play pages (their attacks land on the targets they pick with one click, and can be undone; damage is never dealt automatically: a hit waits as a pending hit, so a crow's player can tell the Ref how they defend (their Play page shows the incoming hit, with Sacrifice Armor / Break the Blade when they have them, a readied action, or anything in words) and the Ref can lower or negate the damage, or spend an enemy's reaction, before applying it; after a player's miss or doom, buttons for the counter, the stray shot at a random ally, or the backlash roll). Creatures attack a target the Ref picks (or a random one), with each hit waiting to be applied and undoable (initiative, Stamina/AD/wounds, conditions, one-click
   monster attacks, X/Rest uses).
+- **Practice fights** (Tabletop, right-hand sidebar): once an encounter is on the battle map, the Practice block runs it against
+  computer-controlled crows. Choose how many crows (1-6), the party mix (balanced, fighters, archers and casters, like your party, random)
+  and each crow's background (its Stamina, characteristics, weapons, armor, and attack and healing spells come from the Character
+  Generator's data), their experience, armor, and tactics (focus fire, nearest, random), who runs the foes (you, or the computer too),
+  surprise, whether hits apply at once, when a crow leaves the fight (dead, 3 wounds, or 0 Stamina), the pace (step by step to fast), and
+  whether the next round starts on its own. The crows move toward their targets, attack with the rules' modifiers, counter missed melee
+  attacks, stand up, escape grabs, and heal each other. Restart replays it; Simulate plays it through many times for the odds. A practice
+  isn't shown to the players, and End practice puts the fight, the map, and the log back as they were.
 - **Travel**: hexes and EN from pace, speed, roads, water, and weather; travel encounters with every sub-table;
   the secret lost-direction roll; Miasma RRs and effects for each crow; the travel roles.
 - **Village**: Prosperity, sale percentage, cycles and village events, institutions with levels and stewards,

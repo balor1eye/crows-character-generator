@@ -10,7 +10,7 @@
       clamp = f('clamp'), cloudOn = f('cloudOn'), feat = f('feat'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
       int = f('int'), lightbox = f('lightbox'), linkOn = f('linkOn'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
       rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), sheetOp = f('sheetOp'),
-      lineOfEffect = f('lineOfEffect'), publicTable = f('publicTable'), tabletop = f('tabletop'), test = f('test'), testLine = f('testLine'), vttAction = f('vttAction');
+      lineOfEffect = f('lineOfEffect'), practiceOn = f('practiceOn'), endPractice = f('endPractice'), publicTable = f('publicTable'), tabletop = f('tabletop'), test = f('test'), testLine = f('testLine'), vttAction = f('vttAction');
   var $ = A.$, clone = A.clone, d = A.d, d100 = A.d100, el = A.el, netEdges = A.netEdges, pick = A.pick, plural = A.plural, Rules = A.Rules,
       signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -273,7 +273,7 @@
       lines.push({ r: r, text: line, t: t, dm: dm });
     });
     var r0 = lines[0].r;
-    if (opts.rxn) useRx(c);
+    if (opts.rxn) useRx(c); else if (practiceOn() && cb.round) c.acted = cb.round;   // practice: a creature's roll is its turn
     if (c.hidden) { c.hidden = false; lines[0].text += '. ' + c.name + ' is no longer hidden'; }
     if (r0.crit) {
       var b = beast(c.cref), back = b && b.uses.filter(function (u) { return c.used[u[0]] > 0; })[0];
@@ -321,6 +321,7 @@
       if (r.tier > 1 && kind === 'grab') act.items.push({ id: t.id, grab: c.id });
       if (r.tier === 1) { if (t.kind === 'pc') prompt(t, c, r.doom, 'a ' + name); else if (meleeAtk(t)) counters.push({ by: t, vs: c, doom: r.doom }); }
     }
+    if (practiceOn() && cb.round) c.acted = cb.round;
     var line = '**' + c.name + '** ' + name + (kind === 'escape' ? ' from **' + t.name + '**' : ' → **' + t.name + '**') + ': ' + testLine(r) + ' → T' + r.tier + ', ' + res + (m.why.length ? ' [' + m.why.join(', ') + ']' : '') + '.';
     ui.sit = {};
     ui.dice = { label: c.name + ': ' + name + ' (' + (kind === 'escape' ? 'from ' : '→ ') + t.name + ')', r: r, dmg: res, hit: act.items.length ? act : null, counters: counters, note: m.why.length ? 'auto: ' + m.why.join(', ') : '' };
@@ -611,6 +612,7 @@
   function publicCombat() {
     var c = S().combat, run = runningEnc();
     if (!liveOn()) return { active: false };
+    if (practiceOn()) return { active: false, session: publicSession() };   // a practice fight (ref-practice.js) is the Ref's alone
     var tbl = publicTable();   // the tabletop scene, if the Ref is showing one (ref-vtt.js)
     if (!c.list.length) return tbl ? { active: false, session: publicSession(), table: tbl } : { active: false, session: publicSession() };
     var out = { active: true, session: publicSession(), table: tbl || undefined, view: playerView(), round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
@@ -743,7 +745,12 @@
     if (a.type === 'move' || a.type === 'ping') { vttAction(p, a); return; }
     var me = p ? c.list.filter(function (x) { return x.kind === 'pc' && x.pcId === p.id; })[0] : null;
     if (!me) return;   // not in this fight (any more)
-    var who = me.name;
+    crowAction(me, a, it.id, p);
+  }
+  /* A crow's action in the fight: a player's from their Play page (aid: the action's id on the server), or a practice crow's
+     (ref-practice.js). Returns the action as kept in the fight's list of actions, when there is one. */
+  function crowAction(me, a, aid, p) {
+    var c = S().combat, who = me.name;
     if (a.type === 'done' || a.type === 'undone') {
       me.done = a.type === 'done' ? c.round : 0;
       feed('**' + who + '** ' + (a.type === 'done' ? 'is done for round ' + c.round + '.' : 'isn’t done yet.'));
@@ -768,7 +775,7 @@
     if (a.type === 'pickup') {
       var gi = onGround().filter(function (x) { return x.id === a.item && !x.hidden; })[0];
       if (!gi) { itemNews('**' + who + '** reaches for ' + (a.itemName || 'an item') + ', but it’s not there any more.', true); return; }
-      var one = { id: 'g' + it.id, to: p.link, item: gi.id, key: gi.key, qty: 1 };   // it.id: this action's id, unique on the server
+      var one = { id: 'g' + aid, to: p.link, item: gi.id, key: gi.key, qty: 1 };   // aid: this action's id, unique on the server
       ['ud', 'dmg', 'ammo'].forEach(function (k) { if (typeof gi[k] === 'number') one[k] = gi[k]; });
       if (gi.qty > 1) gi.qty--; else onGround().splice(onGround().indexOf(gi), 1);
       (c.given = c.given || []).push(one);
@@ -779,7 +786,7 @@
     var tlist = (a.targets && a.targets.length ? a.targets : a.target ? [{ id: a.target, name: a.targetName }] : [])
       .map(function (t) { var x = byId(t.id); return x ? { x: x, name: x.name } : { x: null, name: t.name || '' }; });
     var tgt = tlist[0] && tlist[0].x, tname = tlist.map(function (t) { return t.name; }).filter(Boolean).join(', ');
-    var act = { id: it.id, who: who, type: a.type, target: tgt ? tgt.id : null, tname: tname, round: c.round, applied: false, text: a.text || '', from: me.id,
+    var act = { id: aid, who: who, type: a.type, target: tgt ? tgt.id : null, tname: tname, round: c.round, applied: false, text: a.text || '', from: me.id,
       label: a.label || a.name || '', tier: a.tier, crit: !!a.crit, doom: !!a.doom, rxn: !!a.rxn }, line;
     if (a.rxn) useRx(me);
     if (a.prompt) (c.prompts || []).forEach(function (q) { if (q.id === a.prompt) q.done = true; });
@@ -821,13 +828,14 @@
       line = '**' + who + '** taunts **' + tgt.name + '**: until ' + who + '’s next turn, its attacks that don’t include ' + who + ' take a bane.';
     } else if (a.type === 'assist') {
       var to = byId(a.assistTo);
-      if (to) (c.assists = c.assists || []).push({ id: 'as' + it.id, to: to.id, toName: to.name, from: me.id, fromName: who, bonus: a.bonus | 0, round: c.round });
+      if (to) (c.assists = c.assists || []).push({ id: 'as' + aid, to: to.id, toName: to.name, from: me.id, fromName: who, bonus: a.bonus | 0, round: c.round });
       line = '**' + who + '** assists **' + (to ? to.name : 'an ally') + '** (tier ' + a.tier + '): ' + signed(a.bonus | 0) + ' to their next test this turn.' + (a.text ? ' ' + a.text : '');
     } else if (a.type === 'ready') line = '**' + who + '** readies an action: ' + (a.text || '(no trigger given)') + '.';
     else line = '**' + who + '**' + (tname ? ' → **' + tname + '**' : '') + ': ' + (a.text || 'acts.');
     c.acts = (c.acts || []).concat([act]).slice(-30);
     log('', line); feed(line);
     pend(act);
+    return act;
   }
   /*
    * What the rules let happen after a player's action, as buttons on it: the target counters a melee miss or a failed
@@ -927,6 +935,7 @@
   }
   /* End a fight that isn't a running encounter's (that one ends with a result: endEncounter): note it in the log and clear the tracker. */
   function endCombat() {
+    if (practiceOn()) { endPractice(); return true; }   // ending a practice fight puts the real one back
     var c = S().combat, dead = c.list.filter(function (x) { return x.dead; }).map(function (x) { return x.name; });
     if (runningEnc() && !confirm('End the fight without saving a result to ' + (runningEnc().name || 'the running encounter') + '? (It stays open.)')) return false;
     log('', '**Combat ends** after ' + plural(c.round || 0, 'round') + '.' + (dead.length ? ' Fallen: ' + dead.join(', ') + '.' : '') + (groundText() ? ' ' + groundText() : ''));
@@ -1104,6 +1113,6 @@
       itemsText: itemsText, newItem: newItem, onGround: onGround, itemNews: itemNews, putDown: putDown, creaturePickUp: creaturePickUp,
       creatureDrop: creatureDrop, dropFromFallen: dropFromFallen, groundText: groundText, itemsPanel: itemsPanel, pcOf: pcOf, healthWord: healthWord,
       publicSession: publicSession, publicCombat: publicCombat, playerView: playerView, setPlayerView: setPlayerView, playerViewPicker: playerViewPicker, endCombat: endCombat, sitRow: sitRow, restChoice: restChoice, restChoiceText: restChoiceText, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,
-      doomOptions: doomOptions, livePanel: livePanel, liveOn: liveOn, nextRound: nextRound, isExpert: isExpert, expertKnows: expertKnows, monsterExperts: monsterExperts, tableStatus: tableStatus, renderTable: renderTable, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
+      crowAction: crowAction, doomOptions: doomOptions, livePanel: livePanel, liveOn: liveOn, nextRound: nextRound, isExpert: isExpert, expertKnows: expertKnows, monsterExperts: monsterExperts, tableStatus: tableStatus, renderTable: renderTable, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
       SIZE_ORDER: SIZE_ORDER, live: live, dropQueued: dropQueued, MANEUVER_NOTES: MANEUVER_NOTES });
 })();

@@ -23,7 +23,7 @@
       counterDamage = f('counterDamage'), dropFromFallen = f('dropFromFallen'), defendRow = f('defendRow'), endDT = f('endDT'), feed = f('feed'), fxItems = f('fxItems'),
       heal = f('heal'), liveChanged = f('liveChanged'), newRound = f('newRound'), pendingText = f('pendingText'),
       releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderMaps = f('renderMaps'), renderEncounters = f('renderEncounters'),
-      renderParty = f('renderParty'), renderPrefs = f('renderPrefs'), renderVtt = f('renderVtt'), renderRules = f('renderRules'), renderSession = f('renderSession'),
+      renderParty = f('renderParty'), renderPractice = f('renderPractice'), renderPrefs = f('renderPrefs'), renderVtt = f('renderVtt'), renderRules = f('renderRules'), renderSession = f('renderSession'),
       renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
       renderWorld = f('renderWorld'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -64,6 +64,7 @@
     ['timer', 'Timer in the sidebar', 'The dungeon turn clock and End DT button.', 'Sidebar', { ids: ['side-timer'] }],
     ['dice', 'Dice in the sidebar', 'Tests, dice, initiative, usage dice, and roll results.', 'Sidebar', { ids: ['side-dice'] }],
     ['log', 'Log in the sidebar', 'The running log and the note box.', 'Sidebar', { ids: ['side-log'] }],
+    ['practice', 'Practice fights', 'On the Tabletop, the sidebar\u2019s Practice block: run an encounter on the map against computer-controlled crows.', 'Sidebar', { ids: ['side-practice'] }],
     ['combat', 'Combat tracker', 'The Encounters tab\u2019s tracker for fights outside a running encounter (the Tabletop puts creatures in it too).', 'Combat', { ids: ['sec-combat'] }],
     ['sit', 'Battlefield buttons', 'Flanking, cover, darkness, and the other modifiers on a creature\u2019s next roll.', 'Combat', {}],
     ['items', 'Items on the ground', 'Loose items, and what creatures hold and drop.', 'Combat', {}],
@@ -117,7 +118,10 @@
       party: [], xpLog: [], hirelings: [], ledger: [], places: [], npcs: [], encounters: [], notes: '', hooks: '', history: [],
       dice: { mod: 0, net: 0, expr: '3d6', ud: 1 },
       prefs: { tabletop: false, off: {}, playerView: 'map' },
-      vtt: { scenes: [], cur: '', shown: false, clean: true }
+      vtt: { scenes: [], cur: '', shown: false, clean: true },
+      // Practice fights on the Tabletop (ref-practice.js): the Ref's choices, the fight under way (with the real one to put back), past results.
+      practice: { opts: { n: 4, mix: 'balanced', crows: [], exp: 'new', armor: 'own', tactics: 'focus', foes: 'ref', surprise: 'none', autoApply: true,
+        autoRound: true, fallAt: 'dead', pace: 'normal', sims: 20 }, run: null, history: [] }
     };
   }
   function withDefaults(base, s) {
@@ -388,6 +392,7 @@
       ]),
       res
     ]));
+    renderPractice();
     renderSideLog();
   }
   /* The last roll (ui.dice), with Apply/Undo for its hit and the counters it allows: in the sidebar's Dice panel and floating on the Tabletop.
