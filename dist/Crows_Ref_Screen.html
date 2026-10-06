@@ -146,6 +146,7 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .hud-chip.bad { background: rgba(214,84,74,.9); color: #fff; }
 .hud-chip.cond { background: rgba(110,193,255,.2); color: #bfe3ff; }
 .hud-chip.pulse { animation: vtt-pulse 1.2s ease-in-out infinite; }
+.hud-chip.ok { background: rgba(47,143,91,.85); color: #fff; }
 .hud-meter { display: inline-flex; align-items: center; gap: .4rem; font-weight: 700; font-size: .8rem; padding: 0 .3rem; }
 .hud-meter .bar { width: 90px; height: 7px; border-radius: 4px; background: rgba(255,255,255,.15); overflow: hidden; }
 .hud-meter .bar span { display: block; height: 100%; background: #5fbf6a; border-radius: 4px; transition: width .5s cubic-bezier(.2,.9,.3,1); }
@@ -226,6 +227,54 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .dr-quick { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem; }
 .dr-quick .fab { justify-content: flex-start; border: 1px solid var(--line); background: var(--soft); color: var(--ink); height: 36px; }
 .dr-quick .fab:hover { border-color: var(--accent); }
+
+/* the fight on the map: the last roll (bottom left), the feed as it happens (top left), and the Act and Fight drawers */
+.vtt-roll { left: 64px; bottom: 72px; flex-direction: column-reverse; align-items: flex-start; gap: .4rem; z-index: 3; max-width: min(380px, calc(100% - 140px)); }
+.vtt-rollcard { position: relative; pointer-events: auto; background: color-mix(in srgb, var(--card) 95%, transparent); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+  border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.45); padding: .5rem .65rem; max-height: 42cqh; overflow: auto; animation: vtt-rise .3s cubic-bezier(.2,.9,.3,1.1) both; font-size: .86rem; }
+.vtt-rollcard.act { border-left-color: var(--sel, #6ec1ff); }
+.vtt-rollcard .result { margin: 0; border: 0; padding: 0 1.8rem 0 0; background: none; }
+.vtt-rollcard .fab { color: var(--ink); }
+.vtt-rollcard .fab:hover { background: var(--soft); }
+.rc-close { position: absolute; top: .25rem; right: .25rem; }
+.rc-head { display: flex; align-items: center; gap: .4rem; justify-content: space-between; }
+.rc-ctl { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-top: .3rem; }
+.vtt-ticker { top: 62px; left: 12px; flex-direction: column; align-items: flex-start; gap: .3rem; max-width: min(380px, 40%); z-index: 1; pointer-events: none; }
+.vtt-tick { background: var(--glass); border: 1px solid var(--gl-line); border-radius: 10px; padding: .3rem .6rem; font-size: .8rem; line-height: 1.35; box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  animation: vtt-in-left .3s cubic-bezier(.2,.9,.3,1.1) both; transition: opacity .4s, transform .4s; }
+.vtt-tick.out { opacity: 0; transform: translateX(-10px); }
+.dr-cbt .cbt { margin: 0; }
+.dr-cbt .cbt-top { gap: .4rem; }
+.dr-cbt .cbt-name .in { width: 100%; }
+.dr-pick { gap: .35rem; }
+.dr-turns { display: flex; flex-direction: column; gap: .25rem; }
+.dr-turn { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; text-align: left; border: 1px solid var(--line); border-left: 4px solid var(--kc, var(--line)); border-radius: 8px; background: var(--slot);
+  color: var(--ink); padding: .3rem .5rem; font: inherit; font-size: .86rem; cursor: pointer; }
+.dr-turn:hover { border-color: var(--accent); }
+.dr-turn b { flex: 1; }
+.dr-turn.went { opacity: .7; }
+.dr-turn.dead { opacity: .45; text-decoration: line-through; }
+.dr-turn.sel { box-shadow: 0 0 0 2px var(--accent); }
+.dr-feed { margin: 0; padding-left: 1.1rem; font-size: .82rem; line-height: 1.4; max-height: 220px; overflow: auto; }
+.dr-fight .live-box, .dr-fight .items-box { margin-top: 0; }
+.dr-end { border-top: 1px solid var(--line); padding-top: .3rem; display: flex; flex-direction: column; gap: .45rem; }
+/* the player's turn strip (bottom centre) and drawer tabs */
+.vtt-turn { bottom: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 150px); z-index: 2; }
+.ts-bar { display: flex; align-items: center; gap: .4rem .8rem; flex-wrap: wrap; padding: .4rem .55rem; pointer-events: auto; }
+.ts-me { display: flex; flex-direction: column; gap: .2rem; min-width: 150px; }
+.ts-name { font: 700 .95rem var(--serif); }
+.ts-turn, .ts-btns { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+.vtt-play .vtt-roll { bottom: 96px; }
+.vtt-play:has(.vtt-drawer.open) .vtt-zoom { right: min(364px, calc(100% - 60px)); }
+.vtt-play:has(.vtt-drawer.open) .vtt-turn { left: calc(50% - 175px); max-width: calc(100% - 400px); }
+.vtt-play .vtt-drawer { top: 12px; }
+.dr-tabs { display: flex; gap: .3rem; flex-wrap: wrap; }
+.vtt-drawer .pill { border-color: var(--line); background: var(--soft); color: var(--ink); }
+.vtt-drawer .pill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+@container vtt (max-width: 1180px) { .vtt-ticker { top: 110px; } .vtt-play .vtt-ticker { top: 62px; } }
+@container vtt (max-width: 700px) { .vtt-roll { left: 12px; bottom: 120px; max-width: calc(100% - 24px); } .vtt-ticker { max-width: calc(100% - 24px); }
+  .vtt-turn { left: 12px; transform: none; max-width: calc(100% - 70px); } .ts-btns .fab-t { display: none; } .vtt-play .vtt-roll { bottom: 150px; }
+  .vtt-play:has(.vtt-drawer.open) .vtt-turn { display: none; } }
 
 /* banners and tips */
 .vtt-banner { display: flex; flex-direction: column; align-items: center; padding: .7rem 2.4rem; border-radius: 14px; background: linear-gradient(180deg, rgba(22,19,20,.92), rgba(22,19,20,.8));
@@ -707,6 +756,9 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 /* Preferences and Tabletop Mode */
 .pref-mode { border: 1px solid var(--line); border-left: 5px solid var(--line); border-radius: 6px; padding: .6rem .8rem; background: var(--slot); }
 .pref-mode.on { border-left-color: var(--accent); }
+.pref-view { margin-top: .6rem; border-left-color: var(--sel); }
+.pref-view .row { gap: .5rem .8rem; }
+.pref-view.off { opacity: .7; }
 .pref-main { font-size: 1.05rem; }
 .pref-points { margin: .3rem 0 0; padding-left: 1.2rem; font-size: .88rem; color: var(--muted); }
 .pref-points li { margin: .15rem 0; }
@@ -1825,7 +1877,9 @@ CROWS.NAME_IDEAS = {
  * lit (the scene's ambient light, torches and lanterns, a crow's own sight radius). In `manual` mode the Ref reveals and hides by hand.
  * The Ref publishes only that mask (never the walls) and the tokens the party can see, so players' screens know no more than they show.
  *
- * T.view(host, options) is the canvas: pan, zoom, tokens you can drag, ruler, pings, and (for the Ref) the drawing tools.
+ * T.view(host, options) is the canvas: pan, zoom, tokens you can drag, ruler, pings, and (for the Ref) the drawing tools. In a fight,
+ * options.links() gives the arrows to draw (who attacks whom: [{ from, to, color, strong }] by token id), and options.onPick(token or null)
+ * can take a click for picking a target (return true when it did) before it selects or drags anything.
  */
 (function () {
   'use strict';
@@ -2418,6 +2472,7 @@ CROWS.NAME_IDEAS = {
     }
     function overlays(s, now) {
       var d = V.drag;
+      if (o.links) drawLinks(s, o.links() || []);
       if (V.tool === 'select' && d && d.type === 'token') {
         var t = d.token, from = d.from, to = d.to;
         var sp = o.speedOf ? o.speedOf(t) : 0, n = dist(s, from, to);
@@ -2465,6 +2520,21 @@ CROWS.NAME_IDEAS = {
         ctx.save(); ctx.globalAlpha = k < .65 ? 1 : 1 - (k - .65) / .35; ctx.font = '800 ' + sz + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         var y = p.y - r - easeOut(k) * s.g * .9; ctx.lineWidth = 4 / cam.z; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(f.text, p.x, y); ctx.fillStyle = f.color; ctx.fillText(f.text, p.x, y);
         ctx.restore(); return true;
+      });
+    }
+    /* Who is attacking whom: a dashed arrow from each attacker to its target ([{ from, to, color }] by token id), from rim to rim. */
+    function drawLinks(s, links) {
+      var byId = {}; tokens().forEach(function (t) { byId[t.id] = t; });
+      links.forEach(function (k) {
+        var a = byId[k.from], b = byId[k.to]; if (!a || !b || a === b) return;
+        var p = pos(a), q = pos(b), dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy); if (len < 1) return;
+        var ra = radius(s, a), rb = radius(s, b); if (len <= ra + rb + 2) return;
+        var ux = dx / len, uy = dy / len, x1 = p.x + ux * ra, y1 = p.y + uy * ra, x2 = q.x - ux * (rb + 3 / cam.z), y2 = q.y - uy * (rb + 3 / cam.z), hd = Math.max(9 / cam.z, s.g * .16);
+        ctx.save(); ctx.globalAlpha = k.strong ? .95 : .7; ctx.strokeStyle = ctx.fillStyle = k.color || '#ff6b5e'; ctx.lineWidth = (k.strong ? 3.2 : 2.2) / cam.z;
+        ctx.setLineDash([9 / cam.z, 6 / cam.z]);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2 - ux * hd * .6, y2 - uy * hd * .6); ctx.stroke();
+        ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - ux * hd - uy * hd * .55, y2 - uy * hd + ux * hd * .55); ctx.lineTo(x2 - ux * hd + uy * hd * .55, y2 - uy * hd - ux * hd * .55); ctx.closePath(); ctx.fill();
+        ctx.restore();
       });
     }
     function line(a, b, color, text) {
@@ -2520,6 +2590,7 @@ CROWS.NAME_IDEAS = {
         }
       }
       var t = hitToken(w);
+      if (o.onPick && o.onPick(t || null)) { redraw(); return; }   // picking a target: the click is the answer, not a selection or a drag
       if (t) {
         if (V.sel !== t.id) V.selT0 = Date.now();
         V.sel = t.id; if (o.onSelect) o.onSelect(t);
@@ -4693,7 +4764,7 @@ CROWS.NAME_IDEAS = {
       village: freshVillage(),
       party: [], xpLog: [], hirelings: [], ledger: [], places: [], npcs: [], encounters: [], notes: '', hooks: '', history: [],
       dice: { mod: 0, net: 0, expr: '3d6', ud: 1 },
-      prefs: { tabletop: false, off: {} },
+      prefs: { tabletop: false, off: {}, playerView: 'map' },
       vtt: { scenes: [], cur: '', shown: false, clean: true }
     };
   }
@@ -4941,17 +5012,7 @@ CROWS.NAME_IDEAS = {
     ]));
 
     var dc = state.dice, box = $('side-dice'); box.innerHTML = '';
-    var res = null;
-    if (ui.dice) {
-      var r = ui.dice;
-      res = el('div', { class: 'result' }, [el('div', { class: 'r-head', text: r.label }),
-        r.r ? el('div', null, [el('div', { class: 'r-roll', text: testLine(r.r) }), tierChip(r.r), r.dmg ? el('div', null, [el('b', { text: r.dmg })]) : null, r.note ? el('div', { class: 'fine', text: r.note }) : null, hitControls(r.hit)].concat((r.counters || []).map(function (k) {
-            if (k.act) return el('div', null, [el('span', { class: 'fine', text: k.by.name + '\u2019s counter: ' }), hitControls(k.act)]);
-            var cd = counterDamage(k.by, k.doom);
-            return cd && rxLeft(k.by) > 0 && !k.by.dead ? btn(k.by.name + ' counters ' + k.vs.name + ' (' + cd.n + ')', function () { k.act = counterAct(k.by, k.vs, k.doom); save(); render(); }, 'btn-small', 'A counter (reaction): its melee attack\u2019s tier 2 damage, tier 3 on a doom') : null;
-          })))
-          : el('div', null, [el('b', { text: r.text })])]);
-    }
+    var res = diceResult();
     box.appendChild(el('div', null, [
       el('h3', { text: 'Dice' }),
       el('div', { class: 'row center' }, [field('Bonus', inp(dc, 'mod', { type: 'number', min: -10, max: 20, class: 'tiny' }, { dflt: 0 })), segEB(dc, 'net')]),
@@ -4976,6 +5037,19 @@ CROWS.NAME_IDEAS = {
       res
     ]));
     renderSideLog();
+  }
+  /* The last roll (ui.dice), with Apply/Undo for its hit and the counters it allows: in the sidebar's Dice panel and floating on the Tabletop.
+     opts.noHit leaves out the hit's own Apply (the Tabletop's approval pop-up has it). */
+  function diceResult(opts) {
+    var r = ui.dice;
+    if (!r) return null;
+    return el('div', { class: 'result' }, [el('div', { class: 'r-head', text: r.label }),
+      r.r ? el('div', null, [el('div', { class: 'r-roll', text: testLine(r.r) }), tierChip(r.r), r.dmg ? el('div', null, [el('b', { text: r.dmg })]) : null, r.note ? el('div', { class: 'fine', text: r.note }) : null, opts && opts.noHit ? null : hitControls(r.hit)].concat((r.counters || []).map(function (k) {
+          if (k.act) return el('div', null, [el('span', { class: 'fine', text: k.by.name + '\u2019s counter: ' }), hitControls(k.act)]);
+          var cd = counterDamage(k.by, k.doom);
+          return cd && rxLeft(k.by) > 0 && !k.by.dead ? btn(k.by.name + ' counters ' + k.vs.name + ' (' + cd.n + ')', function () { k.act = counterAct(k.by, k.vs, k.doom); save(); render(); }, 'btn-small', 'A counter (reaction): its melee attack\u2019s tier 2 damage, tier 3 on a doom') : null;
+        })))
+        : el('div', null, [el('b', { text: r.text })])]);
   }
   /* What an action does, in words: "5 damage, prone", "regains 4 Stamina", "grabbed". */
   function fxText(items) {
@@ -5032,7 +5106,7 @@ CROWS.NAME_IDEAS = {
       area: area, sel: sel, chk: chk, field: field, segEB: segEB, btn: btn, card: card, more: more, rowsTable: rowsTable, currentPlace: currentPlace,
       dungeonEN: dungeonEN, travelCalc: travelCalc, greedBonus: greedBonus, activePCs: activePCs, salePct: salePct, nextES: nextES,
       remainMs: remainMs, clockText: clockText, startTimer: startTimer, pauseTimer: pauseTimer, resetTimer: resetTimer, beep: beep, tick: tick,
-      setTab: setTab, renderTabbar: renderTabbar, render: render, renderSide: renderSide, fxText: fxText, hitControls: hitControls, diceBtn: diceBtn,
+      setTab: setTab, renderTabbar: renderTabbar, render: render, renderSide: renderSide, diceResult: diceResult, fxText: fxText, hitControls: hitControls, diceBtn: diceBtn,
       rollInitiative: rollInitiative, renderSideLog: renderSideLog, STORAGE_KEY: STORAGE_KEY, TAB_KEY: TAB_KEY, TABS: TABS, TAB_GROUPS: TAB_GROUPS, tabButton: tabButton, SIZES: SIZES,
       EB_LABELS: EB_LABELS, ui: ui, Dom: Dom, Dice: Dice, Rules: Rules, $: $, el: el, fmt: fmt, signed: signed, clone: clone, plural: plural,
       toast: toast, d: d, pick: pick, rollDice: rollDice, d100: d100, netEdges: netEdges, ebWord: ebWord, esBonusCount: esBonusCount,
@@ -5212,7 +5286,8 @@ CROWS.NAME_IDEAS = {
     var n = {}; list.forEach(function (x) { var k = x.cref || x.name; n[k] = (n[k] || 0) + 1; });
     return Object.keys(n).map(function (k) { return n[k] + ' × ' + k; }).join(', ');
   }
-  function endEncounter(e, outcome, resolve) {
+  /* stay: end it without leaving the tab (the Tabletop ends fights on the map). */
+  function endEncounter(e, outcome, resolve, stay) {
     var s = S(), c = s.combat, label = ENC_OUTCOMES.filter(function (o) { return o[0] === outcome; })[0][1];
     var them = c.list.filter(function (x) { return x.kind !== 'pc'; }), fallen = them.filter(function (x) { return x.dead; }),
       standing = them.filter(function (x) { return !x.dead && x.kind === 'foe'; }), allies = them.filter(function (x) { return !x.dead && x.kind === 'ally'; });
@@ -5232,7 +5307,7 @@ CROWS.NAME_IDEAS = {
     if (resolve) { e.done = true; if (s.pending && s.pending.encId === e.id) s.pending = null; }
     log('enc', '**Encounter ends: ' + (e.name || 'untitled') + '.** ' + lines.join(' '));
     clearCombat(c); ui.encEnd = null;
-    save(); openEncounter(e.id); toast('The result is in the encounter\'s notes.');
+    save(); if (stay) render(); else openEncounter(e.id); toast('The result is in the encounter\'s notes.');
   }
   /* A monster's "suspicious like or hate" check (Bestiary rules): 2d10 + the highest Mind among the monsters. */
   function likeHateCheck(foes) {
@@ -6518,7 +6593,7 @@ CROWS.NAME_IDEAS = {
     if (!liveOn()) return { active: false };
     var tbl = publicTable();   // the tabletop scene, if the Ref is showing one (ref-vtt.js)
     if (!c.list.length) return tbl ? { active: false, session: publicSession(), table: tbl } : { active: false, session: publicSession() };
-    var out = { active: true, session: publicSession(), table: tbl || undefined, round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
+    var out = { active: true, session: publicSession(), table: tbl || undefined, view: playerView(), round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
       list: c.list.map(function (x) {
         var b = beast(x.cref), pc = x.kind === 'pc', g = byId(x.grabbedBy), o = { id: x.id, kind: x.kind, name: x.name, health: healthWord(x), dead: !!x.dead,
           conds: Object.keys(x.conds || {}).filter(function (k) { return x.conds[k]; }), surprised: surprised(x), sz: sizeOf(x) };
@@ -6555,6 +6630,27 @@ CROWS.NAME_IDEAS = {
     var ex = expertKnows();
     if (live.expertOk && Object.keys(ex).length) out.expert = ex;
     return out;
+  }
+  /*
+   * How the players' Play pages show a fight by default: 'map' (on the tabletop, when the Ref is showing one: every combat function
+   * floats on the map) or 'text' (the Combat card's lists of enemies and allies, the way it was before the tabletop). Each player can
+   * switch for themselves; a change here becomes their default again.
+   */
+  function playerView() { return state.prefs.playerView === 'text' ? 'text' : 'map'; }
+  function setPlayerView(v) {
+    if (playerView() === v) return;
+    state.prefs.playerView = v === 'text' ? 'text' : 'map';
+    log('', 'Players now see fights ' + (v === 'text' ? 'as text lists on their Play pages.' : 'on the battle map (when you show one).'));
+    save(); render();
+  }
+  var VIEW_CHOICES = [['map', 'Battle map', 'When you show a map, the fight is on it: targets, attacks, maneuvers, defenses, and the turn, all on the map'],
+    ['text', 'Text lists', 'The Combat card lists the enemies and allies, with every action as buttons (the map stays one click away)']];
+  /* Segmented buttons: the players' default view of a fight. */
+  function playerViewPicker(cls) {
+    return el('div', { class: 'seg' + (cls ? ' ' + cls : ''), role: 'group', 'aria-label': 'Players’ combat view' }, VIEW_CHOICES.map(function (o) {
+      return el('button', { type: 'button', class: playerView() === o[0] ? 'on' : '', 'aria-pressed': playerView() === o[0] ? 'true' : 'false', text: o[1], title: o[2],
+        onclick: function () { setPlayerView(o[0]); } });
+    }));
   }
   /* Called from save(): publish the fight soon after it changes. */
   /* The fight is shared with the players unless this is a Tabletop Mode campaign or the Ref turned it off. */
@@ -6775,6 +6871,7 @@ CROWS.NAME_IDEAS = {
         el('span', { class: 'fine grow', text: !c.list.length ? 'Players see the fight on their Play page once their linked crows are in the tracker.' :
           crows ? plural(crows, 'linked crow') + ' in this fight: their players see it live and act from their Play page.' : 'No linked crows in this fight, so no player sees it. Link crows in the Party tab.' }),
         chk(c, 'showSt', 'Show foes’ Stamina and AD', { title: 'Off: players only see how hurt each foe looks' })]),
+      el('div', { class: 'row center' }, [el('span', { class: 'fine', text: 'Players see the fight as:' }), playerViewPicker()]),
       open.length ? el('div', { class: 'fine' }, ['Waiting on reactions: ' + open.map(function (p) { var to = byId(p.to); return (to ? to.name : 'a crow') + ' may counter ' + p.fromName; }).join('; ') + ' (until the end of the round).']) : null,
       (c.assists || []).length ? el('div', { class: 'fine' }, ['Assists: ' + c.assists.map(function (x) { return x.fromName + ' → ' + x.toName + ' ' + signed(x.bonus); }).join('; ') + '.']) : null,
       acts.length ? el('ul', { class: 'live-acts' }, acts.map(function (a) {
@@ -6808,6 +6905,33 @@ CROWS.NAME_IDEAS = {
     feed('**Round ' + c.round + '.** ' + (crows ? 'Crows and allies act first.' : 'Enemies act first.') + sur);
     save(); render();
   }
+  /* End a fight that isn't a running encounter's (that one ends with a result: endEncounter): note it in the log and clear the tracker. */
+  function endCombat() {
+    var c = S().combat, dead = c.list.filter(function (x) { return x.dead; }).map(function (x) { return x.name; });
+    if (runningEnc() && !confirm('End the fight without saving a result to ' + (runningEnc().name || 'the running encounter') + '? (It stays open.)')) return false;
+    log('', '**Combat ends** after ' + plural(c.round || 0, 'round') + '.' + (dead.length ? ' Fallen: ' + dead.join(', ') + '.' : '') + (groundText() ? ' ' + groundText() : ''));
+    c.list.forEach(function (x) { if (x.kind === 'pc') syncPC(x); });
+    clearCombat(c); save(); render();
+    return true;
+  }
+  /* The battlefield buttons: modifiers on the next creature roll (they reset after it). */
+  function sitRow() {
+    if (!feat('sit')) return null;
+    var sit = ui.sit || (ui.sit = {});
+    function sitBtn(key, label, title) {
+      return el('button', { type: 'button', class: 'cond' + (sit[key] ? ' on' : ''), 'aria-pressed': sit[key] ? 'true' : 'false', title: title, text: label, onclick: function () { sit[key] = !sit[key]; render(); } });
+    }
+    return el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next creature roll:' }),
+      sitBtn('flank', 'Flanking', 'An ally of the attacker is on the opposite side of the target: edge on melee attacks'),
+      sitBtn('high', 'High ground', '1+ square above the target: edge on attacks'),
+      sitBtn('cover', 'Cover', 'The target is half behind something solid: bane on attacks (not for attacks that ignore cover)'),
+      sitBtn('dim', 'Dim light', 'Dim light or light concealment: bane (not for creatures marked ⌂ or ◐)'),
+      sitBtn('dark', 'Darkness', 'Darkness, heavy concealment, or an invisible target: double bane (not for ◐); against a silent mover, guess its square'),
+      sitBtn('adj', 'Ranged vs adjacent', 'A ranged attack against a creature next to the attacker: bane'),
+      sitBtn('charge', 'Charged 4+', 'It moved 4+ squares before attacking: a charging creature (big cat, wildcat, deer) deals its charge damage'),
+      el('label', { class: 'fine', title: 'Squares beyond the attack’s range: -2 each' }, ['Beyond range ', el('input', { type: 'number', class: 'tiny', min: 0, max: 10, value: sit.far || '', 'aria-label': 'Squares beyond range',
+        onchange: function () { sit.far = clamp(int(this.value, 0), 0, 10); } })])]);
+  }
   /* The combat tracker's controls and list, for the Encounters tab's Combat card and for a running encounter (inRun). */
   function combatUI(inRun) {
     var s = S(), c = s.combat, addSel = { name: ui.addName || 'Blood Creature A', n: ui.addN || 1, side: ui.addSide || 'foe' };
@@ -6815,36 +6939,17 @@ CROWS.NAME_IDEAS = {
     var count = el('input', { type: 'number', class: 'tiny', min: 1, max: 30, value: addSel.n, 'aria-label': 'How many', onchange: function () { ui.addN = clamp(int(this.value, 1), 1, 30); } });
     var side = el('select', { class: 'in mini', 'aria-label': 'Side', onchange: function () { ui.addSide = this.value; } }, [el('option', { value: 'foe', text: 'Foe' }), el('option', { value: 'ally', text: 'Ally' })]);
     side.value = addSel.side;
-    var sit = ui.sit || (ui.sit = {});
-    function sitBtn(key, label, title) {
-      return el('button', { type: 'button', class: 'cond' + (sit[key] ? ' on' : ''), 'aria-pressed': sit[key] ? 'true' : 'false', title: title, text: label, onclick: function () { sit[key] = !sit[key]; render(); } });
-    }
     return [
       el('div', { class: 'round-box' }, [
         el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: 'Round' }), el('div', { class: 'val', text: String(c.round || '—') })]),
         btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', nextRound, 'btn-primary'),
         btn('Add party', addPartyToCombat),
         btn('Clear dead', function () { c.list = c.list.filter(function (x) { return !x.dead; }); save(); render(); }, 'btn-ghost'),
-        inRun ? null : btn('End combat', function () {
-          var dead = c.list.filter(function (x) { return x.dead; }).map(function (x) { return x.name; });
-          if (runningEnc() && !confirm('End the fight without saving a result to ' + (runningEnc().name || 'the running encounter') + '? (It stays open.)')) return;
-          log('', '**Combat ends** after ' + plural(c.round || 0, 'round') + '.' + (dead.length ? ' Fallen: ' + dead.join(', ') + '.' : '') + (groundText() ? ' ' + groundText() : ''));
-          c.list.forEach(function (x) { if (x.kind === 'pc') syncPC(x); });
-          clearCombat(c); save(); render();
-        }, 'btn-ghost btn-danger')
+        inRun ? null : btn('End combat', endCombat, 'btn-ghost btn-danger')
       ]),
       el('div', { class: 'row', style: 'margin-top:.6rem' }, [field('Add creature', select, 'grow'), field('How many', count), field('Side', side),
         btn('Add', function () { addCombatant(select.value, int(count.value, 1), side.value); log('', 'Added ' + int(count.value, 1) + ' × ' + select.value + ' to combat.'); render(); })]),
-      !feat('sit') ? null : el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next creature roll:' }),
-        sitBtn('flank', 'Flanking', 'An ally of the attacker is on the opposite side of the target: edge on melee attacks'),
-        sitBtn('high', 'High ground', '1+ square above the target: edge on attacks'),
-        sitBtn('cover', 'Cover', 'The target is half behind something solid: bane on attacks (not for attacks that ignore cover)'),
-        sitBtn('dim', 'Dim light', 'Dim light or light concealment: bane (not for creatures marked ⌂ or ◐)'),
-        sitBtn('dark', 'Darkness', 'Darkness, heavy concealment, or an invisible target: double bane (not for ◐); against a silent mover, guess its square'),
-        sitBtn('adj', 'Ranged vs adjacent', 'A ranged attack against a creature next to the attacker: bane'),
-        sitBtn('charge', 'Charged 4+', 'It moved 4+ squares before attacking: a charging creature (big cat, wildcat, deer) deals its charge damage'),
-        el('label', { class: 'fine', title: 'Squares beyond the attack’s range: -2 each' }, ['Beyond range ', el('input', { type: 'number', class: 'tiny', min: 0, max: 10, value: sit.far || '', 'aria-label': 'Squares beyond range',
-          onchange: function () { sit.far = clamp(int(this.value, 0), 0, 10); } })])]),
+      sitRow(),
       tabletop() ? tableStatus() : null,
       el('p', { class: 'fine', text: tabletop() ? TABLETOP_NOTE : 'Pick each creature’s target (⚄ picks one at random) and its attacks and maneuvers go at it. Its own conditions (weakened, blessed, prone, hidden, taunted) and the target’s (surprised, prone, grabbed, squeezing, unconscious) apply automatically, with the edge/bane set in the Dice panel and the battlefield buttons above (they reset after each roll). ' +
         'A hit deals its damage and tier effects (weakened, prone, grabbed...) through AD, Stamina, and wounds, onto a crow’s own sheet (its worn armor and parry weapons absorb first), and can be undone from the Dice panel. A melee miss lets the target counter: a crow’s player is asked on their Play page.' }),
@@ -6978,7 +7083,7 @@ CROWS.NAME_IDEAS = {
       undoAct: undoAct, defendRow: defendRow, counterDamage: counterDamage, counterAct: counterAct, feed: feed, clearCombat: clearCombat, itemName: itemName,
       itemsText: itemsText, newItem: newItem, onGround: onGround, itemNews: itemNews, putDown: putDown, creaturePickUp: creaturePickUp,
       creatureDrop: creatureDrop, dropFromFallen: dropFromFallen, groundText: groundText, itemsPanel: itemsPanel, pcOf: pcOf, healthWord: healthWord,
-      publicSession: publicSession, publicCombat: publicCombat, restChoice: restChoice, restChoiceText: restChoiceText, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,
+      publicSession: publicSession, publicCombat: publicCombat, playerView: playerView, setPlayerView: setPlayerView, playerViewPicker: playerViewPicker, endCombat: endCombat, sitRow: sitRow, restChoice: restChoice, restChoiceText: restChoiceText, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,
       doomOptions: doomOptions, livePanel: livePanel, liveOn: liveOn, nextRound: nextRound, isExpert: isExpert, expertKnows: expertKnows, monsterExperts: monsterExperts, tableStatus: tableStatus, renderTable: renderTable, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
       SIZE_ORDER: SIZE_ORDER, live: live, dropQueued: dropQueued, MANEUVER_NOTES: MANEUVER_NOTES });
 })();
@@ -8142,7 +8247,7 @@ CROWS.NAME_IDEAS = {
   'use strict';
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var btn = f('btn'), card = f('card'), feat = f('feat'), log = f('log'), render = f('render'), save = f('save'), tabletop = f('tabletop');
+  var btn = f('btn'), card = f('card'), feat = f('feat'), log = f('log'), playerViewPicker = f('playerViewPicker'), render = f('render'), save = f('save'), tabletop = f('tabletop');
   var el = A.el, FEATURES = A.FEATURES, plural = A.plural, toast = A.toast;
   var state = A.state; A.share('state', function (v) { state = v; });
 
@@ -8168,6 +8273,13 @@ CROWS.NAME_IDEAS = {
         } }), el('b', { text: ' Tabletop Mode' })]),
         el('p', { class: 'hint', text: 'A reference and assistant for running the game at a table, in person or on a call, where the players handle their own crows. It keeps track of the enemies and their abilities and leaves most actions to happen live.' }),
         el('ul', { class: 'pref-points' }, TABLETOP_POINTS.map(function (t) { return el('li', { text: t }); }))
+      ]),
+      el('div', { class: 'pref-mode pref-view' + (tt ? ' off' : '') }, [
+        el('div', { class: 'row center' }, [el('b', { text: 'Players’ combat view' }), playerViewPicker()]),
+        el('p', { class: 'hint', text: 'How a fight first shows on the players’ Play pages (accounts site). Battle map: while you show a map on the Tabletop, the fight is on it, ' +
+          'with every combat function there (targets, attacks and spells, maneuvers, defenses and counters, the turn, items on the ground), so a whole fight can be played on the map, fullscreen too. ' +
+          'Text lists: the Combat card lists the enemies and allies with every action as buttons, and the map stays out of the way. Each player can switch for themselves; changing it here makes it everyone’s default again.' +
+          (tt ? ' (Tabletop Mode is on, so nothing is shared with the players now.)' : '') })
       ])
     ]);
     card('sec-prefs-feat', el('h2', null, ['Functions', el('small', { text: off ? plural(off, 'function') + ' turned off' : 'everything is on' })]), [
@@ -8195,8 +8307,12 @@ CROWS.NAME_IDEAS = {
  * war, and the canvas). Scenes are kept in state.vtt ({ scenes, cur, shown, clean }) with the campaign:
  *   - Dungeon: a map with walls and doors; crows see by their own light and the party's torches (fog in `vision` mode), the dungeon turn
  *     timer and End DT are on the strip above the map.
- *   - Battle map: tokens tied to the combat tracker (initiative, damage, healing, conditions), no fog unless wanted. The Add drawer puts the session's
- *     crows on it (and in the tracker), and runs the current or a saved encounter onto it.
+ *   - Battle map: tokens tied to the combat tracker, no fog unless wanted. The Add drawer puts the session's crows on it (and in the tracker),
+ *     and runs the current or a saved encounter onto it. A whole fight runs on the map: surprise and initiative, rounds and who has acted
+ *     (top centre), each creature's attacks, maneuvers, targets (picked by clicking a token; arrows show who attacks whom), uses, reactions,
+ *     conditions, and items (its Act drawer: the tracker's own row), the players' actions and their follow-ups (counters, stray shots,
+ *     backlash, dismember), hits waiting for approval, the battlefield modifiers, items on the ground, the feed, and ending the fight or
+ *     the encounter (the Fight drawer). The last roll floats bottom left; what happens scrolls by top left.
  *   - Overland: a hex map with the party's marker, hexes moved against the day's allowance, and hexes revealed as it travels.
  *   - Village: a plain map or board with pins for places and institutions and tokens for NPCs.
  * The map fills the tab and its controls float on it (see "the view" below); the engine animates moves, hits, and the fog.
@@ -8213,9 +8329,12 @@ CROWS.NAME_IDEAS = {
       undoAct = f('undoAct'),
       clockText = f('clockText'), customMaps = f('customMaps'), damage = f('damage'), dungeonEN = f('dungeonEN'), encSummary = f('encSummary'), endDT = f('endDT'), feat = f('feat'),
       feed = f('feed'), heal = f('heal'), healthWord = f('healthWord'), liveChanged = f('liveChanged'), liveOn = f('liveOn'), log = f('log'), nextRound = f('nextRound'),
-      pauseTimer = f('pauseTimer'), pendingEnc = f('pendingEnc'), remainMs = f('remainMs'), render = f('render'), rollInitiative = f('rollInitiative'), runEncounter = f('runEncounter'),
+      pauseTimer = f('pauseTimer'), pendingEnc = f('pendingEnc'), remainMs = f('remainMs'), render = f('render'), runEncounter = f('runEncounter'),
       runningEnc = f('runningEnc'), save = f('save'), setCond = f('setCond'),
-      setTab = f('setTab'), sizeOf = f('sizeOf'), startTimer = f('startTimer'), tabletop = f('tabletop'), travelCalc = f('travelCalc');
+      setTab = f('setTab'), sizeOf = f('sizeOf'), startTimer = f('startTimer'), tabletop = f('tabletop'), travelCalc = f('travelCalc'),
+      addPartyToCombat = f('addPartyToCombat'), combatRow = f('combatRow'), diceResult = f('diceResult'), doomOptions = f('doomOptions'), endCombat = f('endCombat'),
+      endEncounter = f('endEncounter'), itemsPanel = f('itemsPanel'), livePanel = f('livePanel'), playerView = f('playerView'), setPlayerView = f('setPlayerView'),
+      rxLeft = f('rxLeft'), sitRow = f('sitRow'), targetOf = f('targetOf'), targetsFor = f('targetsFor'), twoTargets = f('twoTargets');
   var $ = A.$, el = A.el, S = A.S, toast = A.toast, plural = A.plural, ui = A.ui, clamp = A.clamp, REFD = window.REF;
   var state = A.state; A.share('state', function (v) { state = v; });
   var Tbl = window.CrowsTable;
@@ -8250,6 +8369,11 @@ CROWS.NAME_IDEAS = {
     return p ? S().combat.list.filter(function (x) { return x.kind === 'pc' && x.pcId === p.id; })[0] || null : null;
   }
   function changed() { U.sig = ''; save(); }
+  /* A combatant's token on a scene (a crow's own token, not the party marker). */
+  function tokOf(sc, x) {
+    if (!sc || !x) return null;
+    return sc.tokens.filter(function (t) { return x.kind === 'pc' ? t.pcId === x.pcId && !t.marker : t.cid === x.id; })[0] || null;
+  }
 
   // ------------------------------------------------------------------ scenes
   function makeScene(kind, name) {
@@ -8583,6 +8707,44 @@ CROWS.NAME_IDEAS = {
     changed(); if (U.view) U.view.clearGhost(t.id);
   }
 
+  // ------------------------------------------------------------------ targets on the map
+  /* Arrows from each creature to the target(s) its attacks go at (red for foes, green for allies); the selected token's are bold. */
+  function links() {
+    var sc = cur(), c = S().combat, out = [];
+    if (!sc || !c.list.length) return out;
+    c.list.forEach(function (x) {
+      if (x.kind === 'pc' || x.dead) return;
+      var a = tokOf(sc, x); if (!a) return;
+      [targetOf(x), targetOf(x, 2)].forEach(function (t, i) {
+        var b = t && tokOf(sc, t); if (!b || (i && t === targetOf(x))) return;
+        out.push({ from: a.id, to: b.id, color: x.kind === 'ally' ? '#7ee787' : '#ff6b5e', strong: U.sel === a.id || U.sel === b.id });
+      });
+    });
+    return out;
+  }
+  /* Pick a creature's target (key 'tgt', or 'tgt2' for its second) by clicking a token on the map. */
+  function startPick(x, key) {
+    if (!targetsFor(x).length) { toast('No one ' + x.name + ' can attack is in the fight.'); return; }
+    U.pick = { id: x.id, key: key || 'tgt' };
+    U.view.canvas.style.cursor = 'crosshair';
+    U.L.tip.innerHTML = ''; U.L.tip.appendChild(el('div', { class: 'vtt-tipbox', text: 'Click the creature ' + x.name + (key === 'tgt2' ? '’s second attack target' : ' attacks') + ' (Esc or a click on the board cancels).' }));
+    renderHud(cur());
+  }
+  function endPick(msg) { U.pick = null; U.view.tool(U.view.getTool()); if (msg) toast(msg); }
+  /* A click while picking: the target, or (the board) no change. True when the click was used. */
+  function onPick(t) {
+    if (!U.pick) return false;
+    var who = byId(U.pick.id), key = U.pick.key;
+    if (!who) { endPick(); return false; }
+    if (!t) { endPick('No target picked.'); render(); return true; }
+    var x = combatant(t);
+    if (!x || targetsFor(who).indexOf(x) < 0) { toast(t.name + (x ? ' isn’t someone ' + who.name + ' attacks.' : ' isn’t in the fight.') + ' Pick another, or Esc.'); return true; }
+    who[key] = x.id;
+    endPick(who.name + (key === 'tgt2' ? '’s second target: ' : ' attacks ') + x.name + '.');
+    save(); render();
+    return true;
+  }
+
   // ------------------------------------------------------------------ the view
   /*
    * The map fills the tab, and everything else floats on it (the way Foundry, Roll20, and Owlbear Rodeo lay out a table): the scene
@@ -8624,7 +8786,9 @@ CROWS.NAME_IDEAS = {
         if (!v.trim()) sc.pins = sc.pins.filter(function (k) { return k !== p; }); else { p.vis = v.charAt(0) === '+'; p.label = v.replace(/^\+/, '').slice(0, 40); }
         changed(); render();
       },
-      onMenu: function (t) { U.sel = t.id; U.view.select(t.id); openDrawer('token'); },
+      onMenu: function (t) { U.sel = t.id; U.view.select(t.id); openDrawer(combatant(t) ? 'act' : 'token'); },
+      onPick: onPick,
+      links: links,
       onKey: onKey,
       onFrame: placeHud,
       tooltip: tipLines,
@@ -8633,7 +8797,8 @@ CROWS.NAME_IDEAS = {
     });
     U.ui = el('div', { class: 'vtt-ui' });
     U.L = {};
-    ['tl', 'tc', 'tr', 'tools', 'zoom', 'roster', 'hud', 'floats', 'ask', 'drawer', 'banners', 'tip', 'empty'].forEach(function (k) { U.L[k] = el('div', { class: 'vtt-' + k }); U.ui.appendChild(U.L[k]); });
+    ['tl', 'tc', 'tr', 'tools', 'zoom', 'roster', 'ticker', 'roll', 'hud', 'floats', 'ask', 'drawer', 'banners', 'tip', 'empty'].forEach(function (k) { U.L[k] = el('div', { class: 'vtt-' + k }); U.ui.appendChild(U.L[k]); });
+    U.feedSeen = Date.now();   // the ticker shows what happens from now on
     host.appendChild(U.ui);
     // Fullscreen takes the map alone: bring the toast along so messages still show.
     document.addEventListener('fullscreenchange', function () {
@@ -8645,6 +8810,7 @@ CROWS.NAME_IDEAS = {
   }
   function onKey(e) {
     var sc = cur(), t = sc && tok(sc, U.sel);
+    if (e.key === 'Escape' && U.pick) { endPick('No target picked.'); render(); return; }
     if (t && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); removeToken(sc, t); return; }
     if (e.ctrlKey || e.metaKey || e.altKey || !sc) return;
     var k = e.key.toLowerCase(), hot = TOOLS.filter(function (x) { return x[3] === k; })[0];
@@ -8663,7 +8829,7 @@ CROWS.NAME_IDEAS = {
     U.host.classList.toggle('no-scene', !sc);
     // The floating layers slide in when a scene opens, not each time they're rebuilt.
     var sid = sc ? sc.id : ''; U.ui.classList.toggle('enter', U.enterSid !== sid); if (U.enterSid !== sid) { U.enterSid = sid; U.avSeen = {}; }
-    renderTopLeft(sc); renderTopCenter(sc); renderTopRight(sc); renderTools(sc); renderZoom(sc); renderRoster(sc); renderHud(sc); renderAsk(sc); renderEmpty(sc);
+    renderTopLeft(sc); renderTopCenter(sc); renderTopRight(sc); renderTools(sc); renderZoom(sc); renderRoster(sc); renderHud(sc); renderAsk(sc); renderRoll(sc); renderTicker(sc); renderEmpty(sc);
     if (!(U.drawer && U.L.drawer.contains(document.activeElement) && /^(INPUT|SELECT|TEXTAREA)$/.test(document.activeElement.tagName))) renderDrawer(sc);
     banners(sc);
     U.view.player(U.playerView);
@@ -8725,9 +8891,24 @@ CROWS.NAME_IDEAS = {
         }, 'sm', 'Institutions'),
         fab('go', 'Open the Village tab', function () { setTab('village'); }, 'sm ghost')]));
     }
-    if (c.round) kids.push(el('div', { class: 'hud-grp fight' }, [chip('Round ' + c.round + (c.first ? ' · ' + (c.first === 'crows' ? 'crows first' : 'enemies first') : ''), 'round'),
-      fab('next', 'Next round: roll initiative again', function () { nextRound(); }, 'sm', 'Next round')]));
-    else if (c.list.length) kids.push(el('div', { class: 'hud-grp fight' }, [fab('dice', 'Start the fight: 1d10, 6+ and the crows act first', function () { rollInitiative(); }, 'sm primary', 'Roll initiative')]));
+    var fightBtn = fab('list', 'The fight: who has acted, the players’ actions, battlefield modifiers, items on the ground, the feed, and ending it', function () { toggleDrawer('fight'); }, 'sm' + (U.drawer === 'fight' ? ' on' : ''), 'Fight');
+    if (c.round) {
+      var foes = c.list.filter(function (x) { return x.kind === 'foe' && !x.dead; }), acted = foes.filter(function (x) { return x.acted === c.round; }).length,
+        crows = c.list.filter(function (x) { return x.kind === 'pc' && !x.dead; }), done = crows.filter(function (x) { return x.done === c.round; }).length;
+      kids.push(el('div', { class: 'hud-grp fight' }, [chip('Round ' + c.round + (c.first ? ' · ' + (c.first === 'crows' ? 'crows first' : 'enemies first') : ''), 'round'),
+        foes.length ? chip(acted + '/' + foes.length + ' foes acted', acted === foes.length ? 'ok' : 'dim', { title: 'Foes that have taken their turn this round (Acted on each one’s HUD)' }) : null,
+        crows.length ? chip(done + '/' + crows.length + ' crows done', done === crows.length ? 'ok' : 'dim', { title: 'Crows whose players said they are done for the round' }) : null,
+        fab('next', 'Next round: roll initiative again', function () { nextRound(); }, 'sm', 'Next round'), fightBtn,
+        fab('x', runningEnc() ? 'End the encounter: say how it ended (the Fight drawer)' : 'End the fight: clear the tracker', function () {
+          if (runningEnc()) { U.endOpen = true; openDrawer('fight'); return; }
+          if (confirm('End the fight? The combat tracker clears (the log keeps what happened).')) endCombat();
+        }, 'sm ghost', 'End')]));
+    } else if (c.list.length) {
+      var sur = el('select', { class: 'glass-sel', 'aria-label': 'Surprise', title: 'A surprised side takes no turn in round 1, and attacks against it get +1', onchange: function () { c.surprise = this.value; save(); render(); } },
+        [['none', 'No surprise'], ['crows', 'Crows surprised'], ['foes', 'Foes surprised']].map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
+      sur.value = c.surprise || 'none';
+      kids.push(el('div', { class: 'hud-grp fight' }, [sur, fab('dice', 'Start the fight: round 1, and 1d10 for who acts first (6+: the crows and allies)', function () { nextRound(); }, 'sm primary', 'Roll initiative'), fightBtn]));
+    }
     kids.forEach(function (k) { box.appendChild(k); });
   }
 
@@ -8742,6 +8923,9 @@ CROWS.NAME_IDEAS = {
       fab('show', online ? (v.shown ? 'Players see the map (with fog of war) on their Play pages, Table tab. Click to hide it.' : 'Share this scene with the players’ Play pages (Table tab).') : 'Needs the accounts site and a campaign (and Tabletop Mode off): otherwise use Player view and a shared screen.',
         function () { v.shown = !v.shown; log('', v.shown ? 'The tabletop is shown to the players.' : 'The tabletop is hidden from the players.'); changed(); render(); },
         'sm' + (v.shown ? ' live' : ''), v.shown ? 'Shown to players' : 'Show to players'),
+      online ? fab(playerView() === 'text' ? 'list' : 'map', playerView() === 'text' ? 'Players see fights as text lists on their Play pages (each can switch). Click to make the battle map their default.' :
+        'Players see fights on the battle map (each can switch to text lists). Click to make text lists their default.', function () { setPlayerView(playerView() === 'text' ? 'map' : 'text'); },
+        'sm', playerView() === 'text' ? 'Players: lists' : 'Players: map') : null,
       fab('heart', v.vitals ? 'Hide the full vitals under each token' : 'Show every crow’s and creature’s full vitals under its token: Stamina, AD, and wounds (only you see them)',
         function () { v.vitals = !v.vitals; save(); U.view.redraw(); renderTopRight(cur()); }, 'sm' + (v.vitals ? ' on' : ''), 'Vitals', { 'aria-pressed': v.vitals ? 'true' : 'false' }),
       fab('gear', 'Scene settings: map, grid, fog, light', function () { toggleDrawer('scene'); }, 'sm' + (U.drawer === 'scene' ? ' on' : ''))]));
@@ -8829,6 +9013,8 @@ CROWS.NAME_IDEAS = {
       var on = CONDS.filter(function (k) { return x.conds && x.conds[k]; });
       if (on.length) card.push(el('div', { class: 'hc-row' }, on.map(function (k) { return el('span', { class: 'hud-chip cond', text: k }); })));
     } else if (p && p.stMax) card.push(bar(t.id, 'St', p.st, p.stMax, 'st'));
+    if (x && x.kind !== 'pc' && !x.dead && targetOf(x)) card.push(el('div', { class: 'hc-row fine' }, ['→ ' + targetOf(x).name + (targetOf(x, 2) && targetOf(x, 2) !== targetOf(x) ? ', ' + targetOf(x, 2).name : '')]));
+    if (x && round && !x.dead) card.push(el('div', { class: 'hc-row fine' }, ['Reactions ' + Math.max(0, rxLeft(x)) + ' left' + (x.kind === 'pc' ? (x.done === round ? ' · done this round' : '') : x.acted === round ? ' · acted' : '')]));
     if (t.light && t.light.on !== false) card.push(el('div', { class: 'hc-row fine' }, ['Light ' + t.light.b + '/' + t.light.d]));
     box.appendChild(el('div', { class: 'hud-card' }, card));
     // left: the fight
@@ -8841,7 +9027,10 @@ CROWS.NAME_IDEAS = {
         fab('sword', 'Hurt: deal this damage (AD first, then Stamina, then wounds)', function () { damage(x, n(), false); }, 'hurt', null, { 'data-tip': 'Hurt' }),
         fab('pierce', 'Piercing damage (skips AD)', function () { damage(x, n(), true); }, 'hurt', null, { 'data-tip': 'Piercing' }),
         fab('heart', 'Heal this much Stamina', function () { heal(x, n()); }, 'heal', null, { 'data-tip': 'Heal' }),
-        fab('cond', 'Conditions', function () { U.fly = U.fly === 'conds' ? null : 'conds'; renderHud(sc); }, U.fly === 'conds' ? 'on' : '', null, { 'data-tip': 'Conditions' }));
+        fab('cond', 'Conditions', function () { U.fly = U.fly === 'conds' ? null : 'conds'; renderHud(sc); }, U.fly === 'conds' ? 'on' : '', null, { 'data-tip': 'Conditions' }),
+        fab('dice', 'Act: its attacks, maneuvers, uses, reactions, conditions, and items (its row in the combat tracker)', function () { openDrawer('act'); }, U.drawer === 'act' ? 'on' : '', null, { 'data-tip': 'Act' }));
+      if (x.kind !== 'pc' && !x.dead && targetsFor(x).length) left.push(fab('target', 'Pick its target: click the creature it attacks' + (targetOf(x) ? ' (now ' + targetOf(x).name + ')' : ''), function () { if (U.pick) { endPick(); render(); } else startPick(x, 'tgt'); },
+        U.pick && U.pick.id === x.id ? 'on' : '', null, { 'data-tip': targetOf(x) ? '→ ' + targetOf(x).name : 'Target' }));
       if (x.kind !== 'pc' && round) left.push(fab('check', x.acted === round ? 'Acted this round (click to undo)' : 'Mark acted this round', function () { x.acted = x.acted === round ? 0 : round; save(); render(); }, x.acted === round ? 'on' : '', null, { 'data-tip': 'Acted' }));
     } else if (t.kind === 'foe' || t.kind === 'ally') {
       left.push(fab('list', 'Add to the combat tracker', function () {
@@ -8953,11 +9142,118 @@ CROWS.NAME_IDEAS = {
     var mode = sc ? U.drawer : null, t = sc && tok(sc, U.sel);
     box.classList.toggle('open', !!mode);
     if (!mode) return;
-    var title = { add: 'Add to the map', token: t ? t.name : 'Token', scene: 'Scene settings' }[mode];
-    var body = mode === 'add' ? addPanel(sc) : mode === 'scene' ? sceneSettings(sc) : t ? inspector(sc, t) : el('p', { class: 'fine', text: 'Select a token on the map or along the bottom.' });
+    var title = { add: 'Add to the map', token: t ? t.name : 'Token', scene: 'Scene settings', act: t ? t.name : 'Act', fight: 'The fight' }[mode];
+    var body = mode === 'add' ? addPanel(sc) : mode === 'scene' ? sceneSettings(sc) : mode === 'fight' ? fightPanel(sc) : !t ? el('p', { class: 'fine', text: 'Select a token on the map or along the bottom.' }) :
+      mode === 'act' ? actPanel(sc, t) : inspector(sc, t);
+    var keep = box.querySelector('.dr-body'), top = keep && U.drawerWas === mode + (t ? t.id : '') ? keep.scrollTop : 0;   // a redraw keeps the drawer where it was scrolled
+    U.drawerWas = mode + (t ? t.id : '');
     box.innerHTML = '';
-    box.appendChild(el('div', { class: 'dr-head' }, [el('h3', { text: title }), fab('x', 'Close', function () { U.drawer = null; render(); }, 'sm ghost')]));
-    box.appendChild(el('div', { class: 'dr-body' }, [body]));
+    box.appendChild(el('div', { class: 'dr-head' }, [el('h3', { text: title }),
+      mode === 'act' || mode === 'token' ? fab(mode === 'act' ? 'sliders' : 'dice', mode === 'act' ? 'The token: name, size, light, sight, speed' : 'Act: attacks, maneuvers, conditions (the combat tracker)', function () { openDrawer(mode === 'act' ? 'token' : 'act'); }, 'sm ghost', mode === 'act' ? 'Token' : 'Act') : null,
+      fab('x', 'Close', function () { U.drawer = null; render(); }, 'sm ghost')]));
+    var b = el('div', { class: 'dr-body' }, [body]);
+    box.appendChild(b);
+    if (top) b.scrollTop = top;
+    if (U.endOpen && mode === 'fight') { U.endOpen = false; var e = b.querySelector('.dr-end'); if (e) setTimeout(function () { e.scrollIntoView({ block: 'start', behavior: 'smooth' }); }, 50); }
+  }
+  /* The Act drawer: everything the combat tracker does for this creature or crow (its own row), and picking its targets on the map. */
+  function actPanel(sc, t) {
+    var x = combatant(t), c = S().combat;
+    if (!x) {
+      var kids = [el('p', { class: 'fine', text: t.kind === 'pc' ? 'This crow isn’t in the combat tracker.' : t.cref ? t.name + ' isn’t in the combat tracker, so it has no attacks or vitals to track yet.' : 'This token isn’t a creature in the fight.' })];
+      if (t.kind === 'pc' && !t.marker) kids.push(btn('Put the crows in the tracker', function () { addPartyToCombat(); }, 'btn-small btn-primary'));
+      else if (t.cref && (t.kind === 'foe' || t.kind === 'ally')) kids.push(btn('Add it to the combat tracker', function () {
+        var before = c.list.length; addCombatant(t.cref, 1, t.kind === 'ally' ? 'ally' : 'foe');
+        if (c.list.length > before) { var nx = c.list[c.list.length - 1]; t.cid = nx.id; t.name = nx.name; t.hidden = false; changed(); render(); }
+      }, 'btn-small btn-primary'));
+      return el('div', { class: 'dr-stack' }, kids);
+    }
+    var b = beast(x.cref), out = [];
+    if (x.kind !== 'pc' && !x.dead && targetsFor(x).length) {
+      var two = b && b.atk.some(twoTargets);
+      out.push(el('div', { class: 'row center dr-pick' }, [
+        btn(U.pick && U.pick.id === x.id && U.pick.key === 'tgt' ? 'Click its target…' : targetOf(x) ? 'Target: ' + targetOf(x).name : 'Pick its target on the map', function () { startPick(x, 'tgt'); }, 'btn-small' + (targetOf(x) ? '' : ' btn-primary'), 'Then click the creature it attacks'),
+        two ? btn(targetOf(x, 2) ? '2nd: ' + targetOf(x, 2).name : 'Pick a 2nd target', function () { startPick(x, 'tgt2'); }, 'btn-small btn-ghost', 'For its attacks on 2 targets') : null]));
+    }
+    if (!c.round && x.kind !== 'pc') out.push(el('p', { class: 'fine', text: 'The fight hasn’t started: Roll initiative at the top of the map (set surprise there first).' }));
+    out.push(el('div', { class: 'dr-cbt' }, [combatRow(x)]));
+    if (b && b.uses && x.kind !== 'pc') out.push(el('p', { class: 'fine', text: 'Attacks roll at the target with every modifier the tracker knows (conditions, surprise, the battlefield buttons in the Fight drawer); the result floats bottom left, and a hit waits for you to apply it.' }));
+    return el('div', { class: 'dr-stack' }, out);
+  }
+  /* The Fight drawer: the turn, the players, the battlefield, the ground, the feed, and the end. */
+  function fightPanel(sc) {
+    var c = S().combat, e = runningEnc(), out = [];
+    if (!c.list.length) return el('div', { class: 'dr-stack' }, [el('p', { class: 'fine', text: 'No one is in the fight. Add the crows and creatures (the + at the bottom), or run an encounter onto the map.' }),
+      btn('Add tokens', function () { openDrawer('add'); }, 'btn-small btn-primary')]);
+    // the turn
+    var order = !c.round ? 'Not started: set surprise and Roll initiative at the top of the map.' : (c.first === 'crows' ? 'Crows and allies act first' : 'Enemies act first') + ' in round ' + c.round + '.';
+    out.push(el('h4', { text: e ? 'Running: ' + (e.name || 'untitled') : 'The turn' }), el('p', { class: 'fine', text: order + (c.round === 1 && c.surprise !== 'none' ? ' ' + (c.surprise === 'crows' ? 'The crows and allies are' : 'The foes are') + ' surprised.' : '') }));
+    var sides = [['Crows and allies', c.list.filter(function (x) { return x.kind !== 'foe'; })], ['Enemies', c.list.filter(function (x) { return x.kind === 'foe'; })]];
+    if (c.first === 'foes') sides.reverse();
+    sides.forEach(function (sd) {
+      if (!sd[1].length) return;
+      out.push(el('div', { class: 'dr-turns' }, [el('span', { class: 'fine', text: sd[0] })].concat(sd[1].map(function (x) {
+        var tk = tokOf(sc, x), went = c.round && (x.kind === 'pc' ? x.done === c.round : x.acted === c.round);
+        return el('button', { type: 'button', class: 'dr-turn k-' + x.kind + (x.dead ? ' dead' : '') + (went ? ' went' : '') + (tk && tk.id === U.sel ? ' sel' : ''),
+          title: (tk ? 'Select ' + x.name + ' and open its Act drawer' : x.name + ' has no token on this map') + (went ? ' (has acted)' : ''),
+          onclick: function () { if (tk) { U.sel = tk.id; U.view.select(tk.id); U.view.centerOn(tk.x, tk.y, true); openDrawer('act'); } else toast(x.name + ' has no token on this map: Add → Tracker puts it on.'); } }, [
+          el('b', { text: x.name }), el('span', { class: 'fine', text: x.dead ? 'dead' : x.st + '/' + x.stMax + (x.adMax ? ' · AD ' + x.ad : '') }),
+          went ? el('span', { class: 'chip ok', text: x.kind === 'pc' ? 'done' : 'acted' }) : null, tk ? null : el('span', { class: 'chip warn', text: 'off map' })]);
+      }))));
+    });
+    if (c.list.some(function (x) { return !tokOf(sc, x) && !x.dead; })) out.push(btn('Put everyone in the tracker on the map', function () { addTracker(sc); }, 'btn-small btn-ghost'));
+    // the battlefield, the players, the ground
+    var sr = sitRow(); if (sr) out.push(el('h4', { text: 'Battlefield' }), sr);
+    var lp = livePanel(); if (lp) out.push(el('h4', { text: 'Players' }), lp);
+    if (feat('items')) out.push(el('h4', { text: 'Items' }), itemsPanel());
+    var fd = (c.feed || []).slice(-15).reverse();
+    if (fd.length) out.push(el('h4', { text: 'What the players see happen' }), el('ol', { class: 'dr-feed' }, fd.map(function (x) { return el('li', null, [rich(x.s)]); })));
+    // the end
+    var end = el('div', { class: 'dr-end' }, [el('h4', { text: e ? 'End the encounter' : 'End the fight' })]);
+    if (e) {
+      var how = ui.encEnd || (ui.encEnd = { outcome: 'won', resolve: true });
+      var outSel = el('select', { class: 'in', 'aria-label': 'How it ended', onchange: function () { how.outcome = this.value; } }, (A.ENC_OUTCOMES || []).map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
+      outSel.value = how.outcome;
+      end.appendChild(el('div', { class: 'row center' }, [outSel, el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: !!how.resolve, onchange: function () { how.resolve = this.checked; } }), ' Mark it resolved'])]));
+      end.appendChild(el('div', { class: 'row' }, [btn('End encounter', function () { endEncounter(e, how.outcome, how.resolve, true); }, 'btn-small btn-primary', 'Write the result into the encounter’s notes and clear the combat tracker'),
+        btn('Clear dead', function () { c.list = c.list.filter(function (x) { return !x.dead; }); save(); render(); }, 'btn-small btn-ghost')]));
+    } else end.appendChild(el('div', { class: 'row' }, [btn('End combat', function () { endCombat(); }, 'btn-small btn-primary', 'The log notes the fight’s end; the tracker clears'),
+      btn('Clear dead', function () { c.list = c.list.filter(function (x) { return !x.dead; }); save(); render(); }, 'btn-small btn-ghost'),
+      btn('Add party', function () { addPartyToCombat(); }, 'btn-small btn-ghost', 'Put the active crows not in the fight into the tracker')]));
+    out.push(end);
+    return el('div', { class: 'dr-stack dr-fight' }, out);
+  }
+  /* Bottom left: the last roll (with Apply, Undo, and counters), and players' actions that allow a follow-up (a counter, a stray shot, a backlash). */
+  function renderRoll(sc) {
+    var box = U.L.roll; box.innerHTML = '';
+    if (!sc) return;
+    var c = S().combat, gone = U.rollGone || (U.rollGone = {}), kids = [];
+    (c.acts || []).filter(function (a) {
+      if (!a.from || gone[a.id] || a.round !== c.round || !byId(a.from) || byId(a.from).kind !== 'pc') return false;
+      return doomOptions(a).some(function (n) { return n.tagName === 'BUTTON' || (n.querySelector && n.querySelector('button')); });
+    }).slice(-2).forEach(function (a) {
+      kids.push(el('div', { class: 'vtt-rollcard act' }, [el('div', { class: 'rc-head' }, [rich('**' + a.who + '**: ' + (a.label || a.type) + (a.tname ? ' → ' + a.tname : '') + (a.tier ? ' · tier ' + a.tier : '') + (a.doom ? ' (doom)' : a.crit ? ' (crit)' : '')),
+        fab('x', 'Dismiss', function () { gone[a.id] = true; renderRoll(sc); }, 'sm ghost')]), el('div', { class: 'row center rc-ctl' }, doomOptions(a))]));
+    });
+    var r = ui.dice;
+    if (r && gone.dice !== r) {
+      var res = diceResult({ noHit: !!(r.hit && waiting().indexOf(r.hit) >= 0) });   // a hit still waiting has its Apply in the approval pop-up
+      kids.push(el('div', { class: 'vtt-rollcard' }, [el('div', { class: 'rc-close' }, [fab('x', 'Close', function () { gone.dice = r; renderRoll(sc); }, 'sm ghost')]), res]));
+    }
+    kids.forEach(function (k) { box.appendChild(k); });
+  }
+  /* Top left, under the scene: the fight's feed as it happens (each line fades after a few seconds). */
+  function renderTicker(sc) {
+    var c = S().combat, box = U.L.ticker;
+    if (!sc) { box.innerHTML = ''; return; }
+    (c.feed || []).forEach(function (x) {
+      if (x.t <= U.feedSeen) return;
+      U.feedSeen = x.t;
+      var line = el('div', { class: 'vtt-tick' }, [rich(x.s)]);
+      box.appendChild(line);
+      while (box.children.length > 4) box.removeChild(box.firstChild);
+      setTimeout(function () { line.classList.add('out'); setTimeout(function () { if (line.parentNode) line.parentNode.removeChild(line); }, 400); }, 7000);
+    });
   }
   function addPanel(sc) {
     var quick = el('div', { class: 'dr-quick' }, [

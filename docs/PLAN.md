@@ -15,7 +15,7 @@ commit this file with it.)
 3. **Local tests** (headless Firefox via the snap geckodriver). Run them with the Bash sandbox disabled, in the background,
    output to a log file, `python3 -u`, never piped through grep or tail:
    ```bash
-   python3 -u ref/test/run_engine_test.py; python3 -u ref/test/run_combat_test.py; python3 -u ref/test/run_layout_test.py
+   python3 -u ref/test/run_engine_test.py; python3 -u ref/test/run_combat_test.py; python3 -u ref/test/run_layout_test.py; python3 -u ref/test/run_vtt_combat_test.py
    ```
 4. **Look at it**: create `.claude/launch.json` with an http server on `dist/` (`python3 -m http.server 8765 --directory dist`), open
    it with the browser pane's preview_start, and click through what changed. Check the console for errors. Delete launch.json afterwards.

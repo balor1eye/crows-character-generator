@@ -613,7 +613,7 @@
     if (!liveOn()) return { active: false };
     var tbl = publicTable();   // the tabletop scene, if the Ref is showing one (ref-vtt.js)
     if (!c.list.length) return tbl ? { active: false, session: publicSession(), table: tbl } : { active: false, session: publicSession() };
-    var out = { active: true, session: publicSession(), table: tbl || undefined, round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
+    var out = { active: true, session: publicSession(), table: tbl || undefined, view: playerView(), round: c.round || 0, first: c.first || null, surprise: c.surprise || 'none', name: run ? run.name || '' : '', showSt: !!c.showSt,
       list: c.list.map(function (x) {
         var b = beast(x.cref), pc = x.kind === 'pc', g = byId(x.grabbedBy), o = { id: x.id, kind: x.kind, name: x.name, health: healthWord(x), dead: !!x.dead,
           conds: Object.keys(x.conds || {}).filter(function (k) { return x.conds[k]; }), surprised: surprised(x), sz: sizeOf(x) };
@@ -650,6 +650,27 @@
     var ex = expertKnows();
     if (live.expertOk && Object.keys(ex).length) out.expert = ex;
     return out;
+  }
+  /*
+   * How the players' Play pages show a fight by default: 'map' (on the tabletop, when the Ref is showing one: every combat function
+   * floats on the map) or 'text' (the Combat card's lists of enemies and allies, the way it was before the tabletop). Each player can
+   * switch for themselves; a change here becomes their default again.
+   */
+  function playerView() { return state.prefs.playerView === 'text' ? 'text' : 'map'; }
+  function setPlayerView(v) {
+    if (playerView() === v) return;
+    state.prefs.playerView = v === 'text' ? 'text' : 'map';
+    log('', 'Players now see fights ' + (v === 'text' ? 'as text lists on their Play pages.' : 'on the battle map (when you show one).'));
+    save(); render();
+  }
+  var VIEW_CHOICES = [['map', 'Battle map', 'When you show a map, the fight is on it: targets, attacks, maneuvers, defenses, and the turn, all on the map'],
+    ['text', 'Text lists', 'The Combat card lists the enemies and allies, with every action as buttons (the map stays one click away)']];
+  /* Segmented buttons: the players' default view of a fight. */
+  function playerViewPicker(cls) {
+    return el('div', { class: 'seg' + (cls ? ' ' + cls : ''), role: 'group', 'aria-label': 'Players’ combat view' }, VIEW_CHOICES.map(function (o) {
+      return el('button', { type: 'button', class: playerView() === o[0] ? 'on' : '', 'aria-pressed': playerView() === o[0] ? 'true' : 'false', text: o[1], title: o[2],
+        onclick: function () { setPlayerView(o[0]); } });
+    }));
   }
   /* Called from save(): publish the fight soon after it changes. */
   /* The fight is shared with the players unless this is a Tabletop Mode campaign or the Ref turned it off. */
@@ -870,6 +891,7 @@
         el('span', { class: 'fine grow', text: !c.list.length ? 'Players see the fight on their Play page once their linked crows are in the tracker.' :
           crows ? plural(crows, 'linked crow') + ' in this fight: their players see it live and act from their Play page.' : 'No linked crows in this fight, so no player sees it. Link crows in the Party tab.' }),
         chk(c, 'showSt', 'Show foes’ Stamina and AD', { title: 'Off: players only see how hurt each foe looks' })]),
+      el('div', { class: 'row center' }, [el('span', { class: 'fine', text: 'Players see the fight as:' }), playerViewPicker()]),
       open.length ? el('div', { class: 'fine' }, ['Waiting on reactions: ' + open.map(function (p) { var to = byId(p.to); return (to ? to.name : 'a crow') + ' may counter ' + p.fromName; }).join('; ') + ' (until the end of the round).']) : null,
       (c.assists || []).length ? el('div', { class: 'fine' }, ['Assists: ' + c.assists.map(function (x) { return x.fromName + ' → ' + x.toName + ' ' + signed(x.bonus); }).join('; ') + '.']) : null,
       acts.length ? el('ul', { class: 'live-acts' }, acts.map(function (a) {
@@ -903,6 +925,33 @@
     feed('**Round ' + c.round + '.** ' + (crows ? 'Crows and allies act first.' : 'Enemies act first.') + sur);
     save(); render();
   }
+  /* End a fight that isn't a running encounter's (that one ends with a result: endEncounter): note it in the log and clear the tracker. */
+  function endCombat() {
+    var c = S().combat, dead = c.list.filter(function (x) { return x.dead; }).map(function (x) { return x.name; });
+    if (runningEnc() && !confirm('End the fight without saving a result to ' + (runningEnc().name || 'the running encounter') + '? (It stays open.)')) return false;
+    log('', '**Combat ends** after ' + plural(c.round || 0, 'round') + '.' + (dead.length ? ' Fallen: ' + dead.join(', ') + '.' : '') + (groundText() ? ' ' + groundText() : ''));
+    c.list.forEach(function (x) { if (x.kind === 'pc') syncPC(x); });
+    clearCombat(c); save(); render();
+    return true;
+  }
+  /* The battlefield buttons: modifiers on the next creature roll (they reset after it). */
+  function sitRow() {
+    if (!feat('sit')) return null;
+    var sit = ui.sit || (ui.sit = {});
+    function sitBtn(key, label, title) {
+      return el('button', { type: 'button', class: 'cond' + (sit[key] ? ' on' : ''), 'aria-pressed': sit[key] ? 'true' : 'false', title: title, text: label, onclick: function () { sit[key] = !sit[key]; render(); } });
+    }
+    return el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next creature roll:' }),
+      sitBtn('flank', 'Flanking', 'An ally of the attacker is on the opposite side of the target: edge on melee attacks'),
+      sitBtn('high', 'High ground', '1+ square above the target: edge on attacks'),
+      sitBtn('cover', 'Cover', 'The target is half behind something solid: bane on attacks (not for attacks that ignore cover)'),
+      sitBtn('dim', 'Dim light', 'Dim light or light concealment: bane (not for creatures marked ⌂ or ◐)'),
+      sitBtn('dark', 'Darkness', 'Darkness, heavy concealment, or an invisible target: double bane (not for ◐); against a silent mover, guess its square'),
+      sitBtn('adj', 'Ranged vs adjacent', 'A ranged attack against a creature next to the attacker: bane'),
+      sitBtn('charge', 'Charged 4+', 'It moved 4+ squares before attacking: a charging creature (big cat, wildcat, deer) deals its charge damage'),
+      el('label', { class: 'fine', title: 'Squares beyond the attack’s range: -2 each' }, ['Beyond range ', el('input', { type: 'number', class: 'tiny', min: 0, max: 10, value: sit.far || '', 'aria-label': 'Squares beyond range',
+        onchange: function () { sit.far = clamp(int(this.value, 0), 0, 10); } })])]);
+  }
   /* The combat tracker's controls and list, for the Encounters tab's Combat card and for a running encounter (inRun). */
   function combatUI(inRun) {
     var s = S(), c = s.combat, addSel = { name: ui.addName || 'Blood Creature A', n: ui.addN || 1, side: ui.addSide || 'foe' };
@@ -910,36 +959,17 @@
     var count = el('input', { type: 'number', class: 'tiny', min: 1, max: 30, value: addSel.n, 'aria-label': 'How many', onchange: function () { ui.addN = clamp(int(this.value, 1), 1, 30); } });
     var side = el('select', { class: 'in mini', 'aria-label': 'Side', onchange: function () { ui.addSide = this.value; } }, [el('option', { value: 'foe', text: 'Foe' }), el('option', { value: 'ally', text: 'Ally' })]);
     side.value = addSel.side;
-    var sit = ui.sit || (ui.sit = {});
-    function sitBtn(key, label, title) {
-      return el('button', { type: 'button', class: 'cond' + (sit[key] ? ' on' : ''), 'aria-pressed': sit[key] ? 'true' : 'false', title: title, text: label, onclick: function () { sit[key] = !sit[key]; render(); } });
-    }
     return [
       el('div', { class: 'round-box' }, [
         el('div', { class: 'stat' }, [el('div', { class: 'lbl', text: 'Round' }), el('div', { class: 'val', text: String(c.round || '—') })]),
         btn(c.round ? 'Next round + initiative' : 'Start combat + initiative', nextRound, 'btn-primary'),
         btn('Add party', addPartyToCombat),
         btn('Clear dead', function () { c.list = c.list.filter(function (x) { return !x.dead; }); save(); render(); }, 'btn-ghost'),
-        inRun ? null : btn('End combat', function () {
-          var dead = c.list.filter(function (x) { return x.dead; }).map(function (x) { return x.name; });
-          if (runningEnc() && !confirm('End the fight without saving a result to ' + (runningEnc().name || 'the running encounter') + '? (It stays open.)')) return;
-          log('', '**Combat ends** after ' + plural(c.round || 0, 'round') + '.' + (dead.length ? ' Fallen: ' + dead.join(', ') + '.' : '') + (groundText() ? ' ' + groundText() : ''));
-          c.list.forEach(function (x) { if (x.kind === 'pc') syncPC(x); });
-          clearCombat(c); save(); render();
-        }, 'btn-ghost btn-danger')
+        inRun ? null : btn('End combat', endCombat, 'btn-ghost btn-danger')
       ]),
       el('div', { class: 'row', style: 'margin-top:.6rem' }, [field('Add creature', select, 'grow'), field('How many', count), field('Side', side),
         btn('Add', function () { addCombatant(select.value, int(count.value, 1), side.value); log('', 'Added ' + int(count.value, 1) + ' × ' + select.value + ' to combat.'); render(); })]),
-      !feat('sit') ? null : el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next creature roll:' }),
-        sitBtn('flank', 'Flanking', 'An ally of the attacker is on the opposite side of the target: edge on melee attacks'),
-        sitBtn('high', 'High ground', '1+ square above the target: edge on attacks'),
-        sitBtn('cover', 'Cover', 'The target is half behind something solid: bane on attacks (not for attacks that ignore cover)'),
-        sitBtn('dim', 'Dim light', 'Dim light or light concealment: bane (not for creatures marked ⌂ or ◐)'),
-        sitBtn('dark', 'Darkness', 'Darkness, heavy concealment, or an invisible target: double bane (not for ◐); against a silent mover, guess its square'),
-        sitBtn('adj', 'Ranged vs adjacent', 'A ranged attack against a creature next to the attacker: bane'),
-        sitBtn('charge', 'Charged 4+', 'It moved 4+ squares before attacking: a charging creature (big cat, wildcat, deer) deals its charge damage'),
-        el('label', { class: 'fine', title: 'Squares beyond the attack’s range: -2 each' }, ['Beyond range ', el('input', { type: 'number', class: 'tiny', min: 0, max: 10, value: sit.far || '', 'aria-label': 'Squares beyond range',
-          onchange: function () { sit.far = clamp(int(this.value, 0), 0, 10); } })])]),
+      sitRow(),
       tabletop() ? tableStatus() : null,
       el('p', { class: 'fine', text: tabletop() ? TABLETOP_NOTE : 'Pick each creature’s target (⚄ picks one at random) and its attacks and maneuvers go at it. Its own conditions (weakened, blessed, prone, hidden, taunted) and the target’s (surprised, prone, grabbed, squeezing, unconscious) apply automatically, with the edge/bane set in the Dice panel and the battlefield buttons above (they reset after each roll). ' +
         'A hit deals its damage and tier effects (weakened, prone, grabbed...) through AD, Stamina, and wounds, onto a crow’s own sheet (its worn armor and parry weapons absorb first), and can be undone from the Dice panel. A melee miss lets the target counter: a crow’s player is asked on their Play page.' }),
@@ -1073,7 +1103,7 @@
       undoAct: undoAct, defendRow: defendRow, counterDamage: counterDamage, counterAct: counterAct, feed: feed, clearCombat: clearCombat, itemName: itemName,
       itemsText: itemsText, newItem: newItem, onGround: onGround, itemNews: itemNews, putDown: putDown, creaturePickUp: creaturePickUp,
       creatureDrop: creatureDrop, dropFromFallen: dropFromFallen, groundText: groundText, itemsPanel: itemsPanel, pcOf: pcOf, healthWord: healthWord,
-      publicSession: publicSession, publicCombat: publicCombat, restChoice: restChoice, restChoiceText: restChoiceText, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,
+      publicSession: publicSession, publicCombat: publicCombat, playerView: playerView, setPlayerView: setPlayerView, playerViewPicker: playerViewPicker, endCombat: endCombat, sitRow: sitRow, restChoice: restChoice, restChoiceText: restChoiceText, liveChanged: liveChanged, publish: publish, fetchActions: fetchActions, takeAction: takeAction,
       doomOptions: doomOptions, livePanel: livePanel, liveOn: liveOn, nextRound: nextRound, isExpert: isExpert, expertKnows: expertKnows, monsterExperts: monsterExperts, tableStatus: tableStatus, renderTable: renderTable, renderCombat: renderCombat, combatUI: combatUI, combatRow: combatRow, btnPM: btnPM,
       SIZE_ORDER: SIZE_ORDER, live: live, dropQueued: dropQueued, MANEUVER_NOTES: MANEUVER_NOTES });
 })();

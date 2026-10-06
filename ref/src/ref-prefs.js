@@ -7,7 +7,7 @@
   'use strict';
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var btn = f('btn'), card = f('card'), feat = f('feat'), log = f('log'), render = f('render'), save = f('save'), tabletop = f('tabletop');
+  var btn = f('btn'), card = f('card'), feat = f('feat'), log = f('log'), playerViewPicker = f('playerViewPicker'), render = f('render'), save = f('save'), tabletop = f('tabletop');
   var el = A.el, FEATURES = A.FEATURES, plural = A.plural, toast = A.toast;
   var state = A.state; A.share('state', function (v) { state = v; });
 
@@ -33,6 +33,13 @@
         } }), el('b', { text: ' Tabletop Mode' })]),
         el('p', { class: 'hint', text: 'A reference and assistant for running the game at a table, in person or on a call, where the players handle their own crows. It keeps track of the enemies and their abilities and leaves most actions to happen live.' }),
         el('ul', { class: 'pref-points' }, TABLETOP_POINTS.map(function (t) { return el('li', { text: t }); }))
+      ]),
+      el('div', { class: 'pref-mode pref-view' + (tt ? ' off' : '') }, [
+        el('div', { class: 'row center' }, [el('b', { text: 'Players’ combat view' }), playerViewPicker()]),
+        el('p', { class: 'hint', text: 'How a fight first shows on the players’ Play pages (accounts site). Battle map: while you show a map on the Tabletop, the fight is on it, ' +
+          'with every combat function there (targets, attacks and spells, maneuvers, defenses and counters, the turn, items on the ground), so a whole fight can be played on the map, fullscreen too. ' +
+          'Text lists: the Combat card lists the enemies and allies with every action as buttons, and the map stays out of the way. Each player can switch for themselves; changing it here makes it everyone’s default again.' +
+          (tt ? ' (Tabletop Mode is on, so nothing is shared with the players now.)' : '') })
       ])
     ]);
     card('sec-prefs-feat', el('h2', null, ['Functions', el('small', { text: off ? plural(off, 'function') + ' turned off' : 'everything is on' })]), [

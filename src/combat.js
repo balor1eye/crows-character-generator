@@ -21,6 +21,9 @@
  *    battlefield (flanking, high ground, hidden, cover, dim light, darkness, ranged against an adjacent creature,
  *    beyond range), and an ally's assist on the next test.
  *
+ * When the Ref shows a map, the fight can be played on it (table-play.js: targets, attacks and spells, maneuvers, defenses, the turn) or
+ * here as text lists: the Ref sets the default (`view` in the published fight), and each player can switch for themselves (viewMode).
+ *
  * The page watches the change signal for this crow's fights (see "live combat" in server/app/api.php), so the card
  * appears, changes, and goes away within a second or two of the Ref Screen. Every linked crow in the party also gets the
  * session with it, fight or not (the session bar: dungeon turn, timer, greed bonus, the party's rest, a signalled encounter),
@@ -89,6 +92,34 @@
     if (foe) targets = [foe.id];
   }
   function mainTarget() { return find(targets[0]); }
+
+  // ------------------------------------------------------------------ map or text lists
+  /* The Ref's default for how the fight shows ('map' or 'text'), and this player's own choice while that default holds. */
+  var VIEW_KEY = 'crows-pt2-fight-view';
+  function refView() { var c = cur(); return c && c.view === 'text' ? 'text' : 'map'; }
+  function viewMode() {
+    var o = null;
+    try { o = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch (e) { o = null; }
+    return o && o.ref === refView() && (o.v === 'map' || o.v === 'text') ? o.v : refView();
+  }
+  function setView(v) {
+    try { localStorage.setItem(VIEW_KEY, JSON.stringify({ ref: refView(), v: v })); } catch (e) { /* storage unavailable: the Ref's default stays */ }
+    update(true);
+    if (v === 'map') { var t = $('play-table'); if (t && !t.hidden) t.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+  }
+  /* In a fight shown as text lists (the map, if any, steps aside). */
+  function textView() { return !!cur() && viewMode() === 'text'; }
+  /* The fight is on the map: the Ref shows one and this player hasn't asked for lists. */
+  function mapView() { return !!(window.CrowsVTTPlay && window.CrowsVTTPlay.live()) && !textView(); }
+  function viewToggle() {
+    var v = viewMode();
+    return el('div', { class: 'row center cbt-viewbar' }, [el('span', { class: 'fine', text: 'Show the fight:' }),
+      el('div', { class: 'seg seg2', role: 'group', 'aria-label': 'How the fight shows' }, [['map', 'On the map', 'Everything for the fight on the tabletop: click creatures to target them, and attack, maneuver, and end your turn there'],
+        ['text', 'As lists', 'The enemies and allies listed here, with every action as buttons']].map(function (o) {
+        return el('button', { type: 'button', class: v === o[0] ? 'on' : '', 'aria-pressed': String(v === o[0]), text: o[1], title: o[2], onclick: function () { setView(o[0]); } });
+      })),
+      el('span', { class: 'fine', text: v === refView() ? '(your Ref’s choice)' : '(your choice; your Ref’s is ' + (refView() === 'map' ? 'the map' : 'lists') + ')' })]);
+  }
 
   // ------------------------------------------------------------------ server
   function load() {
@@ -468,16 +499,21 @@
           { 'aria-pressed': String(also), title: also ? 'Drop ' + x.name + ' from your targets' : 'Also target ' + x.name + ' (for spells and attacks on several creatures)', 'aria-label': (also ? 'Drop ' : 'Also target ') + x.name })]) : null
     ]);
   }
-  function renderView(box) {
-    var c = cur(), mine = me(), t = mainTarget();
+  /* The fight: its round, what's happening to this crow, the enemies and allies to target, the ground, and the feed. opts.map: inside the
+     tabletop's Fight drawer (the round and the turn are on the map, and counters and incoming hits pop up there). */
+  function renderView(box, opts) {
+    opts = opts || {};
+    var c = cur(), mine = me(), t = mainTarget(), inMap = !!opts.map;
     var foes = c.list.filter(function (x) { return x.kind === 'foe'; }), friends = c.list.filter(function (x) { return x.kind !== 'foe'; });
     var up = foes.filter(function (x) { return !x.dead && x.health !== 'down'; }).length;
     var order = !c.round ? 'The fight hasn’t started: the Ref rolls initiative.' : c.first === 'crows' ? 'Crows and allies act first.' : c.first === 'foes' ? 'Enemies act first.' : '';
     var surprise = c.round <= 1 && c.surprise === 'crows' ? 'The crows and their allies are surprised: no turn in round 1.' :
       c.round <= 1 && c.surprise === 'foes' ? 'The foes are surprised: no turn in round 1, and attacks against them get +1.' : '';
     var names = targets.map(function (id) { var x = find(id); return x ? x.name : null; }).filter(Boolean);
-    var onTable = !!(window.CrowsVTTPlay && window.CrowsVTTPlay.live());   // the tabletop above shows the fight; this card keeps what's left to do
-    if (onTable) box.appendChild(el('div', { class: 'fine', text: names.length ? 'Your target' + (names.length > 1 ? 's' : '') + ': ' + names.join(', ') + ' (click a creature on the map to change it).' : 'No target chosen: click a creature on the map.' }));
+    var onTable = !inMap && mapView();   // the tabletop above shows the fight; this card keeps what's left to do
+    if (!inMap && window.CrowsVTTPlay && window.CrowsVTTPlay.live()) box.appendChild(viewToggle());
+    if (inMap) { /* the round and the target are on the map */ }
+    else if (onTable) box.appendChild(el('div', { class: 'fine', text: names.length ? 'Your target' + (names.length > 1 ? 's' : '') + ': ' + names.join(', ') + ' (click a creature on the map to change it).' : 'No target chosen: click a creature on the map.' }));
     else box.appendChild(el('div', { class: 'cbt-head' }, [
       el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: 'Round' }), el('div', { class: 'val' }, [el('b', { text: String(c.round || '—') })])]),
       el('div', { class: 'grow' }, [
@@ -494,8 +530,8 @@
     var as = myAssist();
     if (as) bans.push(['ok', as.fromName + ' assists you: ' + signed(as.bonus) + ' on your next test (it lapses after this turn).']);
     bans.forEach(function (b) { box.appendChild(el('div', { class: 'banner ' + b[0], text: b[1] })); });
-    if (!onTable) { myPrompts().forEach(function (p) { box.appendChild(promptBanner(p)); }); myHits().forEach(function (h) { box.appendChild(hitBanner(h)); }); }   // on the table they pop up over the map
-    if (mine && c.round) box.appendChild(turnBox(c, mine));
+    if (!onTable && !inMap) { myPrompts().forEach(function (p) { box.appendChild(promptBanner(p)); }); myHits().forEach(function (h) { box.appendChild(hitBanner(h)); }); }   // on the table they pop up over the map
+    if (mine && c.round && !inMap) box.appendChild(turnBox(c, mine));
     if (!onTable) box.appendChild(el('h3', { text: 'Enemies' }));
     if (!onTable) box.appendChild(el('div', { class: 'cbt-list' }, foes.length ? foes.map(row) : [el('p', { class: 'fine', text: 'No enemies in the fight yet.' })]));
     if (friends.length && !onTable) {
@@ -535,6 +571,17 @@
     ]);
   }
   function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
+  /* This crow's turn for the tabletop's turn strip: what's left, the reaction, done for the round. */
+  function turnState() {
+    var c = cur(), m = me();
+    if (!c || !m) return null;
+    syncTurn();
+    var acts = 1 + turn.extra, slots = 2 + turn.extra;
+    return { round: c.round, first: c.first, surprise: c.surprise, me: m, extra: turn.extra, rx: rxLeft(), done: !!m.done,
+      act: Math.max(0, Math.min(acts - turn.act, slots - turn.act - turn.mnv)), mnv: Math.max(0, slots - turn.act - turn.mnv) };
+  }
+  function toggleDone() { var m = me(); return m ? act({ type: m.done ? 'undone' : 'done' }) : Promise.resolve(false); }
+  function resetTurn() { var c = cur(); if (c) { turn = { round: c.round, act: 0, mnv: 0, extra: 0 }; update(); } }
   function renderAct(box) {
     var c = cur(), mine = me(), t = mainTarget(), out = !!(mine && mine.conds.indexOf('Unconscious') >= 0), v = chars();
     var grabbed = !!(mine && mine.grabbedByName), prone = !!(mine && mine.conds.indexOf('Prone') >= 0), pets = (window.CrowsApp.state.pets || []).length;
@@ -543,7 +590,7 @@
       return el('button', { type: 'button', class: 'cond' + (sit[key] ? ' on' : ''), 'aria-pressed': String(!!sit[key]), title: title, text: label, disabled: disabled || null,
         onclick: function () { sit[key] = !sit[key]; update(true); } });
     }
-    box.appendChild(el('p', { class: 'hint', text: 'Pick your target(s), then attack or cast from Attacks & spells: once a roll is final it goes to the Ref with its damage and effects. Maneuvers and actions below go to the Ref too.' }));
+    box.appendChild(el('p', { class: 'hint', text: 'Pick your target(s), then attack or cast from Attacks & spells' + (mapView() ? ' (or the map’s Attack tab)' : '') + ': once a roll is final it goes to the Ref with its damage and effects. Maneuvers and actions below go to the Ref too.' }));
     // Battlefield modifiers for the next attack.
     box.appendChild(el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next attack:' }),
       sitBtn('flank', 'Flanking', 'An ally is on the opposite side of the target: edge on melee attacks (not while you or they are prone or grabbed)', grabbed || prone),
@@ -618,6 +665,14 @@
       function (e) { C.toast('Not sent to the Ref: ' + e.message, 4000); if (e.status === 409) load(); return false; });
   }
   function setTarget(id) { if (!find(id)) return false; targets = [id]; update(); return true; }
+  /* Add a creature to the targets (spells and attacks on several), or drop it. */
+  function toggleTarget(id) {
+    if (!find(id)) return false;
+    var i = targets.indexOf(id);
+    if (i === 0) return true;
+    if (i > 0) targets.splice(i, 1); else if (targets.length < 6) targets.push(id);
+    update(); return true;
+  }
   /* Show the fight: the whole card, or just its view while the player is typing in it. */
   function update(force) {
     renderSession();
@@ -657,7 +712,10 @@
   window.CrowsCombat = { load: load, render: update, rolled: rolled, updated: updated, superseded: superseded, rollNote: rollNote,
     session: session, resting: resting, restSent: restSent, sendRest: sendRest,
     ground: ground, pickUp: pickUp, cantPickUp: cantPickUp, drop: drop,
-    tableData: tableData, sendTable: sendTable, setTarget: setTarget,
+    tableData: tableData, sendTable: sendTable, setTarget: setTarget, toggleTarget: toggleTarget, targets: function () { return targets.slice(); },
+    // For the tabletop: map or lists, and the fight drawn into its drawer and turn strip.
+    viewMode: viewMode, refView: refView, setView: setView, textView: textView, mapView: mapView,
+    fight: function () { return cur(); }, me: function () { return me(); }, renderView: renderView, renderAct: renderAct, turnState: turnState, toggleDone: toggleDone, resetTurn: resetTurn,
     // What waits on this crow's player (for the Table tab's pop-up): counters it may make, hits it may defend against.
     approvals: function () { return cur() ? { prompts: myPrompts(), hits: myHits(), me: me(), feed: cur().feed || [], countered: countered } : null; },
     promptBanner: promptBanner, hitBanner: hitBanner, known: known, knownText: knownText, rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };

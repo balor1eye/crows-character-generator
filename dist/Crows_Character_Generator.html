@@ -146,6 +146,7 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .hud-chip.bad { background: rgba(214,84,74,.9); color: #fff; }
 .hud-chip.cond { background: rgba(110,193,255,.2); color: #bfe3ff; }
 .hud-chip.pulse { animation: vtt-pulse 1.2s ease-in-out infinite; }
+.hud-chip.ok { background: rgba(47,143,91,.85); color: #fff; }
 .hud-meter { display: inline-flex; align-items: center; gap: .4rem; font-weight: 700; font-size: .8rem; padding: 0 .3rem; }
 .hud-meter .bar { width: 90px; height: 7px; border-radius: 4px; background: rgba(255,255,255,.15); overflow: hidden; }
 .hud-meter .bar span { display: block; height: 100%; background: #5fbf6a; border-radius: 4px; transition: width .5s cubic-bezier(.2,.9,.3,1); }
@@ -226,6 +227,54 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .dr-quick { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem; }
 .dr-quick .fab { justify-content: flex-start; border: 1px solid var(--line); background: var(--soft); color: var(--ink); height: 36px; }
 .dr-quick .fab:hover { border-color: var(--accent); }
+
+/* the fight on the map: the last roll (bottom left), the feed as it happens (top left), and the Act and Fight drawers */
+.vtt-roll { left: 64px; bottom: 72px; flex-direction: column-reverse; align-items: flex-start; gap: .4rem; z-index: 3; max-width: min(380px, calc(100% - 140px)); }
+.vtt-rollcard { position: relative; pointer-events: auto; background: color-mix(in srgb, var(--card) 95%, transparent); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+  border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.45); padding: .5rem .65rem; max-height: 42cqh; overflow: auto; animation: vtt-rise .3s cubic-bezier(.2,.9,.3,1.1) both; font-size: .86rem; }
+.vtt-rollcard.act { border-left-color: var(--sel, #6ec1ff); }
+.vtt-rollcard .result { margin: 0; border: 0; padding: 0 1.8rem 0 0; background: none; }
+.vtt-rollcard .fab { color: var(--ink); }
+.vtt-rollcard .fab:hover { background: var(--soft); }
+.rc-close { position: absolute; top: .25rem; right: .25rem; }
+.rc-head { display: flex; align-items: center; gap: .4rem; justify-content: space-between; }
+.rc-ctl { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-top: .3rem; }
+.vtt-ticker { top: 62px; left: 12px; flex-direction: column; align-items: flex-start; gap: .3rem; max-width: min(380px, 40%); z-index: 1; pointer-events: none; }
+.vtt-tick { background: var(--glass); border: 1px solid var(--gl-line); border-radius: 10px; padding: .3rem .6rem; font-size: .8rem; line-height: 1.35; box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  animation: vtt-in-left .3s cubic-bezier(.2,.9,.3,1.1) both; transition: opacity .4s, transform .4s; }
+.vtt-tick.out { opacity: 0; transform: translateX(-10px); }
+.dr-cbt .cbt { margin: 0; }
+.dr-cbt .cbt-top { gap: .4rem; }
+.dr-cbt .cbt-name .in { width: 100%; }
+.dr-pick { gap: .35rem; }
+.dr-turns { display: flex; flex-direction: column; gap: .25rem; }
+.dr-turn { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; text-align: left; border: 1px solid var(--line); border-left: 4px solid var(--kc, var(--line)); border-radius: 8px; background: var(--slot);
+  color: var(--ink); padding: .3rem .5rem; font: inherit; font-size: .86rem; cursor: pointer; }
+.dr-turn:hover { border-color: var(--accent); }
+.dr-turn b { flex: 1; }
+.dr-turn.went { opacity: .7; }
+.dr-turn.dead { opacity: .45; text-decoration: line-through; }
+.dr-turn.sel { box-shadow: 0 0 0 2px var(--accent); }
+.dr-feed { margin: 0; padding-left: 1.1rem; font-size: .82rem; line-height: 1.4; max-height: 220px; overflow: auto; }
+.dr-fight .live-box, .dr-fight .items-box { margin-top: 0; }
+.dr-end { border-top: 1px solid var(--line); padding-top: .3rem; display: flex; flex-direction: column; gap: .45rem; }
+/* the player's turn strip (bottom centre) and drawer tabs */
+.vtt-turn { bottom: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 150px); z-index: 2; }
+.ts-bar { display: flex; align-items: center; gap: .4rem .8rem; flex-wrap: wrap; padding: .4rem .55rem; pointer-events: auto; }
+.ts-me { display: flex; flex-direction: column; gap: .2rem; min-width: 150px; }
+.ts-name { font: 700 .95rem var(--serif); }
+.ts-turn, .ts-btns { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+.vtt-play .vtt-roll { bottom: 96px; }
+.vtt-play:has(.vtt-drawer.open) .vtt-zoom { right: min(364px, calc(100% - 60px)); }
+.vtt-play:has(.vtt-drawer.open) .vtt-turn { left: calc(50% - 175px); max-width: calc(100% - 400px); }
+.vtt-play .vtt-drawer { top: 12px; }
+.dr-tabs { display: flex; gap: .3rem; flex-wrap: wrap; }
+.vtt-drawer .pill { border-color: var(--line); background: var(--soft); color: var(--ink); }
+.vtt-drawer .pill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+@container vtt (max-width: 1180px) { .vtt-ticker { top: 110px; } .vtt-play .vtt-ticker { top: 62px; } }
+@container vtt (max-width: 700px) { .vtt-roll { left: 12px; bottom: 120px; max-width: calc(100% - 24px); } .vtt-ticker { max-width: calc(100% - 24px); }
+  .vtt-turn { left: 12px; transform: none; max-width: calc(100% - 70px); } .ts-btns .fab-t { display: none; } .vtt-play .vtt-roll { bottom: 150px; }
+  .vtt-play:has(.vtt-drawer.open) .vtt-turn { display: none; } }
 
 /* banners and tips */
 .vtt-banner { display: flex; flex-direction: column; align-items: center; padding: .7rem 2.4rem; border-radius: 14px; background: linear-gradient(180deg, rgba(22,19,20,.92), rgba(22,19,20,.8));
@@ -745,10 +794,23 @@ body[data-mode="play"] .summary .play-side .fine { display: revert; }
 .cbt-assist { display: inline-flex; gap: .3rem; align-items: center; flex-wrap: wrap; }
 .cbt-assist select, .cbt-say input { padding: .3rem .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); color: var(--ink); min-height: 32px; }
 .cbt-prompt { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem; }
-#play-combat .sit-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .4rem; margin: .4rem 0; }
-#play-combat .sit-row .cond { min-height: 30px; }
-#play-combat .sit-row input.mini { width: 3.6rem; }
-#cbt-act h3 { margin: .7rem 0 .2rem; }
+#play-combat .sit-row, .vtt-play .sit-row { display: flex; flex-wrap: wrap; align-items: center; gap: .3rem .4rem; margin: .4rem 0; }
+#play-combat .sit-row .cond, .vtt-play .sit-row .cond { min-height: 30px; }
+#play-combat .sit-row input.mini, .vtt-play .sit-row input.mini { width: 3.6rem; }
+#cbt-act h3, .vtt-play .dr-body h3 { margin: .7rem 0 .2rem; }
+/* Map or lists (the Ref picks the default, each player can switch) */
+.cbt-viewbar { gap: .5rem; margin: 0 0 .6rem; }
+.seg.seg2 { display: inline-grid; grid-template-columns: repeat(2, auto); }
+.seg.seg2 button { padding: .35rem .8rem; font-size: .8rem; }
+/* The tabletop's drawer holds the Combat card's own controls */
+.vtt-play .dr-body .hint { margin: 0; }
+.vtt-play .dr-body .cbt-row { padding: .35rem .5rem; gap: .4rem; }
+.vtt-play .dr-body .cbt-art img { width: 3rem; height: 3rem; }
+.vtt-play .dr-body .cbt-who { flex-basis: 120px; }
+.vtt-play .dr-body .atk { display: flex; gap: .5rem; align-items: center; justify-content: space-between; flex-wrap: wrap; border: 1px solid var(--line); border-radius: 6px; padding: .35rem .5rem; background: var(--slot); }
+.vtt-play .dr-body .atk-list { display: grid; gap: .35rem; }
+.vtt-play .dr-body .seg { grid-template-columns: repeat(5, auto); }
+.vtt-play .dr-body .roll-result, .vtt-play .vtt-rollcard .roll-result { margin: 0; }
 .char-art { width: 4.5rem; height: 4.5rem; object-fit: cover; border-radius: 6px; border: 1px solid var(--line); }
 .art-field .with-btn { align-items: center; }
 button.cbt-art { padding: 0; background: none; cursor: zoom-in; flex: none; border: 0; }
@@ -1514,7 +1576,9 @@ CROWS.NAME_IDEAS = {
  * lit (the scene's ambient light, torches and lanterns, a crow's own sight radius). In `manual` mode the Ref reveals and hides by hand.
  * The Ref publishes only that mask (never the walls) and the tokens the party can see, so players' screens know no more than they show.
  *
- * T.view(host, options) is the canvas: pan, zoom, tokens you can drag, ruler, pings, and (for the Ref) the drawing tools.
+ * T.view(host, options) is the canvas: pan, zoom, tokens you can drag, ruler, pings, and (for the Ref) the drawing tools. In a fight,
+ * options.links() gives the arrows to draw (who attacks whom: [{ from, to, color, strong }] by token id), and options.onPick(token or null)
+ * can take a click for picking a target (return true when it did) before it selects or drags anything.
  */
 (function () {
   'use strict';
@@ -2107,6 +2171,7 @@ CROWS.NAME_IDEAS = {
     }
     function overlays(s, now) {
       var d = V.drag;
+      if (o.links) drawLinks(s, o.links() || []);
       if (V.tool === 'select' && d && d.type === 'token') {
         var t = d.token, from = d.from, to = d.to;
         var sp = o.speedOf ? o.speedOf(t) : 0, n = dist(s, from, to);
@@ -2154,6 +2219,21 @@ CROWS.NAME_IDEAS = {
         ctx.save(); ctx.globalAlpha = k < .65 ? 1 : 1 - (k - .65) / .35; ctx.font = '800 ' + sz + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         var y = p.y - r - easeOut(k) * s.g * .9; ctx.lineWidth = 4 / cam.z; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(f.text, p.x, y); ctx.fillStyle = f.color; ctx.fillText(f.text, p.x, y);
         ctx.restore(); return true;
+      });
+    }
+    /* Who is attacking whom: a dashed arrow from each attacker to its target ([{ from, to, color }] by token id), from rim to rim. */
+    function drawLinks(s, links) {
+      var byId = {}; tokens().forEach(function (t) { byId[t.id] = t; });
+      links.forEach(function (k) {
+        var a = byId[k.from], b = byId[k.to]; if (!a || !b || a === b) return;
+        var p = pos(a), q = pos(b), dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy); if (len < 1) return;
+        var ra = radius(s, a), rb = radius(s, b); if (len <= ra + rb + 2) return;
+        var ux = dx / len, uy = dy / len, x1 = p.x + ux * ra, y1 = p.y + uy * ra, x2 = q.x - ux * (rb + 3 / cam.z), y2 = q.y - uy * (rb + 3 / cam.z), hd = Math.max(9 / cam.z, s.g * .16);
+        ctx.save(); ctx.globalAlpha = k.strong ? .95 : .7; ctx.strokeStyle = ctx.fillStyle = k.color || '#ff6b5e'; ctx.lineWidth = (k.strong ? 3.2 : 2.2) / cam.z;
+        ctx.setLineDash([9 / cam.z, 6 / cam.z]);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2 - ux * hd * .6, y2 - uy * hd * .6); ctx.stroke();
+        ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - ux * hd - uy * hd * .55, y2 - uy * hd + ux * hd * .55); ctx.lineTo(x2 - ux * hd + uy * hd * .55, y2 - uy * hd - ux * hd * .55); ctx.closePath(); ctx.fill();
+        ctx.restore();
       });
     }
     function line(a, b, color, text) {
@@ -2209,6 +2289,7 @@ CROWS.NAME_IDEAS = {
         }
       }
       var t = hitToken(w);
+      if (o.onPick && o.onPick(t || null)) { redraw(); return; }   // picking a target: the click is the answer, not a selection or a drag
       if (t) {
         if (V.sel !== t.id) V.selT0 = Date.now();
         V.sel = t.id; if (o.onSelect) o.onSelect(t);
@@ -12176,6 +12257,17 @@ var CROWS_TRAIT_TREES = [
   }
 
   function renderAttacks() {
+    var rows = attackRows(), stowed = carried().filter(function (c) { return c.area !== 'hand' && (item(c.key).cat === 'spell' || item(c.key).cat === 'weapon'); });
+    card('play-attacks', 'Attacks & spells', [
+      window.CrowsCombat ? window.CrowsCombat.targetBar() : null,
+      el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee). A ranged attack against a creature adjacent to you takes a bane: set it before rolling. Light weapon and parry damage adjustments are included. A thrown weapon is out of your hand (no attacks, parry, or light-weapon bonus) until you recover it.' }),
+      rows,
+      stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Drag one into your hands under Items.' }) : null,
+      resultBox()
+    ]);
+  }
+  /* This crow's attacks and spells, each with its roll button: the weapons and books in hand, and unarmed (the Attacks card, and the tabletop's Attack drawer). */
+  function attackRows() {
     var rows = el('div', { class: 'atk-list' });
     function row(title, sub, action, label, disabled, extra, more) {
       rows.appendChild(el('div', { class: 'atk' }, [
@@ -12210,14 +12302,7 @@ var CROWS_TRAIT_TREES = [
     });
     var ua = unarmedAttack();
     row('Unarmed / improvised', ua.summary, function () { rollTest(ua); }, 'Attack', false, null);
-    var stowed = carried().filter(function (c) { return c.area !== 'hand' && (item(c.key).cat === 'spell' || item(c.key).cat === 'weapon'); });
-    card('play-attacks', 'Attacks & spells', [
-      window.CrowsCombat ? window.CrowsCombat.targetBar() : null,
-      el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee). A ranged attack against a creature adjacent to you takes a bane: set it before rolling. Light weapon and parry damage adjustments are included. A thrown weapon is out of your hand (no attacks, parry, or light-weapon bonus) until you recover it.' }),
-      rows,
-      stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Drag one into your hands under Items.' }) : null,
-      resultBox()
-    ]);
+    return rows;
   }
 
   // Items: the shared inventory component (inventory-ui.js): Hands, Belt, Backpack and Not carried as a slot grid. Click a card
@@ -12447,14 +12532,17 @@ var CROWS_TRAIT_TREES = [
     return res;
   }
 
+  /* Edge or bane on the next roll (it resets after the roll). */
+  function ebSeg(redraw) {
+    return el('div', { class: 'seg', role: 'group', 'aria-label': 'Edges and banes' }, [[-2, 'Dbl bane'], [-1, 'Bane'], [0, 'None'], [1, 'Edge'], [2, 'Dbl edge']].map(function (x) {
+      return el('button', { type: 'button', class: ui.eb === x[0] ? 'on' : '', 'aria-pressed': String(ui.eb === x[0]), text: x[1], onclick: function () { ui.eb = x[0]; renderRoller(); if (redraw) redraw(); } });
+    }));
+  }
   function renderRoller() {
     var box = $('play-side'); box.innerHTML = '';
     var p = P(), ch = C.characteristics().values;
     box.appendChild(el('h3', { text: 'Dice' }));
-    var eb = el('div', { class: 'seg', role: 'group', 'aria-label': 'Edges and banes' }, [[-2, 'Dbl bane'], [-1, 'Bane'], [0, 'None'], [1, 'Edge'], [2, 'Dbl edge']].map(function (x) {
-      return el('button', { type: 'button', class: ui.eb === x[0] ? 'on' : '', 'aria-pressed': String(ui.eb === x[0]), text: x[1], onclick: function () { ui.eb = x[0]; renderRoller(); } });
-    }));
-    box.appendChild(eb);
+    box.appendChild(ebSeg());
     var auto = [];
     if (p.conds.Blessed) auto.push('blessed: edge'); if (p.conds.Weakened) auto.push('weakened: bane');
     box.appendChild(el('div', { class: 'row side-mod' }, [
@@ -12543,6 +12631,8 @@ var CROWS_TRAIT_TREES = [
     conds: function () { return P().conds; },
     /* Log a change combat.js made to the sheet (an item dropped or picked up) and save it. */
     note: function (msg) { commit(msg); },
+    /* For the tabletop (table-play.js): the attack rows, the last roll's result box (expertise, chaos roll, Send), the roll itself, edge/bane. */
+    attackRows: function () { return attackRows(); }, resultBox: function () { return resultBox(); }, lastRoll: function () { return last; }, ebSeg: ebSeg,
     /* Redraw the Items card (the fight's ground changed). */
     items: function () { if ($('play') && mode() === 'play') renderItems(); } };
 })();
@@ -12571,6 +12661,9 @@ var CROWS_TRAIT_TREES = [
  *  - the modifiers the rules apply: the target's surprise, prone, grabbed, squeezing, or unconscious state, and the
  *    battlefield (flanking, high ground, hidden, cover, dim light, darkness, ranged against an adjacent creature,
  *    beyond range), and an ally's assist on the next test.
+ *
+ * When the Ref shows a map, the fight can be played on it (table-play.js: targets, attacks and spells, maneuvers, defenses, the turn) or
+ * here as text lists: the Ref sets the default (`view` in the published fight), and each player can switch for themselves (viewMode).
  *
  * The page watches the change signal for this crow's fights (see "live combat" in server/app/api.php), so the card
  * appears, changes, and goes away within a second or two of the Ref Screen. Every linked crow in the party also gets the
@@ -12640,6 +12733,34 @@ var CROWS_TRAIT_TREES = [
     if (foe) targets = [foe.id];
   }
   function mainTarget() { return find(targets[0]); }
+
+  // ------------------------------------------------------------------ map or text lists
+  /* The Ref's default for how the fight shows ('map' or 'text'), and this player's own choice while that default holds. */
+  var VIEW_KEY = 'crows-pt2-fight-view';
+  function refView() { var c = cur(); return c && c.view === 'text' ? 'text' : 'map'; }
+  function viewMode() {
+    var o = null;
+    try { o = JSON.parse(localStorage.getItem(VIEW_KEY) || 'null'); } catch (e) { o = null; }
+    return o && o.ref === refView() && (o.v === 'map' || o.v === 'text') ? o.v : refView();
+  }
+  function setView(v) {
+    try { localStorage.setItem(VIEW_KEY, JSON.stringify({ ref: refView(), v: v })); } catch (e) { /* storage unavailable: the Ref's default stays */ }
+    update(true);
+    if (v === 'map') { var t = $('play-table'); if (t && !t.hidden) t.scrollIntoView({ block: 'start', behavior: 'smooth' }); }
+  }
+  /* In a fight shown as text lists (the map, if any, steps aside). */
+  function textView() { return !!cur() && viewMode() === 'text'; }
+  /* The fight is on the map: the Ref shows one and this player hasn't asked for lists. */
+  function mapView() { return !!(window.CrowsVTTPlay && window.CrowsVTTPlay.live()) && !textView(); }
+  function viewToggle() {
+    var v = viewMode();
+    return el('div', { class: 'row center cbt-viewbar' }, [el('span', { class: 'fine', text: 'Show the fight:' }),
+      el('div', { class: 'seg seg2', role: 'group', 'aria-label': 'How the fight shows' }, [['map', 'On the map', 'Everything for the fight on the tabletop: click creatures to target them, and attack, maneuver, and end your turn there'],
+        ['text', 'As lists', 'The enemies and allies listed here, with every action as buttons']].map(function (o) {
+        return el('button', { type: 'button', class: v === o[0] ? 'on' : '', 'aria-pressed': String(v === o[0]), text: o[1], title: o[2], onclick: function () { setView(o[0]); } });
+      })),
+      el('span', { class: 'fine', text: v === refView() ? '(your Ref’s choice)' : '(your choice; your Ref’s is ' + (refView() === 'map' ? 'the map' : 'lists') + ')' })]);
+  }
 
   // ------------------------------------------------------------------ server
   function load() {
@@ -13019,16 +13140,21 @@ var CROWS_TRAIT_TREES = [
           { 'aria-pressed': String(also), title: also ? 'Drop ' + x.name + ' from your targets' : 'Also target ' + x.name + ' (for spells and attacks on several creatures)', 'aria-label': (also ? 'Drop ' : 'Also target ') + x.name })]) : null
     ]);
   }
-  function renderView(box) {
-    var c = cur(), mine = me(), t = mainTarget();
+  /* The fight: its round, what's happening to this crow, the enemies and allies to target, the ground, and the feed. opts.map: inside the
+     tabletop's Fight drawer (the round and the turn are on the map, and counters and incoming hits pop up there). */
+  function renderView(box, opts) {
+    opts = opts || {};
+    var c = cur(), mine = me(), t = mainTarget(), inMap = !!opts.map;
     var foes = c.list.filter(function (x) { return x.kind === 'foe'; }), friends = c.list.filter(function (x) { return x.kind !== 'foe'; });
     var up = foes.filter(function (x) { return !x.dead && x.health !== 'down'; }).length;
     var order = !c.round ? 'The fight hasn’t started: the Ref rolls initiative.' : c.first === 'crows' ? 'Crows and allies act first.' : c.first === 'foes' ? 'Enemies act first.' : '';
     var surprise = c.round <= 1 && c.surprise === 'crows' ? 'The crows and their allies are surprised: no turn in round 1.' :
       c.round <= 1 && c.surprise === 'foes' ? 'The foes are surprised: no turn in round 1, and attacks against them get +1.' : '';
     var names = targets.map(function (id) { var x = find(id); return x ? x.name : null; }).filter(Boolean);
-    var onTable = !!(window.CrowsVTTPlay && window.CrowsVTTPlay.live());   // the tabletop above shows the fight; this card keeps what's left to do
-    if (onTable) box.appendChild(el('div', { class: 'fine', text: names.length ? 'Your target' + (names.length > 1 ? 's' : '') + ': ' + names.join(', ') + ' (click a creature on the map to change it).' : 'No target chosen: click a creature on the map.' }));
+    var onTable = !inMap && mapView();   // the tabletop above shows the fight; this card keeps what's left to do
+    if (!inMap && window.CrowsVTTPlay && window.CrowsVTTPlay.live()) box.appendChild(viewToggle());
+    if (inMap) { /* the round and the target are on the map */ }
+    else if (onTable) box.appendChild(el('div', { class: 'fine', text: names.length ? 'Your target' + (names.length > 1 ? 's' : '') + ': ' + names.join(', ') + ' (click a creature on the map to change it).' : 'No target chosen: click a creature on the map.' }));
     else box.appendChild(el('div', { class: 'cbt-head' }, [
       el('div', { class: 'vital' }, [el('div', { class: 'lbl', text: 'Round' }), el('div', { class: 'val' }, [el('b', { text: String(c.round || '—') })])]),
       el('div', { class: 'grow' }, [
@@ -13045,8 +13171,8 @@ var CROWS_TRAIT_TREES = [
     var as = myAssist();
     if (as) bans.push(['ok', as.fromName + ' assists you: ' + signed(as.bonus) + ' on your next test (it lapses after this turn).']);
     bans.forEach(function (b) { box.appendChild(el('div', { class: 'banner ' + b[0], text: b[1] })); });
-    if (!onTable) { myPrompts().forEach(function (p) { box.appendChild(promptBanner(p)); }); myHits().forEach(function (h) { box.appendChild(hitBanner(h)); }); }   // on the table they pop up over the map
-    if (mine && c.round) box.appendChild(turnBox(c, mine));
+    if (!onTable && !inMap) { myPrompts().forEach(function (p) { box.appendChild(promptBanner(p)); }); myHits().forEach(function (h) { box.appendChild(hitBanner(h)); }); }   // on the table they pop up over the map
+    if (mine && c.round && !inMap) box.appendChild(turnBox(c, mine));
     if (!onTable) box.appendChild(el('h3', { text: 'Enemies' }));
     if (!onTable) box.appendChild(el('div', { class: 'cbt-list' }, foes.length ? foes.map(row) : [el('p', { class: 'fine', text: 'No enemies in the fight yet.' })]));
     if (friends.length && !onTable) {
@@ -13086,6 +13212,17 @@ var CROWS_TRAIT_TREES = [
     ]);
   }
   function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
+  /* This crow's turn for the tabletop's turn strip: what's left, the reaction, done for the round. */
+  function turnState() {
+    var c = cur(), m = me();
+    if (!c || !m) return null;
+    syncTurn();
+    var acts = 1 + turn.extra, slots = 2 + turn.extra;
+    return { round: c.round, first: c.first, surprise: c.surprise, me: m, extra: turn.extra, rx: rxLeft(), done: !!m.done,
+      act: Math.max(0, Math.min(acts - turn.act, slots - turn.act - turn.mnv)), mnv: Math.max(0, slots - turn.act - turn.mnv) };
+  }
+  function toggleDone() { var m = me(); return m ? act({ type: m.done ? 'undone' : 'done' }) : Promise.resolve(false); }
+  function resetTurn() { var c = cur(); if (c) { turn = { round: c.round, act: 0, mnv: 0, extra: 0 }; update(); } }
   function renderAct(box) {
     var c = cur(), mine = me(), t = mainTarget(), out = !!(mine && mine.conds.indexOf('Unconscious') >= 0), v = chars();
     var grabbed = !!(mine && mine.grabbedByName), prone = !!(mine && mine.conds.indexOf('Prone') >= 0), pets = (window.CrowsApp.state.pets || []).length;
@@ -13094,7 +13231,7 @@ var CROWS_TRAIT_TREES = [
       return el('button', { type: 'button', class: 'cond' + (sit[key] ? ' on' : ''), 'aria-pressed': String(!!sit[key]), title: title, text: label, disabled: disabled || null,
         onclick: function () { sit[key] = !sit[key]; update(true); } });
     }
-    box.appendChild(el('p', { class: 'hint', text: 'Pick your target(s), then attack or cast from Attacks & spells: once a roll is final it goes to the Ref with its damage and effects. Maneuvers and actions below go to the Ref too.' }));
+    box.appendChild(el('p', { class: 'hint', text: 'Pick your target(s), then attack or cast from Attacks & spells' + (mapView() ? ' (or the map’s Attack tab)' : '') + ': once a roll is final it goes to the Ref with its damage and effects. Maneuvers and actions below go to the Ref too.' }));
     // Battlefield modifiers for the next attack.
     box.appendChild(el('div', { class: 'sit-row' }, [el('span', { class: 'fine', text: 'Next attack:' }),
       sitBtn('flank', 'Flanking', 'An ally is on the opposite side of the target: edge on melee attacks (not while you or they are prone or grabbed)', grabbed || prone),
@@ -13169,6 +13306,14 @@ var CROWS_TRAIT_TREES = [
       function (e) { C.toast('Not sent to the Ref: ' + e.message, 4000); if (e.status === 409) load(); return false; });
   }
   function setTarget(id) { if (!find(id)) return false; targets = [id]; update(); return true; }
+  /* Add a creature to the targets (spells and attacks on several), or drop it. */
+  function toggleTarget(id) {
+    if (!find(id)) return false;
+    var i = targets.indexOf(id);
+    if (i === 0) return true;
+    if (i > 0) targets.splice(i, 1); else if (targets.length < 6) targets.push(id);
+    update(); return true;
+  }
   /* Show the fight: the whole card, or just its view while the player is typing in it. */
   function update(force) {
     renderSession();
@@ -13208,7 +13353,10 @@ var CROWS_TRAIT_TREES = [
   window.CrowsCombat = { load: load, render: update, rolled: rolled, updated: updated, superseded: superseded, rollNote: rollNote,
     session: session, resting: resting, restSent: restSent, sendRest: sendRest,
     ground: ground, pickUp: pickUp, cantPickUp: cantPickUp, drop: drop,
-    tableData: tableData, sendTable: sendTable, setTarget: setTarget,
+    tableData: tableData, sendTable: sendTable, setTarget: setTarget, toggleTarget: toggleTarget, targets: function () { return targets.slice(); },
+    // For the tabletop: map or lists, and the fight drawn into its drawer and turn strip.
+    viewMode: viewMode, refView: refView, setView: setView, textView: textView, mapView: mapView,
+    fight: function () { return cur(); }, me: function () { return me(); }, renderView: renderView, renderAct: renderAct, turnState: turnState, toggleDone: toggleDone, resetTurn: resetTurn,
     // What waits on this crow's player (for the Table tab's pop-up): counters it may make, hits it may defend against.
     approvals: function () { return cur() ? { prompts: myPrompts(), hits: myHits(), me: me(), feed: cur().feed || [], countered: countered } : null; },
     promptBanner: promptBanner, hitBanner: hitBanner, known: known, knownText: knownText, rollMods: rollMods, targetBar: targetBar, maneuver: function (name, target, text) { return cur() ? maneuver(name, target, text) : Promise.resolve(false); } };
@@ -13224,12 +13372,20 @@ var CROWS_TRAIT_TREES = [
  * The scene arrives with the live fight (combat.js keeps it: tableData). The player drags their own crow's token (it goes to the Ref
  * as a move, which the Ref's screen checks against walls), measures, pings, and picks a target by clicking a creature (the same target as
  * the Combat card). The map shows only what the party can see; the engine is src/shared/table.js.
+ *
+ * In a fight the whole of it can be played on the map (fullscreen too): a turn strip along the bottom (this crow's vitals, what's left of
+ * the turn, the reaction, Done for the round), a drawer with Attack (the crow's attacks and spells, edge/bane, the roll's result),
+ * Move & act (maneuvers, Taunt, Assist, Ready, anything in words), and Fight (everyone in it, the ground, the feed), arrows for who
+ * attacks whom, the last roll bottom left, counters and incoming hits popping up, and the feed scrolling by. A player who'd rather
+ * have the fight as text lists switches to them (combat.js viewMode; the Ref picks the default): the map then steps aside during fights.
  */
 (function () {
   'use strict';
   if (!window.CrowsApp || !window.CrowsCombat || !window.CrowsTable) return;
   var C = window.CrowsApp.core, el = C.el, $ = C.$, Combat = window.CrowsCombat, Tbl = window.CrowsTable;
-  var P = { view: null, host: null, ui: null, L: null, hudFor: null, scene: null, mask: null, maskKey: '', data: null, sel: null, version: 0, seenPing: -1, sceneId: null, live: false, you: null, campaign: 0 };
+  var P = { view: null, host: null, ui: null, L: null, hudFor: null, scene: null, mask: null, maskKey: '', data: null, sel: null, version: 0, seenPing: -1, sceneId: null, live: false, you: null, campaign: 0,
+    drawer: null, drawerWas: '', rollGone: null, feedSeen: 0 };
+  var Play = window.CrowsPlay;
 
   function scene() { return P.scene; }
   function mine(t) { return !!(t && t.link && P.you && t.link === P.you); }
@@ -13240,7 +13396,7 @@ var CROWS_TRAIT_TREES = [
   /* The map, with its controls floating on it (as on the Ref's Tabletop): tools down the left, the scene and the fight top left, zoom
      bottom right, and a card with the clicked creature's state and a Target button. */
   function build() {
-    P.host = el('div', { class: 'vtt-host' });
+    P.host = el('div', { class: 'vtt-host vtt-play' });
     P.view = Tbl.view(P.host, {
       ref: false,
       scene: scene,
@@ -13254,17 +13410,27 @@ var CROWS_TRAIT_TREES = [
       onPing: function (x, y) { Combat.sendTable({ type: 'ping', x: Math.round(x), y: Math.round(y) }); },
       onKey: function (e) { if (e.ctrlKey || e.metaKey || e.altKey) return; var k = { v: 'select', m: 'measure', p: 'ping' }[e.key.toLowerCase()]; if (k) pickTool(k); },
       onFrame: placeHud,
-      tooltip: tipLines
+      tooltip: tipLines,
+      links: links
     });
     P.view.player(true);
     P.ui = el('div', { class: 'vtt-ui' }); P.L = {};
-    ['tl', 'tools', 'zoom', 'hud', 'ask', 'tip'].forEach(function (k) { P.L[k] = el('div', { class: 'vtt-' + k }); P.ui.appendChild(P.L[k]); });
+    ['tl', 'ticker', 'tools', 'zoom', 'turn', 'roll', 'hud', 'ask', 'drawer', 'tip'].forEach(function (k) { P.L[k] = el('div', { class: 'vtt-' + k }); P.ui.appendChild(P.L[k]); });
+    P.feedSeen = Date.now();   // the ticker shows what happens from now on
     P.host.appendChild(P.ui);
     P.ui.classList.add('enter'); setTimeout(function () { if (P.ui) P.ui.classList.remove('enter'); }, 600);
     var box = $('play-table');
     box.innerHTML = ''; box.hidden = false;
     box.appendChild(P.host);
-    if (!P.fsBound) { P.fsBound = true; document.addEventListener('fullscreenchange', function () { if (P.host) renderBar(); }); }
+    if (!P.fsBound) {
+      P.fsBound = true;
+      // Fullscreen takes the map alone: bring the toast along so messages still show.
+      document.addEventListener('fullscreenchange', function () {
+        var t = $('toast');
+        if (t && P.host && document.fullscreenElement === P.host) P.host.appendChild(t); else if (t && t.parentNode !== document.body && !document.fullscreenElement) document.body.appendChild(t);
+        if (P.host) renderBar();
+      });
+    }
     renderBar();
   }
   function fab(name, label, onclick, cls, text) {
@@ -13315,6 +13481,8 @@ var CROWS_TRAIT_TREES = [
     if (d && d.combat && d.combat.round) kids.push(chip('Round ' + d.combat.round + (d.combat.first ? ' · ' + (d.combat.first === 'crows' ? 'crows first' : 'enemies first') : ''), 'round'));
     if (sc.moved != null) kids.push(chip(sc.moved + ' hexes today'));
     if (!sc.move) kids.push(chip('The Ref moves the tokens', 'warn', 'Your Ref has turned off moving your own token'));
+    if (fight() && Combat.setView) kids.push(fab('list', 'Show the fight as text lists instead (the map steps aside during fights; switch back from the Combat card)', function () {
+      if (document.fullscreenElement) document.exitFullscreen(); Combat.setView('text'); var b = $('play-combat'); if (b) b.scrollIntoView({ block: 'start' }); }, 'sm ghost', 'Lists'));
     P.L.tl.appendChild(el('div', { class: 'hud-grp' }, kids));
     var t = P.sel && sc.tokens.filter(function (k) { return k.id === P.sel; })[0];
     if (!t) { P.hudFor = null; P.L.hud.className = 'vtt-hud'; return; }
@@ -13328,10 +13496,106 @@ var CROWS_TRAIT_TREES = [
     else if (t.hw && !t.dead) card.push(el('div', { class: 'hc-row' }, [chip('looks ' + t.hw, t.hw === 'unhurt' ? '' : 'warn')]));
     if (kn && !t.dead) card.push(el('div', { class: 'hc-row fine', title: 'Monster Expert: you wield a monster lore book and it is in your line of effect', text: '📖 Power ' + kn.p + ' · ' + (kn.atk.join(', ') || 'no attacks') + (kn.traits.length ? ' · ' + kn.traits.join(', ') : '') }));
     if ((t.conds || []).length) card.push(el('div', { class: 'hc-row' }, t.conds.map(function (c) { return chip(c, 'cond'); })));
-    if (tg) card.push(tg);
+    if (tg) card.push(el('div', { class: 'hc-row' }, [tg, Combat.toggleTarget && Combat.targets().length && Combat.targets()[0] !== t.cid ? el('button', { type: 'button', class: 'btn btn-small hud-target',
+      text: Combat.targets().indexOf(t.cid) > 0 ? '− Drop' : '+ Also', title: Combat.targets().indexOf(t.cid) > 0 ? 'Drop ' + t.name + ' from your targets' : 'Also target ' + t.name + ' (spells and attacks on several creatures)',
+      onclick: function () { Combat.toggleTarget(t.cid); renderInfo(); } }) : null]));
     P.L.hud.appendChild(el('div', { class: 'hud-card' }, card));
     placeHud();
   }
+  // ------------------------------------------------------------------ the fight on the map
+  function fight() { return Combat.fight ? Combat.fight() : null; }
+  /* Arrows: each creature to whom it attacks (red, bold when it's you), and your crow to your targets (gold). */
+  function links() {
+    var sc = P.scene, c = fight(); if (!sc || !c) return [];
+    var byCid = {}, out = [], my = sc.tokens.filter(mine)[0];
+    sc.tokens.forEach(function (t) { if (t.cid) byCid[t.cid] = t; });
+    (c.list || []).forEach(function (x) {
+      if (x.dead || x.kind === 'pc') return;
+      var a = byCid[x.id]; if (!a) return;
+      [x.tgt, x.tgt2].forEach(function (id, i) { var b = id && byCid[id]; if (b && !(i && id === x.tgt)) out.push({ from: a.id, to: b.id, color: x.kind === 'ally' ? '#7ee787' : '#ff6b5e', strong: mine(b) }); });
+    });
+    if (my) Combat.targets().forEach(function (id, i) { var b = byCid[id]; if (b && b !== my) out.push({ from: my.id, to: b.id, color: '#ffd25a', strong: i === 0 }); });
+    return out;
+  }
+  function plural(n, w) { return n + ' ' + w + (n === 1 ? '' : 's'); }
+  function openDrawer(m) { P.drawer = P.drawer === m ? null : m; P.drawerWas = ''; renderFight(); }
+  /* Along the bottom in a fight: this crow (vitals, conditions), the turn (what's left, the reaction), the drawer's tabs, and Done. */
+  function renderTurn() {
+    var box = P.L && P.L.turn; if (!box) return;
+    box.innerHTML = '';
+    var ts = Combat.turnState ? Combat.turnState() : null; if (!ts || !P.scene) return;
+    var m = ts.me, c = fight(), out = !!(m.conds || []).some(function (k) { return k === 'Unconscious'; });
+    var me = [el('b', { class: 'ts-name', text: m.name })];
+    if (typeof m.st === 'number') me.push(el('div', { class: 'vbar st' }, [el('span', { class: 'vl', text: 'St' }), el('span', { class: 'vt' }, [el('span', { style: 'width:' + Math.round(Math.max(0, Math.min(1, m.st / (m.stMax || 1))) * 100) + '%' })]), el('span', { class: 'vn', text: m.st + '/' + m.stMax })]));
+    var tags = [];
+    if (m.adMax) tags.push(chip('AD ' + m.ad + '/' + m.adMax, 'cond'));
+    if (m.wounds) tags.push(chip(plural(m.wounds, 'wound'), 'bad'));
+    (m.conds || []).forEach(function (k) { tags.push(chip(k, 'warn', k)); });
+    if (m.grabbedByName) tags.push(chip('grabbed by ' + m.grabbedByName, 'warn'));
+    if (m.tauntName) tags.push(chip('taunted by ' + m.tauntName, 'warn'));
+    if (m.surprised) tags.push(chip('surprised: no turn', 'warn'));
+    if (tags.length) me.push(el('div', { class: 'hc-row' }, tags));
+    var turn = !c.round ? [chip('The fight hasn’t started', 'dim')] : [
+      chip('Round ' + c.round + (c.first ? ' · ' + (c.first === 'crows' ? 'your side first' : 'enemies first') : ''), 'round'),
+      out ? chip('Unconscious', 'bad') : chip(ts.act ? plural(ts.act, 'action') : 'no action', ts.act ? '' : 'dim', 'An action and a maneuver, or two maneuvers' + (ts.extra ? ' (+' + ts.extra + ' from a crit)' : '')),
+      out ? null : chip(ts.mnv ? plural(ts.mnv, 'maneuver') : 'no maneuver', ts.mnv ? '' : 'dim'),
+      chip(ts.rx > 0 ? 'reaction ready' : 'reaction used', ts.rx > 0 ? 'ok' : 'dim', 'One reaction a round: counters, opportunity attacks, readied actions')];
+    var tabs = [['attack', 'sword', 'Attack', 'Your attacks and spells, edge or bane, and the roll'], ['act', 'go', 'Move & act', 'Maneuvers (Move, Shift, Grab...), Taunt, Assist, Ready, anything else'],
+      ['fight', 'list', 'Fight', 'Everyone in the fight (target them), the ground, and what’s happening']];
+    box.appendChild(el('div', { class: 'glass ts-bar' }, [el('div', { class: 'ts-me' }, me), el('div', { class: 'ts-turn' }, turn.filter(Boolean)),
+      el('div', { class: 'ts-btns' }, tabs.map(function (t) { return fab(t[1], t[3], function () { openDrawer(t[0]); }, 'sm' + (P.drawer === t[0] ? ' on' : ''), t[2]); }).concat(c.round ? [
+        fab('check', ts.done ? 'You told the Ref you’re done for round ' + c.round + ': click to undo' : 'Tell the Ref your crow has acted this round', function () { Combat.toggleDone(); }, 'sm ' + (ts.done ? 'on' : 'primary'), ts.done ? 'Done ✓' : 'Done')] : []))]));
+  }
+  /* The drawer: Attack, Move & act, or Fight (the Combat card's own controls). */
+  function renderDrawer() {
+    var box = P.L && P.L.drawer; if (!box) return;
+    var c = fight(), mode = c ? P.drawer : null;
+    box.classList.toggle('open', !!mode);
+    if (!mode) { box.innerHTML = ''; P.drawerWas = ''; return; }
+    var a = document.activeElement;
+    if (P.drawerWas === mode && a && box.contains(a) && (/^(SELECT|TEXTAREA)$/.test(a.tagName) || a.tagName === 'INPUT' && a.type !== 'checkbox')) return;   // keep what they're typing
+    var keep = box.querySelector('.dr-body'), top = keep && P.drawerWas === mode ? keep.scrollTop : 0;
+    P.drawerWas = mode;
+    box.innerHTML = '';
+    var tabs = [['attack', 'Attack'], ['act', 'Move & act'], ['fight', 'Fight']];
+    box.appendChild(el('div', { class: 'dr-head' }, [el('div', { class: 'dr-tabs', role: 'tablist' }, tabs.map(function (t) {
+      return el('button', { type: 'button', role: 'tab', class: 'pill' + (mode === t[0] ? ' on' : ''), 'aria-selected': String(mode === t[0]), text: t[1], onclick: function () { P.drawer = t[0]; P.drawerWas = ''; renderFight(); } });
+    })), fab('x', 'Close', function () { P.drawer = null; renderFight(); }, 'sm ghost')]));
+    var body = el('div', { class: 'dr-body' });
+    if (mode === 'attack') {
+      var names = Combat.targets().map(function (id) { var x = (c.list || []).filter(function (k) { return k.id === id; })[0]; return x ? x.name : null; }).filter(Boolean);
+      body.appendChild(el('div', { class: 'dr-stack' }, [
+        el('p', { class: 'fine dr-tgt', text: names.length ? 'Target' + (names.length > 1 ? 's' : '') + ': ' + names.join(', ') + '. Click a creature on the map to change it (Also adds one for spells on several).' : 'No target: click a creature on the map, then Target.' }),
+        el('div', { class: 'row center' }, [el('span', { class: 'fine', text: 'Next roll:' }), Play.ebSeg ? Play.ebSeg(renderFight) : null]),
+        Play.attackRows ? Play.attackRows() : null,
+        Play.resultBox && Play.lastRoll && Play.lastRoll() ? Play.resultBox() : null]));
+    } else if (mode === 'act') { var st = el('div', { class: 'dr-stack dr-act' }); Combat.renderAct(st); body.appendChild(st); }
+    else { var fv = el('div', { class: 'dr-stack dr-fight' }); Combat.renderView(fv, { map: true }); body.appendChild(fv); }
+    box.appendChild(body);
+    if (top) body.scrollTop = top;
+  }
+  /* Bottom left in a fight: the last roll's result (spend expertise, the chaos roll, Send as it is), until it's closed. */
+  function renderRoll() {
+    var box = P.L && P.L.roll; if (!box) return;
+    box.innerHTML = '';
+    var r = Play.lastRoll ? Play.lastRoll() : null;
+    if (!fight() || !r || r === P.rollGone || P.drawer === 'attack') return;
+    box.appendChild(el('div', { class: 'vtt-rollcard' }, [el('div', { class: 'rc-close' }, [fab('x', 'Close', function () { P.rollGone = r; renderRoll(); }, 'sm ghost')]), Play.resultBox()]));
+  }
+  /* Top left: the fight's feed as it happens (each line fades after a few seconds). */
+  function renderTicker() {
+    var box = P.L && P.L.ticker, c = fight(); if (!box || !c) return;
+    (c.feed || []).forEach(function (x) {
+      if (x.t <= P.feedSeen) return;
+      P.feedSeen = x.t;
+      var line = el('div', { class: 'vtt-tick' }, [rich(x.s)]);
+      box.appendChild(line);
+      while (box.children.length > 4) box.removeChild(box.firstChild);
+      setTimeout(function () { line.classList.add('out'); setTimeout(function () { if (line.parentNode) line.parentNode.removeChild(line); }, 400); }, 7000);
+    });
+  }
+  function renderFight() { renderTurn(); renderDrawer(); renderRoll(); renderTicker(); if (P.view) P.view.redraw(); }
+
   /*
    * The pop-up for what waits on this player: a counter they may make, a hit they may defend against (the Combat card's own controls).
    * When it's settled (the Ref applied the hit, or the counter went through) the pop-up shows what happened, until they close it.
@@ -13415,10 +13679,12 @@ var CROWS_TRAIT_TREES = [
       return;
     }
     if (!was) C.render();
-    if (d.version === P.version && P.view && P.scene) { renderAsk(); return; }
+    var aside = !!(Combat.textView && Combat.textView());   // the fight is shown as text lists: the map steps aside until it ends
+    if (d.version === P.version && P.view && P.scene) { $('play-table').hidden = aside; renderAsk(); renderInfo(); renderFight(); return; }
     P.version = d.version; P.you = d.you; P.campaign = d.campaign ? d.campaign.id : 0;
     var t = d.table, fog = t.fog;
     if (!P.view || !P.host || !$('play-table').contains(P.host)) { P.view = null; build(); }
+    $('play-table').hidden = aside;
     P.scene = { id: t.id, name: t.name, kind: t.kind, w: t.w, h: t.h, g: t.g, grid: t.grid, ox: t.ox || 0, oy: t.oy || 0, bg: t.bg, showGrid: t.showGrid, unit: t.unit, map: t.map,
       tokens: t.tokens.map(function (k) {
         var o = Object.assign({}, k), kn = k.cid && Combat.known ? Combat.known(k.cid) : null; o.mine = mine(k); o.size = k.size;
@@ -13435,7 +13701,7 @@ var CROWS_TRAIT_TREES = [
     P.view.sceneChanged(changedScene ? t.id : t.id);
     P.view.settle();
     if (changedScene) { var mt = P.scene.tokens.filter(mine)[0]; if (mt) setTimeout(function () { P.view.centerOn(mt.x, mt.y, true); }, 60); }
-    renderBar(); renderInfo(); renderAsk();
+    renderBar(); renderInfo(); renderAsk(); renderFight();
   }
   window.CrowsVTTPlay = { refresh: refresh, live: function () { return P.live; } };
   refresh();

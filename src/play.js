@@ -604,6 +604,17 @@
   }
 
   function renderAttacks() {
+    var rows = attackRows(), stowed = carried().filter(function (c) { return c.area !== 'hand' && (item(c.key).cat === 'spell' || item(c.key).cat === 'weapon'); });
+    card('play-attacks', 'Attacks & spells', [
+      window.CrowsCombat ? window.CrowsCombat.targetBar() : null,
+      el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee). A ranged attack against a creature adjacent to you takes a bane: set it before rolling. Light weapon and parry damage adjustments are included. A thrown weapon is out of your hand (no attacks, parry, or light-weapon bonus) until you recover it.' }),
+      rows,
+      stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Drag one into your hands under Items.' }) : null,
+      resultBox()
+    ]);
+  }
+  /* This crow's attacks and spells, each with its roll button: the weapons and books in hand, and unarmed (the Attacks card, and the tabletop's Attack drawer). */
+  function attackRows() {
     var rows = el('div', { class: 'atk-list' });
     function row(title, sub, action, label, disabled, extra, more) {
       rows.appendChild(el('div', { class: 'atk' }, [
@@ -638,14 +649,7 @@
     });
     var ua = unarmedAttack();
     row('Unarmed / improvised', ua.summary, function () { rollTest(ua); }, 'Attack', false, null);
-    var stowed = carried().filter(function (c) { return c.area !== 'hand' && (item(c.key).cat === 'spell' || item(c.key).cat === 'weapon'); });
-    card('play-attacks', 'Attacks & spells', [
-      window.CrowsCombat ? window.CrowsCombat.targetBar() : null,
-      el('p', { class: 'hint', text: 'Uses the edge/bane and modifier set in the dice panel. Conditions apply automatically (blessed: edge and +damage; weakened: bane; prone: bane on melee). A ranged attack against a creature adjacent to you takes a bane: set it before rolling. Light weapon and parry damage adjustments are included. A thrown weapon is out of your hand (no attacks, parry, or light-weapon bonus) until you recover it.' }),
-      rows,
-      stowed.length ? el('p', { class: 'fine', text: 'Stowed (draw into a hand to use): ' + stowed.map(function (c) { return c.key + ' (' + where(c) + ')'; }).join(', ') + '. Drag one into your hands under Items.' }) : null,
-      resultBox()
-    ]);
+    return rows;
   }
 
   // Items: the shared inventory component (inventory-ui.js): Hands, Belt, Backpack and Not carried as a slot grid. Click a card
@@ -875,14 +879,17 @@
     return res;
   }
 
+  /* Edge or bane on the next roll (it resets after the roll). */
+  function ebSeg(redraw) {
+    return el('div', { class: 'seg', role: 'group', 'aria-label': 'Edges and banes' }, [[-2, 'Dbl bane'], [-1, 'Bane'], [0, 'None'], [1, 'Edge'], [2, 'Dbl edge']].map(function (x) {
+      return el('button', { type: 'button', class: ui.eb === x[0] ? 'on' : '', 'aria-pressed': String(ui.eb === x[0]), text: x[1], onclick: function () { ui.eb = x[0]; renderRoller(); if (redraw) redraw(); } });
+    }));
+  }
   function renderRoller() {
     var box = $('play-side'); box.innerHTML = '';
     var p = P(), ch = C.characteristics().values;
     box.appendChild(el('h3', { text: 'Dice' }));
-    var eb = el('div', { class: 'seg', role: 'group', 'aria-label': 'Edges and banes' }, [[-2, 'Dbl bane'], [-1, 'Bane'], [0, 'None'], [1, 'Edge'], [2, 'Dbl edge']].map(function (x) {
-      return el('button', { type: 'button', class: ui.eb === x[0] ? 'on' : '', 'aria-pressed': String(ui.eb === x[0]), text: x[1], onclick: function () { ui.eb = x[0]; renderRoller(); } });
-    }));
-    box.appendChild(eb);
+    box.appendChild(ebSeg());
     var auto = [];
     if (p.conds.Blessed) auto.push('blessed: edge'); if (p.conds.Weakened) auto.push('weakened: bane');
     box.appendChild(el('div', { class: 'row side-mod' }, [
@@ -971,6 +978,8 @@
     conds: function () { return P().conds; },
     /* Log a change combat.js made to the sheet (an item dropped or picked up) and save it. */
     note: function (msg) { commit(msg); },
+    /* For the tabletop (table-play.js): the attack rows, the last roll's result box (expertise, chaos roll, Send), the roll itself, edge/bane. */
+    attackRows: function () { return attackRows(); }, resultBox: function () { return resultBox(); }, lastRoll: function () { return last; }, ebSeg: ebSeg,
     /* Redraw the Items card (the fight's ground changed). */
     items: function () { if ($('play') && mode() === 'play') renderItems(); } };
 })();

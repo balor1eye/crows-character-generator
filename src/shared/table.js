@@ -12,7 +12,9 @@
  * lit (the scene's ambient light, torches and lanterns, a crow's own sight radius). In `manual` mode the Ref reveals and hides by hand.
  * The Ref publishes only that mask (never the walls) and the tokens the party can see, so players' screens know no more than they show.
  *
- * T.view(host, options) is the canvas: pan, zoom, tokens you can drag, ruler, pings, and (for the Ref) the drawing tools.
+ * T.view(host, options) is the canvas: pan, zoom, tokens you can drag, ruler, pings, and (for the Ref) the drawing tools. In a fight,
+ * options.links() gives the arrows to draw (who attacks whom: [{ from, to, color, strong }] by token id), and options.onPick(token or null)
+ * can take a click for picking a target (return true when it did) before it selects or drags anything.
  */
 (function () {
   'use strict';
@@ -605,6 +607,7 @@
     }
     function overlays(s, now) {
       var d = V.drag;
+      if (o.links) drawLinks(s, o.links() || []);
       if (V.tool === 'select' && d && d.type === 'token') {
         var t = d.token, from = d.from, to = d.to;
         var sp = o.speedOf ? o.speedOf(t) : 0, n = dist(s, from, to);
@@ -652,6 +655,21 @@
         ctx.save(); ctx.globalAlpha = k < .65 ? 1 : 1 - (k - .65) / .35; ctx.font = '800 ' + sz + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'bottom';
         var y = p.y - r - easeOut(k) * s.g * .9; ctx.lineWidth = 4 / cam.z; ctx.strokeStyle = 'rgba(0,0,0,.85)'; ctx.strokeText(f.text, p.x, y); ctx.fillStyle = f.color; ctx.fillText(f.text, p.x, y);
         ctx.restore(); return true;
+      });
+    }
+    /* Who is attacking whom: a dashed arrow from each attacker to its target ([{ from, to, color }] by token id), from rim to rim. */
+    function drawLinks(s, links) {
+      var byId = {}; tokens().forEach(function (t) { byId[t.id] = t; });
+      links.forEach(function (k) {
+        var a = byId[k.from], b = byId[k.to]; if (!a || !b || a === b) return;
+        var p = pos(a), q = pos(b), dx = q.x - p.x, dy = q.y - p.y, len = Math.hypot(dx, dy); if (len < 1) return;
+        var ra = radius(s, a), rb = radius(s, b); if (len <= ra + rb + 2) return;
+        var ux = dx / len, uy = dy / len, x1 = p.x + ux * ra, y1 = p.y + uy * ra, x2 = q.x - ux * (rb + 3 / cam.z), y2 = q.y - uy * (rb + 3 / cam.z), hd = Math.max(9 / cam.z, s.g * .16);
+        ctx.save(); ctx.globalAlpha = k.strong ? .95 : .7; ctx.strokeStyle = ctx.fillStyle = k.color || '#ff6b5e'; ctx.lineWidth = (k.strong ? 3.2 : 2.2) / cam.z;
+        ctx.setLineDash([9 / cam.z, 6 / cam.z]);
+        ctx.beginPath(); ctx.moveTo(x1, y1); ctx.lineTo(x2 - ux * hd * .6, y2 - uy * hd * .6); ctx.stroke();
+        ctx.setLineDash([]); ctx.beginPath(); ctx.moveTo(x2, y2); ctx.lineTo(x2 - ux * hd - uy * hd * .55, y2 - uy * hd + ux * hd * .55); ctx.lineTo(x2 - ux * hd + uy * hd * .55, y2 - uy * hd - ux * hd * .55); ctx.closePath(); ctx.fill();
+        ctx.restore();
       });
     }
     function line(a, b, color, text) {
@@ -707,6 +725,7 @@
         }
       }
       var t = hitToken(w);
+      if (o.onPick && o.onPick(t || null)) { redraw(); return; }   // picking a target: the click is the answer, not a selection or a drag
       if (t) {
         if (V.sel !== t.id) V.selT0 = Date.now();
         V.sel = t.id; if (o.onSelect) o.onSelect(t);

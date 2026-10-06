@@ -139,6 +139,7 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .hud-chip.bad { background: rgba(214,84,74,.9); color: #fff; }
 .hud-chip.cond { background: rgba(110,193,255,.2); color: #bfe3ff; }
 .hud-chip.pulse { animation: vtt-pulse 1.2s ease-in-out infinite; }
+.hud-chip.ok { background: rgba(47,143,91,.85); color: #fff; }
 .hud-meter { display: inline-flex; align-items: center; gap: .4rem; font-weight: 700; font-size: .8rem; padding: 0 .3rem; }
 .hud-meter .bar { width: 90px; height: 7px; border-radius: 4px; background: rgba(255,255,255,.15); overflow: hidden; }
 .hud-meter .bar span { display: block; height: 100%; background: #5fbf6a; border-radius: 4px; transition: width .5s cubic-bezier(.2,.9,.3,1); }
@@ -219,6 +220,54 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .dr-quick { display: grid; grid-template-columns: 1fr 1fr; gap: .35rem; }
 .dr-quick .fab { justify-content: flex-start; border: 1px solid var(--line); background: var(--soft); color: var(--ink); height: 36px; }
 .dr-quick .fab:hover { border-color: var(--accent); }
+
+/* the fight on the map: the last roll (bottom left), the feed as it happens (top left), and the Act and Fight drawers */
+.vtt-roll { left: 64px; bottom: 72px; flex-direction: column-reverse; align-items: flex-start; gap: .4rem; z-index: 3; max-width: min(380px, calc(100% - 140px)); }
+.vtt-rollcard { position: relative; pointer-events: auto; background: color-mix(in srgb, var(--card) 95%, transparent); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--accent);
+  border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.45); padding: .5rem .65rem; max-height: 42cqh; overflow: auto; animation: vtt-rise .3s cubic-bezier(.2,.9,.3,1.1) both; font-size: .86rem; }
+.vtt-rollcard.act { border-left-color: var(--sel, #6ec1ff); }
+.vtt-rollcard .result { margin: 0; border: 0; padding: 0 1.8rem 0 0; background: none; }
+.vtt-rollcard .fab { color: var(--ink); }
+.vtt-rollcard .fab:hover { background: var(--soft); }
+.rc-close { position: absolute; top: .25rem; right: .25rem; }
+.rc-head { display: flex; align-items: center; gap: .4rem; justify-content: space-between; }
+.rc-ctl { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-top: .3rem; }
+.vtt-ticker { top: 62px; left: 12px; flex-direction: column; align-items: flex-start; gap: .3rem; max-width: min(380px, 40%); z-index: 1; pointer-events: none; }
+.vtt-tick { background: var(--glass); border: 1px solid var(--gl-line); border-radius: 10px; padding: .3rem .6rem; font-size: .8rem; line-height: 1.35; box-shadow: 0 6px 18px rgba(0,0,0,.35);
+  animation: vtt-in-left .3s cubic-bezier(.2,.9,.3,1.1) both; transition: opacity .4s, transform .4s; }
+.vtt-tick.out { opacity: 0; transform: translateX(-10px); }
+.dr-cbt .cbt { margin: 0; }
+.dr-cbt .cbt-top { gap: .4rem; }
+.dr-cbt .cbt-name .in { width: 100%; }
+.dr-pick { gap: .35rem; }
+.dr-turns { display: flex; flex-direction: column; gap: .25rem; }
+.dr-turn { display: flex; align-items: center; gap: .45rem; flex-wrap: wrap; text-align: left; border: 1px solid var(--line); border-left: 4px solid var(--kc, var(--line)); border-radius: 8px; background: var(--slot);
+  color: var(--ink); padding: .3rem .5rem; font: inherit; font-size: .86rem; cursor: pointer; }
+.dr-turn:hover { border-color: var(--accent); }
+.dr-turn b { flex: 1; }
+.dr-turn.went { opacity: .7; }
+.dr-turn.dead { opacity: .45; text-decoration: line-through; }
+.dr-turn.sel { box-shadow: 0 0 0 2px var(--accent); }
+.dr-feed { margin: 0; padding-left: 1.1rem; font-size: .82rem; line-height: 1.4; max-height: 220px; overflow: auto; }
+.dr-fight .live-box, .dr-fight .items-box { margin-top: 0; }
+.dr-end { border-top: 1px solid var(--line); padding-top: .3rem; display: flex; flex-direction: column; gap: .45rem; }
+/* the player's turn strip (bottom centre) and drawer tabs */
+.vtt-turn { bottom: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 150px); z-index: 2; }
+.ts-bar { display: flex; align-items: center; gap: .4rem .8rem; flex-wrap: wrap; padding: .4rem .55rem; pointer-events: auto; }
+.ts-me { display: flex; flex-direction: column; gap: .2rem; min-width: 150px; }
+.ts-name { font: 700 .95rem var(--serif); }
+.ts-turn, .ts-btns { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
+.vtt-play .vtt-roll { bottom: 96px; }
+.vtt-play:has(.vtt-drawer.open) .vtt-zoom { right: min(364px, calc(100% - 60px)); }
+.vtt-play:has(.vtt-drawer.open) .vtt-turn { left: calc(50% - 175px); max-width: calc(100% - 400px); }
+.vtt-play .vtt-drawer { top: 12px; }
+.dr-tabs { display: flex; gap: .3rem; flex-wrap: wrap; }
+.vtt-drawer .pill { border-color: var(--line); background: var(--soft); color: var(--ink); }
+.vtt-drawer .pill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
+@container vtt (max-width: 1180px) { .vtt-ticker { top: 110px; } .vtt-play .vtt-ticker { top: 62px; } }
+@container vtt (max-width: 700px) { .vtt-roll { left: 12px; bottom: 120px; max-width: calc(100% - 24px); } .vtt-ticker { max-width: calc(100% - 24px); }
+  .vtt-turn { left: 12px; transform: none; max-width: calc(100% - 70px); } .ts-btns .fab-t { display: none; } .vtt-play .vtt-roll { bottom: 150px; }
+  .vtt-play:has(.vtt-drawer.open) .vtt-turn { display: none; } }
 
 /* banners and tips */
 .vtt-banner { display: flex; flex-direction: column; align-items: center; padding: .7rem 2.4rem; border-radius: 14px; background: linear-gradient(180deg, rgba(22,19,20,.92), rgba(22,19,20,.8));

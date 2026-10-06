@@ -60,7 +60,7 @@ left), the greed bonus, Resting, and Encounter signalled.
   notification, it's pinned at the top, and the Ref can tick Also email every player) with one-click templates such as
   "Session starts in 15 minutes", and can send a private message to one player. Announcements and private messages also
   pop up on the Play page and Ref Screen, and can be emailed (players can turn chat emails off on their Account page).
-- **Tabletop** (accounts site, at the top of the Now tab while the Ref is showing a map; it replaces the text list of enemies and allies, and counters and defenses pop up over the map): the graphical tabletop the Ref shares (see
+- **Tabletop** (accounts site, at the top of the Now tab while the Ref is showing a map): the graphical tabletop the Ref shares (see
   **Tabletop** below). You see the map with **fog of war**: only what your party's crows can see, by their own light and the party's
   torches and lanterns, with walls and closed doors blocking sight; what you've explored stays dimly visible, and creatures out of sight aren't
   shown. Drag your crow's token to move it (the Ref's walls stop you, and it shows the distance against your speed while you drag), measure,
@@ -68,6 +68,16 @@ left), the greed bonus, Resting, and Encounter signalled.
   Your crow has its health bar, and so do the other crows and your allies; foes show only how hurt they look (their Stamina bars too,
   when the Ref shows foes' Stamina). Condition markers sit around each token, and hovering names them. When the Ref's creature misses
   you (a counter) or a hit on you waits to be applied (say how you defend), a pop-up on the map asks you, then shows what happened.
+  **A whole fight on the map** (fullscreen too): a turn strip along the bottom shows your crow's Stamina, AD, wounds, and conditions, the round
+  and who goes first, the actions, maneuvers, and reaction you have left, and **Done**; its drawer has **Attack** (your attacks and spells,
+  edge or bane, and the roll with its expertise and chaos roll before it goes to the Ref), **Move & act** (every maneuver and action the Combat
+  card has), and **Fight** (everyone in the fight to target, the ground to pick up from, and what's happening). Dashed arrows show who each
+  creature is attacking (bold when it's you) and your own targets in gold; **+ Also** on a creature adds it for spells on several targets.
+  The last roll waits bottom left, and the fight's feed scrolls by at the top.
+  **Map or lists**: the Ref picks how a fight first shows (Preferences → Players' combat view). **On the map** keeps the fight on the tabletop
+  (the Combat card below keeps the turn, maneuvers, ground, and feed); **As lists** is the text combat: the Combat card lists the enemies and
+  allies with every action as buttons, counters and incoming hits show on it, and the map steps aside until the fight ends. Each player can
+  switch for themselves on the Combat card (or **Lists** on the map); when the Ref changes the default, everyone follows it again.
   **Monster Expert**: if your crow has the trait and a Lore Book (Monster Lore) in hand, you see the Stamina, power, and the names of the
   attacks and traits of each monster (not humans or animals) in its line of effect: on the Combat card, on the map (a Stamina bar), and
   when you hover it. Walls, closed doors, and windows on the Ref's map block the line; with no map, every monster in the fight counts. Only
@@ -147,6 +157,15 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
   conditions; hover a token for its conditions named and explained. **Vitals** shows each one's Stamina, AD, and wounds under its token
   (only on the Ref's screen). When a hit or effect waits for the Ref, a pop-up on the map shows it with Apply, Negate, the damage, and the
   player's defense, then what it did (with Undo).
+  **A whole fight runs on the battle map**, start to end. Top centre: surprise and **Roll initiative**, then the round, how many foes have
+  acted and crows are done, **Next round**, **Fight**, and **End**. A creature's HUD has **Act** (a drawer with its row from the combat tracker:
+  every attack and maneuver at its target, opportunity attacks, Grab/Knockback/Escape, uses, reactions, all conditions, hidden and squeezing,
+  dead, art, what it holds) and **Target** (click the creature it attacks; dashed arrows show every creature's target). The last roll floats
+  bottom left with its counters; players' misses and dooms that allow a follow-up (a counter, a stray shot, a backlash, dismember) show there
+  too; the fight's feed scrolls by top left. The **Fight** drawer has the turn order (click a name to select it), the battlefield buttons,
+  the players' actions and reactions, the items on the ground, the feed, and the end: End combat, or a running encounter's outcome (its
+  summary goes into the encounter's notes, and you stay on the map). **Players: map / lists** (top right) sets how the players' Play pages
+  first show fights.
   **Player view** shows exactly what the players see (good for a shared screen or TV: Fullscreen); in Tabletop Mode, where nothing is shared, it is
   the table's own display. **Show to players** publishes the scene with the live fight: only the fog (as a mask, never the walls) and the tokens
   the party can see are sent, and players' moves and pings come back like their combat actions. Dungeon scenes also carry the dungeon turn clock
@@ -169,6 +188,7 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
 - **World**: places (with the Dungeons book's locations), NPCs, campaign notes, and archived session logs.
 - **Preferences** (Campaign Preferences, saved with the campaign): every function is on by default, and you can untick any tab,
   card, sidebar panel, or combat helper you don't use to hide it (nothing is deleted; tick it to bring it back).
+  **Players' combat view** sets how fights first show on the players' Play pages: on the battle map (while you show one) or as text lists.
   **Tabletop Mode** turns the Ref Screen into a reference and assistant for a game played at a table: the live fight is not shared with
   or taken from the players' Play pages, but linked crows stay tied to their sheets (live vitals, and your changes land on them). Nothing
   happens automatically: creatures roll with an optional target and you apply the hit, damage, healing, or conditions yourself. An **At the table** card on the Session tab lists every

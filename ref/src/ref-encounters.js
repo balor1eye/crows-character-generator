@@ -169,7 +169,8 @@
     var n = {}; list.forEach(function (x) { var k = x.cref || x.name; n[k] = (n[k] || 0) + 1; });
     return Object.keys(n).map(function (k) { return n[k] + ' × ' + k; }).join(', ');
   }
-  function endEncounter(e, outcome, resolve) {
+  /* stay: end it without leaving the tab (the Tabletop ends fights on the map). */
+  function endEncounter(e, outcome, resolve, stay) {
     var s = S(), c = s.combat, label = ENC_OUTCOMES.filter(function (o) { return o[0] === outcome; })[0][1];
     var them = c.list.filter(function (x) { return x.kind !== 'pc'; }), fallen = them.filter(function (x) { return x.dead; }),
       standing = them.filter(function (x) { return !x.dead && x.kind === 'foe'; }), allies = them.filter(function (x) { return !x.dead && x.kind === 'ally'; });
@@ -189,7 +190,7 @@
     if (resolve) { e.done = true; if (s.pending && s.pending.encId === e.id) s.pending = null; }
     log('enc', '**Encounter ends: ' + (e.name || 'untitled') + '.** ' + lines.join(' '));
     clearCombat(c); ui.encEnd = null;
-    save(); openEncounter(e.id); toast('The result is in the encounter\'s notes.');
+    save(); if (stay) render(); else openEncounter(e.id); toast('The result is in the encounter\'s notes.');
   }
   /* A monster's "suspicious like or hate" check (Bestiary rules): 2d10 + the highest Mind among the monsters. */
   function likeHateCheck(foes) {
