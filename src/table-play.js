@@ -27,7 +27,7 @@
   /* The map, with its controls floating on it (as on the Ref's Tabletop): tools down the left, the scene and the fight top left, zoom
      bottom right, and a card with the clicked creature's state and a Target button. */
   function build() {
-    P.host = el('div', { class: 'vtt-host vtt-play' });
+    P.host = el('div', { class: 'vtt-host vtt-stage vtt-play' });
     P.view = Tbl.view(P.host, {
       ref: false,
       scene: scene,
@@ -47,6 +47,8 @@
     P.view.player(true);
     P.ui = el('div', { class: 'vtt-ui' }); P.L = {};
     ['tl', 'ticker', 'tools', 'zoom', 'turn', 'roll', 'hud', 'ask', 'drawer', 'tip'].forEach(function (k) { P.L[k] = el('div', { class: 'vtt-' + k }); P.ui.appendChild(P.L[k]); });
+    // Like the Ref's Tabletop: every bar can be moved to the top, bottom, or either side of the map (T.docks).
+    Tbl.docks(P.ui, [['tl', 'top'], ['tools', 'left'], ['zoom', 'right'], ['turn', 'bottom']].map(function (b) { return { id: b[0], el: P.L[b[0]], zone: b[1] }; }), { key: 'crows-play-bars' });
     P.feedSeen = Date.now();   // the ticker shows what happens from now on
     P.host.appendChild(P.ui);
     P.ui.classList.add('enter'); setTimeout(function () { if (P.ui) P.ui.classList.remove('enter'); }, 600);
@@ -75,8 +77,16 @@
     var d = TOOLS.filter(function (x) { return x[0] === t; })[0];
     P.L.tip.innerHTML = ''; if (d) P.L.tip.appendChild(el('div', { class: 'vtt-tipbox', text: d[1] + ': ' + d[2] }));
   }
+  /* The scene's name and, in a fight, the round: the player's counterpart of the Ref's scene and clock bars. */
+  function renderScene() {
+    if (!P.L || !P.L.tl) return;
+    var sc = P.scene, c = P.data && P.data.combat; P.L.tl.innerHTML = '';
+    if (!sc) return;
+    P.L.tl.appendChild(el('div', { class: 'glass row-g' }, [el('b', { class: 'hud-chip dim', text: sc.name || 'Tabletop' }), c && c.round ? el('span', { class: 'hud-chip round', text: 'Round ' + c.round }) : null]));
+  }
   function renderBar() {
     if (!P.L) return;
+    renderScene();
     var now = P.view.getTool();
     P.L.tools.innerHTML = '';
     P.L.tools.appendChild(el('div', { class: 'glass palette', role: 'toolbar', 'aria-label': 'Tools', 'aria-orientation': 'vertical' }, TOOLS.map(function (t) {
@@ -305,7 +315,7 @@
     if (!d) {
       P.scene = null; P.mask = null; P.you = null;
       var box = $('play-table');
-      if (box) { box.innerHTML = ''; box.hidden = true; }
+      if (box) { box.innerHTML = ''; box.hidden = false; box.appendChild(el('div', { class: 'tt-wait' }, [el('h2', { text: 'Tabletop' }), el('p', { class: 'hint', text: 'Nothing on the table yet. When the Ref shows a scene to the players (and a fight, if there is one), it appears here, and you can move your crow, measure, ping, and play your turn on it.' })])); }
       if (was) { P.view = null; P.host = null; P.L = null; C.render(); }
       return;
     }

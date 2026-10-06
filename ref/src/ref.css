@@ -171,20 +171,28 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .invite-link .in { width: 100%; font-size: .78rem; }
 .invite-list { margin-top: .6rem; display: flex; flex-direction: column; gap: .35rem; }
 .invite-list textarea { font-size: .85rem; padding: .3rem .4rem; }
-.st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(370px, 1fr)); gap: .7rem; align-items: start; }
-.st-tile { border: 1px solid var(--line); border-top: 4px solid var(--accent); border-radius: 6px; padding: .5rem .7rem; background: var(--card); display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+/* Party status: the tiles share the block's width (a short last row stretches to fill it) and every row's tiles are as tall as the tallest;
+   each tile is a size container, so its text scales with the tile and wraps instead of being cut off. */
+.st-grid { display: flex; flex-wrap: wrap; gap: .7rem; align-items: stretch; }
+.st-grid > .st-tile { flex: 1 1 min(100%, 300px); }
+.st-tile { container-type: inline-size; border: 1px solid var(--line); border-top: 4px solid var(--accent); border-radius: 6px; padding: .5rem .7rem; background: var(--card); display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
 .st-tile.local { border-top-color: var(--ink); background: var(--slot); }
 .st-head { display: flex; align-items: center; gap: .45rem; min-width: 0; }
 .row > .st-head { flex: 1; }
-.st-head b { font: bold 1.05rem var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-tile > * { font-size: clamp(.7rem, 3.3cqi, 1.05rem); }
+.st-tile .btn-small, .st-tile .cond, .st-tile .in, .st-tile .check, .st-tile .chip { font-size: .92em; }
+.st-tile .btn-small { padding-inline: .5em; min-width: 0; }
+.st-head { flex-wrap: wrap; }
+.st-head b { font: bold 1.3em/1.15 var(--serif); min-width: 0; overflow-wrap: anywhere; }
+.st-head .fine, .st-tile .fine { font-size: .8em; overflow-wrap: anywhere; }
 .st-dmg { gap: .4rem; }
 .st-dmg .in.tiny { width: 4.2rem; }
-.st-tile .conds .cond { min-height: 26px; padding: .1rem .5rem; font-size: .76rem; }
+.st-tile .conds .cond { min-height: 0; padding: .15em .6em; font-size: .85em; }
 .st-stam { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
-.st-stam .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
-.st-stam b { font: bold 1.5rem var(--serif); }
+.st-stam .lbl { font-size: .75em; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+.st-stam b { font: bold 1.7em var(--serif); }
 .st-stam .meter { flex: 1 0 100%; }
-.st-nums { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; font-size: .85rem; }
+.st-nums { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; font-size: .95em; }
 .st-nums > span { display: inline-flex; align-items: center; gap: .25rem; }
 .st-nums .bad b { color: var(--bad); }
 .pc-list { display: flex; flex-direction: column; }

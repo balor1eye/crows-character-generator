@@ -106,23 +106,62 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .sep.v { width: 1px; height: 30px; margin: 0 .15rem; }
 
 /* placement of the layers */
-.vtt-tl { top: 12px; left: 12px; }
-.vtt-tc { top: 12px; left: 50%; transform: translateX(-50%); flex-wrap: wrap; justify-content: center; max-width: calc(100% - 640px); min-width: 300px; }
-.vtt-tr { top: 12px; right: 12px; }
-.vtt-tools { top: 50%; left: 12px; transform: translateY(-50%); align-items: center; }
-.vtt-zoom { bottom: 12px; right: 12px; transition: right .32s cubic-bezier(.2,.9,.3,1.05); }
-.vtt-stage:has(.vtt-drawer.open) .vtt-zoom { right: min(364px, calc(100% - 60px)); }
-.vtt-roster { bottom: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 150px); }
+/* The movable bars (T.docks in table.js): four docks around the map in a grid, so they never overlap one another. Top and bottom run their bars in rows
+   (wrapping to more rows when they don't fit), the sides in columns, with the bars turned vertical. --dk-t/-b/-l/-r say how far each dock reaches in. */
+.vtt-ui > .vtt-docks { inset: 0; display: grid; grid-template: "t t t" auto "l . r" minmax(0, 1fr) "b b b" auto / auto minmax(0, 1fr) auto; gap: .45rem; padding: 12px; z-index: 2; pointer-events: none; transition: padding-right .32s cubic-bezier(.2,.9,.3,1.05); }
+.vtt-stage:has(.vtt-drawer.open) .vtt-docks { padding-right: min(364px, 12px); padding-right: calc(12px + min(340px, 100% - 24px) + 12px); }
+.dk-zone { display: flex; flex-wrap: wrap; gap: .45rem; min-width: 0; min-height: 0; pointer-events: none; }
+.dk-top { grid-area: t; justify-content: center; align-items: flex-start; }
+.dk-bottom { grid-area: b; justify-content: center; align-items: flex-end; }
+.dk-left { grid-area: l; flex-direction: column; justify-content: center; align-content: flex-start; align-items: flex-start; }
+.dk-right { grid-area: r; flex-direction: column; justify-content: center; align-content: flex-end; align-items: flex-end; }
+.dk-bar { display: flex; align-items: flex-start; gap: .2rem; min-width: 0; max-width: 100%; pointer-events: none; }
+.dk-bar.empty { display: none; }
+.dk-zone.v .dk-bar { flex-direction: column; align-items: stretch; max-height: 100%; }
+.dk-in { display: flex; flex-wrap: wrap; gap: .45rem; min-width: 0; max-width: 100%; }
+.dk-grip { pointer-events: auto; flex: none; display: flex; align-items: center; justify-content: center; width: 16px; height: 28px; margin-top: 5px; padding: 0; border: 0; border-radius: 6px;
+  background: var(--glass); color: #f1ebe2; opacity: .35; cursor: grab; touch-action: none; }
+.dk-grip:hover, .dk-grip:focus-visible, .dk-drag .dk-grip { opacity: 1; }
+.dk-grip:active { cursor: grabbing; }
+.dk-zone.v .dk-grip { width: 28px; height: 16px; margin: 0 auto; }
+.dk-zone.v .dk-grip svg { transform: rotate(90deg); }
+.dk-drag { outline: 2px dashed var(--gl-hi); outline-offset: 3px; border-radius: 12px; }
+/* a vertical bar: everything inside stacks, labels step aside */
+.dk-zone.v .dk-in { flex-direction: column; flex-wrap: nowrap; align-items: stretch; max-height: 100%; overflow: auto; scrollbar-width: none; }
+.dk-zone.v .dk-in > *, .dk-zone.v .glass, .dk-zone.v .hud-grp, .dk-zone.v .row-g, .dk-zone.v .ts-bar { flex-direction: column; align-items: stretch; max-width: 100%; }
+.dk-zone.v .fab-t { display: none; }
+.dk-zone.v .glass-sel { max-width: 150px; }
+.dk-zone.v .sep, .dk-zone.v .sep.v { width: 70%; height: 1px; margin: .15rem auto; }
+.dk-zone.v .strip { overflow-x: visible; overflow-y: auto; flex-direction: column; }
+.dk-zone.v .ts-me, .dk-zone.v .ts-turn, .dk-zone.v .ts-btns { min-width: 0; flex-direction: column; align-items: stretch; }
+.dk-zone.h .palette { flex-direction: row; flex-wrap: wrap; }
+.dk-zone.h .palette .sep { width: 1px; height: 24px; margin: 0 .15rem; }
+.dk-zone.h .fab[data-tip]::before { left: 50%; right: auto; top: auto; bottom: auto; }
+.dk-top .fab[data-tip]::before { top: calc(100% + 8px); transform: translate(-50%, -4px); }
+.dk-bottom .fab[data-tip]::before { bottom: calc(100% + 8px); transform: translate(-50%, 4px); }
+.dk-top .fab[data-tip]:hover::before, .dk-bottom .fab[data-tip]:hover::before { transform: translate(-50%, 0); }
+.dk-left .fab[data-tip]::before { left: calc(100% + 8px); right: auto; top: 50%; transform: translate(-4px, -50%); }
+.dk-right .fab[data-tip]::before { left: auto; right: calc(100% + 8px); top: 50%; transform: translate(4px, -50%); }
+.dk-left .fab[data-tip]:hover::before, .dk-right .fab[data-tip]:hover::before { transform: translate(0, -50%); }
+/* while dragging: where a bar would land */
+.dk-hints { position: absolute; inset: 0; display: none; pointer-events: none; }
+.vtt-docks.dragging .dk-hints { display: block; }
+.dk-hint { position: absolute; display: flex; align-items: center; justify-content: center; border: 2px dashed rgba(217,164,65,.45); border-radius: 14px; background: rgba(217,164,65,.06); color: rgba(217,164,65,.9);
+  font: 700 .8rem var(--font); text-transform: uppercase; letter-spacing: .1em; transition: background .12s, border-color .12s; }
+.dk-hint.on { background: rgba(217,164,65,.22); border-color: var(--gl-hi); }
+.dk-h-top { left: 14%; right: 14%; top: 6px; height: calc(50% - 6px); align-items: flex-start; padding-top: .4rem; }
+.dk-h-bottom { left: 14%; right: 14%; bottom: 6px; height: calc(50% - 6px); align-items: flex-end; padding-bottom: .4rem; }
+.dk-h-left { left: 6px; top: 6px; bottom: 6px; width: calc(14% - 6px); }
+.dk-h-right { right: 6px; top: 6px; bottom: 6px; width: calc(14% - 6px); }
 .vtt-banners { top: 22%; left: 50%; transform: translateX(-50%); flex-direction: column; align-items: center; }
-.vtt-tip { bottom: 84px; left: 12px; max-width: min(420px, 60%); }
+.vtt-tip { bottom: var(--dk-b, 84px); left: var(--dk-l, 12px); max-width: min(420px, 60%); }
 .vtt-empty { inset: 0; align-items: center; justify-content: center; }
 .vtt-hud { left: 0; top: 0; width: 0; height: 0; display: block; z-index: 2; }
-.vtt-drawer { top: 64px; right: 12px; bottom: 12px; width: min(340px, calc(100% - 24px)); display: flex; flex-direction: column; z-index: 3;
+.vtt-drawer { top: 12px; right: 12px; bottom: 12px; width: min(340px, calc(100% - 24px)); display: flex; flex-direction: column; z-index: 3;
   background: color-mix(in srgb, var(--card) 94%, transparent); color: var(--ink); border: 1px solid var(--line); border-radius: 14px; box-shadow: 0 12px 40px rgba(0,0,0,.45);
   backdrop-filter: blur(10px); -webkit-backdrop-filter: blur(10px); pointer-events: auto;
   transform: translateX(calc(100% + 24px)); opacity: 0; visibility: hidden; transition: transform .32s cubic-bezier(.2,.9,.3,1.05), opacity .2s, visibility 0s .32s; }
 .vtt-drawer.open { transform: none; opacity: 1; visibility: visible; transition: transform .32s cubic-bezier(.2,.9,.3,1.05), opacity .2s; }
-.vtt-stage:has(.vtt-drawer.open) .vtt-tc { max-width: calc(100% - 760px); }
 
 .palette { display: flex; flex-direction: column; align-items: center; gap: 2px; padding: 5px; }
 .vtt-ui.enter .vtt-tools .palette { animation: vtt-in-left .35s cubic-bezier(.2,.9,.3,1.1) both; }
@@ -229,7 +268,7 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .dr-quick .fab:hover { border-color: var(--accent); }
 
 /* the fight on the map: the last roll (bottom left), the feed as it happens (top left), and the Act and Fight drawers */
-.vtt-roll { left: 64px; bottom: 72px; flex-direction: column-reverse; align-items: flex-start; gap: .4rem; z-index: 3; max-width: min(380px, calc(100% - 140px)); }
+.vtt-roll { left: var(--dk-l, 64px); bottom: var(--dk-b, 72px); flex-direction: column-reverse; align-items: flex-start; gap: .4rem; z-index: 3; max-width: min(380px, calc(100% - 140px)); }
 .vtt-rollcard { position: relative; pointer-events: auto; background: color-mix(in srgb, var(--card) 95%, transparent); color: var(--ink); border: 1px solid var(--line); border-left: 4px solid var(--accent);
   border-radius: 12px; box-shadow: 0 10px 30px rgba(0,0,0,.45); padding: .5rem .65rem; max-height: 42cqh; overflow: auto; animation: vtt-rise .3s cubic-bezier(.2,.9,.3,1.1) both; font-size: .86rem; }
 .vtt-rollcard.act { border-left-color: var(--sel, #6ec1ff); }
@@ -239,7 +278,7 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .rc-close { position: absolute; top: .25rem; right: .25rem; }
 .rc-head { display: flex; align-items: center; gap: .4rem; justify-content: space-between; }
 .rc-ctl { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; margin-top: .3rem; }
-.vtt-ticker { top: 62px; left: 12px; flex-direction: column; align-items: flex-start; gap: .3rem; max-width: min(380px, 40%); z-index: 1; pointer-events: none; }
+.vtt-ticker { top: var(--dk-t, 62px); left: var(--dk-l, 12px); flex-direction: column; align-items: flex-start; gap: .3rem; max-width: min(380px, 40%); z-index: 1; pointer-events: none; }
 .vtt-tick { background: var(--glass); border: 1px solid var(--gl-line); border-radius: 10px; padding: .3rem .6rem; font-size: .8rem; line-height: 1.35; box-shadow: 0 6px 18px rgba(0,0,0,.35);
   animation: vtt-in-left .3s cubic-bezier(.2,.9,.3,1.1) both; transition: opacity .4s, transform .4s; }
 .vtt-tick.out { opacity: 0; transform: translateX(-10px); }
@@ -259,22 +298,16 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .dr-fight .live-box, .dr-fight .items-box { margin-top: 0; }
 .dr-end { border-top: 1px solid var(--line); padding-top: .3rem; display: flex; flex-direction: column; gap: .45rem; }
 /* the player's turn strip (bottom centre) and drawer tabs */
-.vtt-turn { bottom: 12px; left: 50%; transform: translateX(-50%); max-width: calc(100% - 150px); z-index: 2; }
 .ts-bar { display: flex; align-items: center; gap: .4rem .8rem; flex-wrap: wrap; padding: .4rem .55rem; pointer-events: auto; }
 .ts-me { display: flex; flex-direction: column; gap: .2rem; min-width: 150px; }
 .ts-name { font: 700 .95rem var(--serif); }
 .ts-turn, .ts-btns { display: flex; align-items: center; gap: .3rem; flex-wrap: wrap; }
-.vtt-play .vtt-roll { bottom: 96px; }
-.vtt-play:has(.vtt-drawer.open) .vtt-zoom { right: min(364px, calc(100% - 60px)); }
-.vtt-play:has(.vtt-drawer.open) .vtt-turn { left: calc(50% - 175px); max-width: calc(100% - 400px); }
-.vtt-play .vtt-drawer { top: 12px; }
 .dr-tabs { display: flex; gap: .3rem; flex-wrap: wrap; }
 .vtt-drawer .pill { border-color: var(--line); background: var(--soft); color: var(--ink); }
 .vtt-drawer .pill.on { background: var(--accent); border-color: var(--accent); color: #fff; }
-@container vtt (max-width: 1180px) { .vtt-ticker { top: 110px; } .vtt-play .vtt-ticker { top: 62px; } }
-@container vtt (max-width: 700px) { .vtt-roll { left: 12px; bottom: 120px; max-width: calc(100% - 24px); } .vtt-ticker { max-width: calc(100% - 24px); }
-  .vtt-turn { left: 12px; transform: none; max-width: calc(100% - 70px); } .ts-btns .fab-t { display: none; } .vtt-play .vtt-roll { bottom: 150px; }
-  .vtt-play:has(.vtt-drawer.open) .vtt-turn { display: none; } }
+@container vtt (max-width: 700px) { .vtt-roll { left: 12px; bottom: var(--dk-b, 120px); max-width: calc(100% - 24px); } .vtt-ticker { max-width: calc(100% - 24px); }
+  .ts-btns .fab-t { display: none; }
+  .vtt-docks { padding-right: 12px !important; } }
 
 /* banners and tips */
 .vtt-banner { display: flex; flex-direction: column; align-items: center; padding: .7rem 2.4rem; border-radius: 14px; background: linear-gradient(180deg, rgba(22,19,20,.92), rgba(22,19,20,.8));
@@ -289,7 +322,7 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
   animation: vtt-float 1.5s cubic-bezier(.2,.9,.3,1) both; pointer-events: none; }
 .vtt-float.f-heal { color: #7be08f; } .vtt-float.f-wound { color: #ffb4a8; font-size: 1.15rem; }
 /* the approval pop-up (top centre, under the clock and the fight) */
-.vtt-ask { top: 62px; left: 50%; transform: translateX(-50%); z-index: 5; flex-direction: column; align-items: center; width: min(480px, calc(100% - 24px)); }
+.vtt-ask { top: var(--dk-t, 62px); left: 50%; transform: translateX(-50%); z-index: 5; flex-direction: column; align-items: center; width: min(480px, calc(100% - 24px)); }
 .ask-card { pointer-events: auto; width: 100%; padding: .6rem .75rem .7rem; display: flex; flex-direction: column; gap: .45rem; border-color: rgba(217,164,65,.75);
   box-shadow: 0 0 0 3px rgba(217,164,65,.18), 0 14px 40px rgba(0,0,0,.55); animation: vtt-drop .3s cubic-bezier(.2,.9,.3,1.1) both; max-height: min(60vh, 520px); overflow: auto; }
 .ask-card.done { border-color: rgba(126,231,135,.6); box-shadow: 0 0 0 3px rgba(126,231,135,.14), 0 14px 40px rgba(0,0,0,.55); }
@@ -349,14 +382,9 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
   75% { opacity: 1; } 100% { opacity: 0; transform: translate(-50%, -330%) scale(.95); } }
 @keyframes vtt-tip { 0% { opacity: 0; transform: translateY(6px); } 8%, 80% { opacity: 1; transform: none; } 100% { opacity: 0; } }
 
-/* the tool and status bars wrap their labels away on small maps */
-@container vtt (max-width: 1180px) { .vtt-tc { top: 60px; max-width: calc(100% - 24px); } .vtt-stage:has(.vtt-drawer.open) .vtt-tc { max-width: calc(100% - 380px); left: calc(50% - 175px); } .vtt-drawer { top: 108px; } }
+/* the tool and status bars drop their labels on small maps */
 @container vtt (max-width: 700px) {
-  .vtt-tr .fab-t, .vtt-tc .fab .fab-t { display: none; }
-  .vtt-tools { top: auto; bottom: 70px; transform: none; }
-  .vtt-tools .palette { flex-direction: row; flex-wrap: wrap; max-width: calc(100vw - 100px); }
-  .vtt-tools .sep { width: 1px; height: 24px; }
-  .vtt-roster { max-width: calc(100% - 70px); left: 12px; transform: none; }
+  .dk-zone.h .fab .fab-t { display: none; }
   .glass-sel { max-width: 150px; }
 }
 @media (prefers-reduced-motion: reduce) { .vtt-ui *, .vtt-ui *::before, .vtt-ui *::after { animation: none !important; transition: none !important; } .vtt-banner { animation: none !important; } }
@@ -536,20 +564,28 @@ table.tbl tr.hit td { background: color-mix(in srgb, var(--sel) 25%, transparent
 .invite-link .in { width: 100%; font-size: .78rem; }
 .invite-list { margin-top: .6rem; display: flex; flex-direction: column; gap: .35rem; }
 .invite-list textarea { font-size: .85rem; padding: .3rem .4rem; }
-.st-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(370px, 1fr)); gap: .7rem; align-items: start; }
-.st-tile { border: 1px solid var(--line); border-top: 4px solid var(--accent); border-radius: 6px; padding: .5rem .7rem; background: var(--card); display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
+/* Party status: the tiles share the block's width (a short last row stretches to fill it) and every row's tiles are as tall as the tallest;
+   each tile is a size container, so its text scales with the tile and wraps instead of being cut off. */
+.st-grid { display: flex; flex-wrap: wrap; gap: .7rem; align-items: stretch; }
+.st-grid > .st-tile { flex: 1 1 min(100%, 300px); }
+.st-tile { container-type: inline-size; border: 1px solid var(--line); border-top: 4px solid var(--accent); border-radius: 6px; padding: .5rem .7rem; background: var(--card); display: flex; flex-direction: column; gap: .35rem; min-width: 0; }
 .st-tile.local { border-top-color: var(--ink); background: var(--slot); }
 .st-head { display: flex; align-items: center; gap: .45rem; min-width: 0; }
 .row > .st-head { flex: 1; }
-.st-head b { font: bold 1.05rem var(--serif); overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.st-tile > * { font-size: clamp(.7rem, 3.3cqi, 1.05rem); }
+.st-tile .btn-small, .st-tile .cond, .st-tile .in, .st-tile .check, .st-tile .chip { font-size: .92em; }
+.st-tile .btn-small { padding-inline: .5em; min-width: 0; }
+.st-head { flex-wrap: wrap; }
+.st-head b { font: bold 1.3em/1.15 var(--serif); min-width: 0; overflow-wrap: anywhere; }
+.st-head .fine, .st-tile .fine { font-size: .8em; overflow-wrap: anywhere; }
 .st-dmg { gap: .4rem; }
 .st-dmg .in.tiny { width: 4.2rem; }
-.st-tile .conds .cond { min-height: 26px; padding: .1rem .5rem; font-size: .76rem; }
+.st-tile .conds .cond { min-height: 0; padding: .15em .6em; font-size: .85em; }
 .st-stam { display: flex; align-items: baseline; gap: .5rem; flex-wrap: wrap; }
-.st-stam .lbl { font-size: .7rem; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
-.st-stam b { font: bold 1.5rem var(--serif); }
+.st-stam .lbl { font-size: .75em; text-transform: uppercase; letter-spacing: .05em; color: var(--muted); font-weight: 700; }
+.st-stam b { font: bold 1.7em var(--serif); }
 .st-stam .meter { flex: 1 0 100%; }
-.st-nums { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; font-size: .85rem; }
+.st-nums { display: flex; flex-wrap: wrap; gap: .3rem .9rem; align-items: center; font-size: .95em; }
 .st-nums > span { display: inline-flex; align-items: center; gap: .25rem; }
 .st-nums .bad b { color: var(--bad); }
 .pc-list { display: flex; flex-direction: column; }
@@ -2777,6 +2813,105 @@ CROWS.NAME_IDEAS = {
   /* An icon as an inline SVG string (it takes the text color). */
   function icon(name) { return '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="' + (ICONS[name] || ICONS.marker) + '"/></svg>'; }
 
+
+  // ------------------------------------------------------------------ movable bars
+  /*
+   * T.docks(ui, bars, opts): the tabletop's floating bars (scene, clock, tools, zoom...) live in four docks around the map (top, bottom,
+   * left, right). Each bar has a grip: drag it to another dock or to a new place in its own dock. Docks along the top and bottom run
+   * their bars in rows (wrapping to a new row when they don't fit); the side docks run them in columns, and the bars turn vertical.
+   * `bars` is [{ id, el, zone }]: each el is put in its dock wrapped with its grip. The arrangement is kept in localStorage under
+   * opts.key. The docks' sizes are published on `ui` as --dk-t/--dk-b/--dk-l/--dk-r (how far each dock reaches in) for what floats
+   * over the map. Double-click a grip to put everything back.
+   */
+  var ZONES = ['top', 'left', 'right', 'bottom'];
+  function docks(ui, bars, opts) {
+    opts = opts || {};
+    function mk(tag, cls, kids) { var n = document.createElement(tag); n.className = cls; (kids || []).forEach(function (k) { n.appendChild(k); }); return n; }
+    var root = mk('div', 'vtt-docks'), zone = {}, wrap = {}, byId = {};
+    ZONES.forEach(function (z) { zone[z] = mk('div', 'dk-zone dk-' + z + (z === 'top' || z === 'bottom' ? ' h' : ' v')); root.appendChild(zone[z]); });
+    var hints = mk('div', 'dk-hints', ZONES.map(function (z) { var h = mk('div', 'dk-hint dk-h-' + z); h.textContent = z; return h; }));
+    root.appendChild(hints);
+    bars.forEach(function (b) {
+      byId[b.id] = b;
+      var grip = mk('button', 'dk-grip'); grip.type = 'button'; grip.title = 'Drag to move this bar (double-click to reset the bars)'; grip.setAttribute('aria-label', 'Move this bar');
+      grip.innerHTML = '<svg viewBox="0 0 10 16" width="10" height="16" aria-hidden="true"><path d="M2 2h2M6 2h2M2 6h2M6 6h2M2 10h2M6 10h2M2 14h2M6 14h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+      b.el.classList.add('dk-in');
+      wrap[b.id] = mk('div', 'dk-bar dk-b-' + b.id, [grip, b.el]);
+      wrap[b.id].setAttribute('data-bar', b.id);
+      grip.addEventListener('pointerdown', function (e) { if (e.button === 0) startDrag(e, b.id); });
+      grip.addEventListener('dblclick', function () { place(defaults()); save(); });
+    });
+    function defaults() { var o = {}; ZONES.forEach(function (z) { o[z] = []; }); bars.forEach(function (b) { (o[b.zone] || o.top).push(b.id); }); return o; }
+    function saved() {
+      var o = null;
+      try { o = JSON.parse(localStorage.getItem(opts.key) || 'null'); } catch (e) { o = null; }
+      var d = defaults(), seen = {}, out = {};
+      ZONES.forEach(function (z) { out[z] = []; });
+      if (o && typeof o === 'object') ZONES.forEach(function (z) { (Array.isArray(o[z]) ? o[z] : []).forEach(function (id) { if (byId[id] && !seen[id]) { seen[id] = 1; out[z].push(id); } }); });
+      ZONES.forEach(function (z) { d[z].forEach(function (id) { if (!seen[id]) { seen[id] = 1; out[z].push(id); } }); });   // a bar added since it was saved goes where it starts
+      return out;
+    }
+    function place(o) { ZONES.forEach(function (z) { o[z].forEach(function (id) { zone[z].appendChild(wrap[id]); }); }); measure(); }
+    function current() { var o = {}; ZONES.forEach(function (z) { o[z] = Array.prototype.map.call(zone[z].children, function (n) { return n.getAttribute('data-bar'); }).filter(Boolean); }); return o; }
+    function save() { if (opts.key) try { localStorage.setItem(opts.key, JSON.stringify(current())); } catch (e) { /* storage unavailable */ } }
+    /* How far each dock reaches into the map, for the layers that float over it. */
+    var mq = 0;
+    function measure() {
+      cancelAnimationFrame(mq);
+      mq = requestAnimationFrame(function () {
+        var u = ui.getBoundingClientRect(); if (!u.width) return;
+        function reach(z, edge) {
+          var r = zone[z].getBoundingClientRect();
+          if (!r.width || !r.height || !zone[z].querySelector('.dk-bar:not(.empty)')) return 12;
+          return Math.round(edge === 't' ? r.bottom - u.top : edge === 'b' ? u.bottom - r.top : edge === 'l' ? r.right - u.left : u.right - r.left) + 8;
+        }
+        [['top', 't'], ['bottom', 'b'], ['left', 'l'], ['right', 'r']].forEach(function (p) { ui.style.setProperty('--dk-' + p[1], reach(p[0], p[1]) + 'px'); });
+        bars.forEach(function (b) { wrap[b.id].classList.toggle('empty', !b.el.firstChild); });
+      });
+    }
+    ui.insertBefore(root, ui.firstChild);
+    place(saved());
+    if (window.ResizeObserver) { var ro = new ResizeObserver(measure); ro.observe(ui); ZONES.forEach(function (z) { ro.observe(zone[z]); }); }
+    if (window.MutationObserver) new MutationObserver(measure).observe(root, { childList: true, subtree: true });
+
+    // Which dock the pointer means: the outer sides of the map are the side docks, otherwise the top or bottom half.
+    function zoneAt(x, y) {
+      var r = ui.getBoundingClientRect(), rx = (x - r.left) / (r.width || 1), ry = (y - r.top) / (r.height || 1);
+      return rx < .14 ? 'left' : rx > .86 ? 'right' : ry < .5 ? 'top' : 'bottom';
+    }
+    function beforeWhich(z, x, y, me) {
+      var kids = Array.prototype.filter.call(zone[z].children, function (n) { return n !== me && n.getAttribute('data-bar') && n.offsetWidth; }), horiz = z === 'top' || z === 'bottom';
+      for (var i = 0; i < kids.length; i++) {
+        var r = kids[i].getBoundingClientRect();
+        if (horiz ? (y < r.top ? true : y <= r.bottom && x < r.left + r.width / 2) : (x < r.left ? true : x <= r.right && y < r.top + r.height / 2)) return kids[i];
+      }
+      return null;
+    }
+    function startDrag(e0, id) {
+      e0.preventDefault();
+      var me = wrap[id], from = current(), last = '';
+      root.classList.add('dragging'); me.classList.add('dk-drag');
+      function move(e) {
+        var z = zoneAt(e.clientX, e.clientY);
+        Array.prototype.forEach.call(hints.children, function (h) { h.classList.toggle('on', h.classList.contains('dk-h-' + z)); });
+        var ref = beforeWhich(z, e.clientX, e.clientY, me), key = z + ':' + (ref ? ref.getAttribute('data-bar') : '');
+        if (key === last) return; last = key;
+        zone[z].insertBefore(me, ref);
+        measure();
+      }
+      function up() {
+        window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+        root.classList.remove('dragging'); me.classList.remove('dk-drag');
+        if (JSON.stringify(current()) !== JSON.stringify(from)) save();
+        measure();
+      }
+      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+      move(e0);
+    }
+    return { reset: function () { place(defaults()); save(); }, measure: measure };
+  }
+
+  T.docks = docks;
   T.icon = icon; T.REDUCED_MOTION = RM;
   T.SIZES = SIZES; T.KIND_COLOR = KIND_COLOR; T.COND_STYLE = COND_STYLE; T.condStyle = condStyle; T.uid = uid; T.newScene = newScene; T.isHex = isHex; T.hexAt = hexAt; T.hexCenter = hexCenter; T.snap = snap;
   T.dist = dist; T.distText = distText; T.fogDims = fogDims; T.seenOf = seenOf; T.paintSeen = paintSeen; T.paintPoly = paintPoly; T.fillSeen = fillSeen; T.computeVision = computeVision;
@@ -8884,6 +9019,8 @@ CROWS.NAME_IDEAS = {
     U.ui = el('div', { class: 'vtt-ui' });
     U.L = {};
     ['tl', 'tc', 'tr', 'tools', 'zoom', 'roster', 'ticker', 'roll', 'hud', 'floats', 'ask', 'drawer', 'banners', 'tip', 'empty'].forEach(function (k) { U.L[k] = el('div', { class: 'vtt-' + k }); U.ui.appendChild(U.L[k]); });
+    // The bars (scene, clock and fight, share and view, tools, zoom, tokens) are movable: top, bottom, either side (T.docks).
+    Tbl.docks(U.ui, [['tl', 'top'], ['tc', 'top'], ['tr', 'top'], ['tools', 'left'], ['zoom', 'right'], ['roster', 'bottom']].map(function (b) { return { id: b[0], el: U.L[b[0]], zone: b[1] }; }), { key: 'crows-ref-bars' });
     U.feedSeen = Date.now();   // the ticker shows what happens from now on
     host.appendChild(U.ui);
     // Fullscreen takes the map alone: bring the toast along so messages still show.
@@ -9182,7 +9319,6 @@ CROWS.NAME_IDEAS = {
   }
   function renderAsk(sc) {
     var box = U.L.ask; box.innerHTML = '';
-    var tc = U.L.tc; box.style.top = Math.max(62, tc.offsetTop + tc.offsetHeight + 10) + 'px';   // under the clock and the fight
     var asked = U.asked || (U.asked = {}), list = waiting();
     if (!sc) return;
     // Show where a new one lands, once.

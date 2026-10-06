@@ -904,6 +904,105 @@
   /* An icon as an inline SVG string (it takes the text color). */
   function icon(name) { return '<svg class="ico" viewBox="0 0 24 24" aria-hidden="true" focusable="false"><path d="' + (ICONS[name] || ICONS.marker) + '"/></svg>'; }
 
+
+  // ------------------------------------------------------------------ movable bars
+  /*
+   * T.docks(ui, bars, opts): the tabletop's floating bars (scene, clock, tools, zoom...) live in four docks around the map (top, bottom,
+   * left, right). Each bar has a grip: drag it to another dock or to a new place in its own dock. Docks along the top and bottom run
+   * their bars in rows (wrapping to a new row when they don't fit); the side docks run them in columns, and the bars turn vertical.
+   * `bars` is [{ id, el, zone }]: each el is put in its dock wrapped with its grip. The arrangement is kept in localStorage under
+   * opts.key. The docks' sizes are published on `ui` as --dk-t/--dk-b/--dk-l/--dk-r (how far each dock reaches in) for what floats
+   * over the map. Double-click a grip to put everything back.
+   */
+  var ZONES = ['top', 'left', 'right', 'bottom'];
+  function docks(ui, bars, opts) {
+    opts = opts || {};
+    function mk(tag, cls, kids) { var n = document.createElement(tag); n.className = cls; (kids || []).forEach(function (k) { n.appendChild(k); }); return n; }
+    var root = mk('div', 'vtt-docks'), zone = {}, wrap = {}, byId = {};
+    ZONES.forEach(function (z) { zone[z] = mk('div', 'dk-zone dk-' + z + (z === 'top' || z === 'bottom' ? ' h' : ' v')); root.appendChild(zone[z]); });
+    var hints = mk('div', 'dk-hints', ZONES.map(function (z) { var h = mk('div', 'dk-hint dk-h-' + z); h.textContent = z; return h; }));
+    root.appendChild(hints);
+    bars.forEach(function (b) {
+      byId[b.id] = b;
+      var grip = mk('button', 'dk-grip'); grip.type = 'button'; grip.title = 'Drag to move this bar (double-click to reset the bars)'; grip.setAttribute('aria-label', 'Move this bar');
+      grip.innerHTML = '<svg viewBox="0 0 10 16" width="10" height="16" aria-hidden="true"><path d="M2 2h2M6 2h2M2 6h2M6 6h2M2 10h2M6 10h2M2 14h2M6 14h2" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/></svg>';
+      b.el.classList.add('dk-in');
+      wrap[b.id] = mk('div', 'dk-bar dk-b-' + b.id, [grip, b.el]);
+      wrap[b.id].setAttribute('data-bar', b.id);
+      grip.addEventListener('pointerdown', function (e) { if (e.button === 0) startDrag(e, b.id); });
+      grip.addEventListener('dblclick', function () { place(defaults()); save(); });
+    });
+    function defaults() { var o = {}; ZONES.forEach(function (z) { o[z] = []; }); bars.forEach(function (b) { (o[b.zone] || o.top).push(b.id); }); return o; }
+    function saved() {
+      var o = null;
+      try { o = JSON.parse(localStorage.getItem(opts.key) || 'null'); } catch (e) { o = null; }
+      var d = defaults(), seen = {}, out = {};
+      ZONES.forEach(function (z) { out[z] = []; });
+      if (o && typeof o === 'object') ZONES.forEach(function (z) { (Array.isArray(o[z]) ? o[z] : []).forEach(function (id) { if (byId[id] && !seen[id]) { seen[id] = 1; out[z].push(id); } }); });
+      ZONES.forEach(function (z) { d[z].forEach(function (id) { if (!seen[id]) { seen[id] = 1; out[z].push(id); } }); });   // a bar added since it was saved goes where it starts
+      return out;
+    }
+    function place(o) { ZONES.forEach(function (z) { o[z].forEach(function (id) { zone[z].appendChild(wrap[id]); }); }); measure(); }
+    function current() { var o = {}; ZONES.forEach(function (z) { o[z] = Array.prototype.map.call(zone[z].children, function (n) { return n.getAttribute('data-bar'); }).filter(Boolean); }); return o; }
+    function save() { if (opts.key) try { localStorage.setItem(opts.key, JSON.stringify(current())); } catch (e) { /* storage unavailable */ } }
+    /* How far each dock reaches into the map, for the layers that float over it. */
+    var mq = 0;
+    function measure() {
+      cancelAnimationFrame(mq);
+      mq = requestAnimationFrame(function () {
+        var u = ui.getBoundingClientRect(); if (!u.width) return;
+        function reach(z, edge) {
+          var r = zone[z].getBoundingClientRect();
+          if (!r.width || !r.height || !zone[z].querySelector('.dk-bar:not(.empty)')) return 12;
+          return Math.round(edge === 't' ? r.bottom - u.top : edge === 'b' ? u.bottom - r.top : edge === 'l' ? r.right - u.left : u.right - r.left) + 8;
+        }
+        [['top', 't'], ['bottom', 'b'], ['left', 'l'], ['right', 'r']].forEach(function (p) { ui.style.setProperty('--dk-' + p[1], reach(p[0], p[1]) + 'px'); });
+        bars.forEach(function (b) { wrap[b.id].classList.toggle('empty', !b.el.firstChild); });
+      });
+    }
+    ui.insertBefore(root, ui.firstChild);
+    place(saved());
+    if (window.ResizeObserver) { var ro = new ResizeObserver(measure); ro.observe(ui); ZONES.forEach(function (z) { ro.observe(zone[z]); }); }
+    if (window.MutationObserver) new MutationObserver(measure).observe(root, { childList: true, subtree: true });
+
+    // Which dock the pointer means: the outer sides of the map are the side docks, otherwise the top or bottom half.
+    function zoneAt(x, y) {
+      var r = ui.getBoundingClientRect(), rx = (x - r.left) / (r.width || 1), ry = (y - r.top) / (r.height || 1);
+      return rx < .14 ? 'left' : rx > .86 ? 'right' : ry < .5 ? 'top' : 'bottom';
+    }
+    function beforeWhich(z, x, y, me) {
+      var kids = Array.prototype.filter.call(zone[z].children, function (n) { return n !== me && n.getAttribute('data-bar') && n.offsetWidth; }), horiz = z === 'top' || z === 'bottom';
+      for (var i = 0; i < kids.length; i++) {
+        var r = kids[i].getBoundingClientRect();
+        if (horiz ? (y < r.top ? true : y <= r.bottom && x < r.left + r.width / 2) : (x < r.left ? true : x <= r.right && y < r.top + r.height / 2)) return kids[i];
+      }
+      return null;
+    }
+    function startDrag(e0, id) {
+      e0.preventDefault();
+      var me = wrap[id], from = current(), last = '';
+      root.classList.add('dragging'); me.classList.add('dk-drag');
+      function move(e) {
+        var z = zoneAt(e.clientX, e.clientY);
+        Array.prototype.forEach.call(hints.children, function (h) { h.classList.toggle('on', h.classList.contains('dk-h-' + z)); });
+        var ref = beforeWhich(z, e.clientX, e.clientY, me), key = z + ':' + (ref ? ref.getAttribute('data-bar') : '');
+        if (key === last) return; last = key;
+        zone[z].insertBefore(me, ref);
+        measure();
+      }
+      function up() {
+        window.removeEventListener('pointermove', move); window.removeEventListener('pointerup', up); window.removeEventListener('pointercancel', up);
+        root.classList.remove('dragging'); me.classList.remove('dk-drag');
+        if (JSON.stringify(current()) !== JSON.stringify(from)) save();
+        measure();
+      }
+      window.addEventListener('pointermove', move); window.addEventListener('pointerup', up); window.addEventListener('pointercancel', up);
+      move(e0);
+    }
+    return { reset: function () { place(defaults()); save(); }, measure: measure };
+  }
+
+  T.docks = docks;
   T.icon = icon; T.REDUCED_MOTION = RM;
   T.SIZES = SIZES; T.KIND_COLOR = KIND_COLOR; T.COND_STYLE = COND_STYLE; T.condStyle = condStyle; T.uid = uid; T.newScene = newScene; T.isHex = isHex; T.hexAt = hexAt; T.hexCenter = hexCenter; T.snap = snap;
   T.dist = dist; T.distText = distText; T.fogDims = fogDims; T.seenOf = seenOf; T.paintSeen = paintSeen; T.paintPoly = paintPoly; T.fillSeen = fillSeen; T.computeVision = computeVision;

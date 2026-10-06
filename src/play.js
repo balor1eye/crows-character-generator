@@ -11,7 +11,7 @@
   var el = C.el, $ = C.$, d = C.d, fmt = C.fmt, signed = C.signed, item = C.item;
   var MODE_KEY = 'crows-pt2-mode';
   var SUBTAB_KEY = 'crows-pt2-play-subtab';
-  var SUBTABS = [['now', 'Now'], ['rest', 'Rest & turns'], ['items', 'Items'], ['growth', 'Growth'], ['log', 'Log']];
+  var SUBTABS = [['now', 'Tabletop'], ['rest', 'Rest & turns'], ['items', 'Items'], ['growth', 'Growth'], ['log', 'Log']];
   var Dice = window.CrowsDice, Rules = window.CrowsRules, Sheet = window.CrowsSheet;   // src/shared/
   var CONDITIONS = Sheet.CONDITIONS;
   var DT_CONDITIONS = Rules.DT_CONDITIONS; // end at the end of a dungeon turn

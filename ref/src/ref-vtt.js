@@ -511,6 +511,8 @@
     U.ui = el('div', { class: 'vtt-ui' });
     U.L = {};
     ['tl', 'tc', 'tr', 'tools', 'zoom', 'roster', 'ticker', 'roll', 'hud', 'floats', 'ask', 'drawer', 'banners', 'tip', 'empty'].forEach(function (k) { U.L[k] = el('div', { class: 'vtt-' + k }); U.ui.appendChild(U.L[k]); });
+    // The bars (scene, clock and fight, share and view, tools, zoom, tokens) are movable: top, bottom, either side (T.docks).
+    Tbl.docks(U.ui, [['tl', 'top'], ['tc', 'top'], ['tr', 'top'], ['tools', 'left'], ['zoom', 'right'], ['roster', 'bottom']].map(function (b) { return { id: b[0], el: U.L[b[0]], zone: b[1] }; }), { key: 'crows-ref-bars' });
     U.feedSeen = Date.now();   // the ticker shows what happens from now on
     host.appendChild(U.ui);
     // Fullscreen takes the map alone: bring the toast along so messages still show.
@@ -809,7 +811,6 @@
   }
   function renderAsk(sc) {
     var box = U.L.ask; box.innerHTML = '';
-    var tc = U.L.tc; box.style.top = Math.max(62, tc.offsetTop + tc.offsetHeight + 10) + 'px';   // under the clock and the fight
     var asked = U.asked || (U.asked = {}), list = waiting();
     if (!sc) return;
     // Show where a new one lands, once.

@@ -452,3 +452,6 @@ button.cbt-art { padding: 0; background: none; cursor: zoom-in; flex: none; bord
 .art-pop { position: fixed; inset: 0; z-index: 1000; background: rgba(0, 0, 0, .86); display: flex; flex-direction: column; align-items: center; justify-content: center; gap: .5rem; padding: .5rem; cursor: zoom-out; }
 .art-pop img { max-width: 100%; max-height: calc(100% - 2.5rem); object-fit: contain; }
 .art-pop-t { color: #fff; font-weight: 600; }
+
+.tt-wait { border: 1px dashed var(--line); border-radius: 12px; padding: 1.2rem; background: var(--card); }
+.tt-wait h2 { margin: 0 0 .3rem; }
