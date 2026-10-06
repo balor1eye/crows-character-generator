@@ -279,6 +279,23 @@
     if (spec.menu && spec.menu.length) items.push({ sep: true }), spec.menu.forEach(function (m) { items.push(m); });
     popMenu(ev.clientX, ev.clientY, items);
   }
+  /* Touch has no right-click: holding a finger on a tile (about half a second, without moving) opens the same menu. */
+  function longPress(node) {
+    var timer = 0, sx = 0, sy = 0, fired = false;
+    function stop() { clearTimeout(timer); timer = 0; }
+    node.addEventListener('touchstart', function (e) {
+      if (e.touches.length !== 1) return stop();
+      var t = e.touches[0]; sx = t.clientX; sy = t.clientY; fired = false; stop();
+      timer = setTimeout(function () {
+        timer = 0; fired = true;
+        node.dispatchEvent(new MouseEvent('contextmenu', { bubbles: true, cancelable: true, clientX: sx, clientY: sy }));
+        if (navigator.vibrate) navigator.vibrate(15);
+      }, 500);
+    }, { passive: true });
+    node.addEventListener('touchmove', function (e) { var t = e.touches[0]; if (Math.abs(t.clientX - sx) > 10 || Math.abs(t.clientY - sy) > 10) stop(); }, { passive: true });
+    node.addEventListener('touchend', function (e) { stop(); if (fired) { e.preventDefault(); fired = false; } });   // no tap-through into the lightbox
+    node.addEventListener('touchcancel', stop);
+  }
   function renderMaps() {
     var ART = REF.ART;
     function mine(m) {
@@ -291,7 +308,7 @@
       }, [el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }), el('span', { class: 'b-name', text: m.title }), el('span', { class: 'fine', text: 'Yours' })]);
     }
     var mk = custom.maps.slice().sort(function (a, b) { return a.at - b.at; });
-    card('sec-maps', el('h2', null, ['Maps', el('small', { text: 'tap a map to open it full size; right-click for more' })]), [
+    card('sec-maps', el('h2', null, ['Maps', el('small', { text: 'tap a map to open it full size; right-click or press and hold for more' })]), [
       el('div', { class: 'row' }, [btn('Add a map…', addMap, 'btn-small btn-primary'),
         el('span', { class: 'fine', text: remote ? 'Pictures you add are kept in your account, so they follow you to other devices.' : 'Not logged in: pictures you add are kept in this browser only.' })]),
       el('div', { class: 'map-list' }, mk.map(mine).concat(ART.maps.map(function (m) {
@@ -307,6 +324,7 @@
         return el('button', { type: 'button', class: 'map-tile', oncontextmenu: function (ev) { mapMenu(ev, { title: x.title, views: views, thumb: x.thumb }); }, onclick: function () { lightbox(x.title, [{ label: '', file: x.file }], x.thumb); } }, [
           el('img', { src: x.thumb, alt: x.title, loading: 'lazy' }), el('span', { class: 'b-name', text: x.title })]);
       })) : null]);
+    Array.prototype.forEach.call(document.querySelectorAll('#sec-maps .map-tile'), longPress);
   }
 
   // ------------------------------------------------------------------ Tables tab

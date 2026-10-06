@@ -421,3 +421,4 @@ body[data-tab="vtt"] .side-timer { display: none; }
 .popmenu button.danger { color: #b3261e; }
 .popmenu hr { border: 0; border-top: 1px solid rgba(127, 127, 127, .4); margin: .25rem 0; width: 100%; }
 .popmenu .pm-head { font-weight: 700; padding: .3rem .6rem; opacity: .75; }
+.map-tile { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
