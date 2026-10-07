@@ -25,7 +25,7 @@
       releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderMaps = f('renderMaps'), renderEncounters = f('renderEncounters'),
       renderParty = f('renderParty'), renderPractice = f('renderPractice'), renderPrefs = f('renderPrefs'), renderVtt = f('renderVtt'), renderRules = f('renderRules'), renderSession = f('renderSession'),
       renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
-      renderWorld = f('renderWorld'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
+      renderWorld = f('renderWorld'), renderWorkshop = f('renderWorkshop'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
   var state = A.state; A.share('state', function (v) { state = v; });
   var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
@@ -33,10 +33,10 @@
   var TAB_KEY = 'crows-pt2-ref-tab';
   // The tabs in their groups, shown with the group's name in the tab bar: [group, [[tab id, label], ...]].
   var TAB_GROUPS = [['Run', [['session', 'Session'], ['vtt', 'Tabletop'], ['encounters', 'Encounters'], ['travel', 'Travel']]],
-    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World'], ['prefs', 'Preferences']]],
+    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World'], ['workshop', 'Workshop'], ['prefs', 'Preferences']]],
     ['Reference', [['bestiary', 'Bestiary'], ['maps', 'Maps'], ['tables', 'Tables'], ['rules', 'Rules']]]];
   var TABS = TAB_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
-  var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge' };
+  var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge', G: 'Holy Shit' };
   var EB_LABELS = [[-2, 'DB'], [-1, 'Bane'], [0, '—'], [1, 'Edge'], [2, 'DE']];
   /*
    * Campaign preferences (state.prefs): Tabletop Mode, and the functions the Ref turned off (prefs.off[key] = true). Everything is on
@@ -49,6 +49,7 @@
     ['travel', 'Travel tab', 'Overland days, pace, weather, travel encounters, and Miasma.', 'Tabs', { tab: 'travel' }],
     ['village', 'Village tab', 'The village, its institutions, and the crypt.', 'Tabs', { tab: 'village' }],
     ['world', 'World tab', 'Places, NPCs, notes, and session history.', 'Tabs', { tab: 'world' }],
+    ['workshop', 'Workshop tab', 'Your own creatures and equipment (they stay in the Bestiary and the item lists even with the tab off).', 'Tabs', { tab: 'workshop' }],
     ['bestiary', 'Bestiary tab', 'Creature stat blocks.', 'Tabs', { tab: 'bestiary' }],
     ['maps', 'Maps tab', 'The maps.', 'Tabs', { tab: 'maps' }],
     ['tables', 'Tables tab', 'The random tables.', 'Tabs', { tab: 'tables' }],
@@ -119,6 +120,8 @@
       dice: { mod: 0, net: 0, expr: '3d6', ud: 1 },
       prefs: { tabletop: false, off: {}, playerView: 'map' },
       vtt: { scenes: [], cur: '', shown: false, clean: true },
+      // The Workshop (ref-homebrew.js): the Ref's own creatures and equipment.
+      homebrew: { creatures: [], items: [] },
       // Practice fights on the Tabletop (ref-practice.js): the Ref's choices, the fight under way (with the real one to put back), past results.
       practice: { opts: { n: 4, mix: 'balanced', crows: [], exp: 'new', armor: 'own', tactics: 'focus', foes: 'ref', surprise: 'none', autoApply: true,
         autoRound: true, fallAt: 'dead', pace: 'normal', sims: 20 }, run: null, history: [] }
@@ -349,7 +352,7 @@
     renderTabbar();
     renderSide();
     if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
-    ({ session: renderSession, vtt: renderVtt, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
+    ({ session: renderSession, vtt: renderVtt, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, workshop: renderWorkshop, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
     applyPrefs();
     tick();
   }

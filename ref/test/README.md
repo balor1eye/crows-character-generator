@@ -87,6 +87,16 @@ the round and who has acted, a creature's Act drawer (its combat tracker row), i
 scrolls by, Apply and Undo, Acted and the count, the Fight drawer (everyone in it, the battlefield buttons, the items, the end;
 a name selects that creature), Next round, and End (the tracker clears, the log notes it, the crows stay on the map).
 
+## The Workshop and saved maps (`workshop_test.js`, run by `run_workshop_test.py`)
+
+On the local build (no accounts or server): `python3 ref/test/run_workshop_test.py` (`--headed` shows the browser). It makes a
+custom creature from the Bear (renamed, retyped, a special ability with its uses, armor and a sword that give its attack and AD), a
+custom weapon (Light, steel, Flaming: the card's text and the rules' price; more than 4 Enchanting uses is flagged) and a spellbook,
+renames the weapon (the creature's equipment follows), finds the creature in the Bestiary's Mine filter, puts two on a battle map
+(they hold their equipment in the tracker), turns on rain and darkness (chips with the rules, the weather layer, the players' copy of
+the scene, darkness in a human's roll but not an undead's), saves the map as an encounter with the creatures as they are, clears
+everything, and runs it on the Tabletop from the Encounters tab: the scene, environment, places, vitals, and items all come back.
+
 ## A practice fight (`practice_test.js`, run by `run_practice_test.py`)
 
 ```bash

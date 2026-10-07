@@ -70,9 +70,9 @@
 
   // ------------------------------------------------------------------ Bestiary tab
   function renderBestiary() {
-    var q = ui.beastQ.toLowerCase(), types = ['Animal', 'Human', 'Blood Creature', 'Undead', 'Unique'];
+    var q = ui.beastQ.toLowerCase(), types = ['Animal', 'Human', 'Blood Creature', 'Undead', 'Unique'].concat(REF.BESTIARY.some(function (b) { return b.custom; }) ? ['Mine'] : []);
     var list = REF.BESTIARY.filter(function (b) {
-      return (!ui.beastType || b.t === ui.beastType) && (!q || (b.n + ' ' + b.x + ' ' + b.atk.map(function (a) { return a[0]; }).join(' ')).toLowerCase().indexOf(q) >= 0);
+      return (!ui.beastType || (ui.beastType === 'Mine' ? b.custom : b.t === ui.beastType)) && (!q || (b.n + ' ' + b.x + ' ' + b.atk.map(function (a) { return a[0]; }).join(' ')).toLowerCase().indexOf(q) >= 0);
     });
     var search = el('input', { type: 'search', class: 'in', placeholder: 'Search creatures…', value: ui.beastQ, 'aria-label': 'Search creatures', oninput: function () { ui.beastQ = this.value; var pos = this.selectionStart; renderBestiary(); var n = $('beast-q'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* ignore */ } } });
     search.id = 'beast-q';
@@ -93,7 +93,7 @@
         lightbox(b.n, [{ label: '', file: art.file }], art.thumb, [{ label: art.custom ? 'Replace art' : 'Use my own art', fn: function () { addCreatureArt(b.n); } }]
           .concat(art.custom ? [{ label: 'Remove my art', fn: function () { removeArt('c:' + b.n); } }] : []));
       } }, [el('img', { src: art.thumb, alt: b.n, loading: 'lazy' })]) : null,
-      el('div', { class: 'b-head' }, [el('span', { class: 'b-name', text: b.n }), el('span', { class: 'chip', text: b.t + ' · P' + b.p })]),
+      el('div', { class: 'b-head' }, [el('span', { class: 'b-name', text: b.n }), b.custom ? el('span', { class: 'chip accent', text: 'Mine', title: 'Made in the Workshop' }) : null, el('span', { class: 'chip', text: b.t + ' · P' + b.p })]),
       el('div', { class: 'b-stats', text: SIZES[b.sz] + ' · Stamina ' + b.st + (b.ad ? ' · AD ' + b.ad : '') + ' · Speed ' + b.spd + (b.sl ? ' · ' + b.sl + ' slots' : '') + (b.rx > 1 ? ' · ' + b.rx + ' reactions' : '') }),
       el('div', { class: 'b-stats', text: 'A ' + signed(b.c[0]) + ' · M ' + signed(b.c[1]) + ' · S ' + signed(b.c[2]) }),
       el('ul', { class: 'b-atk' }, b.atk.map(function (a) { return el('li', null, [el('b', { text: a[0] + ' (' + signed(a[1]) + ') ' }), a[2] + ': ' + a[3] + ' / ' + a[4] + ' dam' + (a[5] ? '; ' + a[5] : '')]); })),
@@ -101,7 +101,8 @@
       b.x ? el('div', { class: 'b-x', text: b.x }) : null,
       el('div', { class: 'row' }, [inp(n, 'k', { type: 'number', min: 1, max: 30, class: 'tiny', 'aria-label': 'How many' }, { dflt: 1 }),
         btn('Add to combat', function () { addCombatant(b.n, clamp(n.k, 1, 30), 'foe'); log('', 'Added ' + n.k + ' × ' + b.n + ' to combat.'); toast('Added ' + n.k + ' × ' + b.n + '.'); render(); }, 'btn-small'),
-        art ? null : btn('Add art', function () { addCreatureArt(b.n); }, 'btn-small btn-ghost'),
+        art && !(b.custom && !custom.creatures[b.n]) ? null : btn(art ? 'Own art' : 'Add art', function () { addCreatureArt(b.n); }, 'btn-small btn-ghost'),
+        btn(b.custom ? 'Edit' : 'Make a variant', function () { A.workshopOpen(b); }, 'btn-small btn-ghost', b.custom ? 'Change it in the Workshop' : 'Copy it into the Workshop and change anything'),
         b.t === 'Animal' ? el('span', { class: 'fine', text: 'Pet price ' + fmt(REF.PET_PRICES[Math.min(10, b.p)]) + ' gc' }) : null])
     ]);
   }
@@ -172,9 +173,12 @@
       }).catch(function () { remote = false; local().then(function (all) { all.forEach(addLoaded); if (all.length) render(); }); });
     });
   }
-  function artFor(name) {
+  function artFor(name, deep) {
     var c = custom.creatures[name];
-    return c ? { thumb: c.thumb, file: blobUrl(c), custom: true } : REF.ART.creatures[name] || null;
+    if (c) return { thumb: c.thumb, file: blobUrl(c), custom: true };
+    if (REF.ART.creatures[name]) return REF.ART.creatures[name];
+    var b = !deep && A.beast(name);   // a Workshop creature that looks like another
+    return b && b.custom && b.art && b.art !== name ? artFor(b.art, true) : null;
   }
   /* Choose a picture, shrink it (long side `max` px, under about 1.3 MB, plus a small thumbnail) and hand back { blob, thumb, name }. */
   function pickImage(max, thumbW, done) {

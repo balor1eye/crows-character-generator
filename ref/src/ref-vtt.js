@@ -15,6 +15,11 @@
  * The Ref sees everything (fog is only a shade); "Player view" shows what the players see. Pressing Show to players publishes the scene with
  * the live fight (publicCombat in ref-combat.js): the fog as a mask, and only the tokens the party can see. Players move their own tokens
  * and ping with combat.act actions (vttAction).
+ * Environmental effects (scene.env, REF.ENV: darkness, rain, a blizzard, the Miasma...) are toggles on the map (the Environment drawer); the
+ * engine animates them, the players see them, and darkness, dim light, and smoke count in the combat tracker's rolls (envFor).
+ * "Save as encounter" keeps the map as a saved encounter: its creatures in e.creatures, and in e.layout the scene (map, grid, walls, pins,
+ * environment), where every token stood, what lay on the ground, and (if asked) the creatures' current vitals. Loading that encounter
+ * builds the scene again (layoutScene) and puts each creature back where it was (loadLayout).
  */
 (function () {
   'use strict';
@@ -30,8 +35,8 @@
       setTab = f('setTab'), sizeOf = f('sizeOf'), startTimer = f('startTimer'), tabletop = f('tabletop'), travelCalc = f('travelCalc'),
       addPartyToCombat = f('addPartyToCombat'), combatRow = f('combatRow'), diceResult = f('diceResult'), doomOptions = f('doomOptions'), endCombat = f('endCombat'),
       endEncounter = f('endEncounter'), itemsPanel = f('itemsPanel'), livePanel = f('livePanel'), playerView = f('playerView'), setPlayerView = f('setPlayerView'),
-      practiceOn = f('practiceOn'), endPractice = f('endPractice'), rxLeft = f('rxLeft'), sitRow = f('sitRow'), targetOf = f('targetOf'), targetsFor = f('targetsFor'), twoTargets = f('twoTargets');
-  var $ = A.$, el = A.el, S = A.S, toast = A.toast, plural = A.plural, ui = A.ui, clamp = A.clamp, REFD = window.REF;
+      practiceOn = f('practiceOn'), newEncounter = f('newEncounter'), findEncounter = f('findEncounter'), openEncounter = f('openEncounter'), newItem = f('newItem'), onGround = f('onGround'), endPractice = f('endPractice'), rxLeft = f('rxLeft'), sitRow = f('sitRow'), targetOf = f('targetOf'), targetsFor = f('targetsFor'), twoTargets = f('twoTargets');
+  var $ = A.$, el = A.el, S = A.S, toast = A.toast, plural = A.plural, ui = A.ui, clamp = A.clamp, clone = A.clone, REFD = window.REF;
   var state = A.state; A.share('state', function (v) { state = v; });
   var Tbl = window.CrowsTable;
 
@@ -389,6 +394,7 @@
      left, its creatures on the right (hidden from the players when "Tracker foes start hidden" is on). */
   function loadEncounter(sc, e) {
     if (!e) return;
+    if (e.layout) { loadLayout(e); return; }
     if (e.map) { var ms = sceneForMap(e.map, e.mapTitle); if (ms !== sc) { sc = ms; V().cur = ms.id; U.sig = ''; U.mask = null; } }
     if (runningEnc() !== e && !e.creatures.length) { toast('That encounter has no creatures yet: add them on the Encounters tab.'); return; }
     if (!runEncounter(e, true)) return;
@@ -488,7 +494,8 @@
     return { id: sc.id, name: sc.name, kind: sc.kind, w: sc.w, h: sc.h, g: sc.g, grid: sc.grid, ox: sc.ox, oy: sc.oy, bg: sc.bg, showGrid: sc.showGrid !== false, unit: sc.unit,
       map: sc.map ? (sc.map.b ? { b: sc.map.b } : { k: sc.map.k }) : null, fog: sc.fog === 'off' ? null : Tbl.packMask(m), tokens: tokens, art: art,
       pins: sc.pins.filter(function (p) { return p.vis; }).map(function (p) { return { id: p.id, x: Math.round(p.x), y: Math.round(p.y), label: p.label, vis: true }; }),
-      pings: (sc.pings || []).slice(-5), move: sc.playerMove !== false, moved: sc.kind === 'travel' ? sc.moved || 0 : null };
+      pings: (sc.pings || []).slice(-5), move: sc.playerMove !== false, moved: sc.kind === 'travel' ? sc.moved || 0 : null,
+      env: envList(sc).length ? envObj(sc) : null, envInfo: envList(sc).map(function (k) { var e = envDef(k); return [e[1], e[2]]; }) };
   }
   /*
    * Is there a line of effect from a crow to a creature on the current scene? True or false when both have tokens there (walls, closed
@@ -719,6 +726,8 @@
         }, 'sm', 'Institutions'),
         fab('go', 'Open the Village tab', function () { setTab('village'); }, 'sm ghost')]));
     }
+    var on = envList(sc);
+    if (on.length) kids.push(el('div', { class: 'hud-grp env' }, [ico('cloud')].concat(on.map(function (k) { var e = envDef(k); return chip(e[1], 'env', { title: e[1] + ': ' + e[2] }); }))));
     var fightBtn = fab('list', 'The fight: who has acted, the players’ actions, battlefield modifiers, items on the ground, the feed, and ending it', function () { toggleDrawer('fight'); }, 'sm' + (U.drawer === 'fight' ? ' on' : ''), 'Fight');
     if (c.round) {
       var foes = c.list.filter(function (x) { return x.kind === 'foe' && !x.dead; }), acted = foes.filter(function (x) { return x.acted === c.round; }).length,
@@ -757,6 +766,9 @@
         'sm', playerView() === 'text' ? 'Players: lists' : 'Players: map') : null,
       fab('heart', v.vitals ? 'Hide the full vitals under each token' : 'Show every crow’s and creature’s full vitals under its token: Stamina, AD, and wounds (only you see them)',
         function () { v.vitals = !v.vitals; save(); U.view.redraw(); renderTopRight(cur()); }, 'sm' + (v.vitals ? ' on' : ''), 'Vitals', { 'aria-pressed': v.vitals ? 'true' : 'false' }),
+      fab('cloud', 'Environment: darkness, weather, the Miasma, water, fire (shown and animated on the map, for the players too)', function () { toggleDrawer('env'); },
+        'sm' + (U.drawer === 'env' ? ' on' : '') + (envList(sc).length ? ' live' : ''), envList(sc).length ? String(envList(sc).length) : null),
+      fab('save', 'Save this map as an encounter: its creatures, where everyone stands, objects, items on the ground, and the environment', function () { toggleDrawer('save'); }, 'sm' + (U.drawer === 'save' ? ' on' : '')),
       fab('gear', 'Scene settings: map, grid, fog, light', function () { toggleDrawer('scene'); }, 'sm' + (U.drawer === 'scene' ? ' on' : ''))]));
   }
 
@@ -970,8 +982,8 @@
     var mode = sc ? U.drawer : null, t = sc && tok(sc, U.sel);
     box.classList.toggle('open', !!mode);
     if (!mode) return;
-    var title = { add: 'Add to the map', token: t ? t.name : 'Token', scene: 'Scene settings', act: t ? t.name : 'Act', fight: 'The fight' }[mode];
-    var body = mode === 'add' ? addPanel(sc) : mode === 'scene' ? sceneSettings(sc) : mode === 'fight' ? fightPanel(sc) : !t ? el('p', { class: 'fine', text: 'Select a token on the map or along the bottom.' }) :
+    var title = { add: 'Add to the map', token: t ? t.name : 'Token', scene: 'Scene settings', act: t ? t.name : 'Act', fight: 'The fight', env: 'Environment', save: 'Save as encounter' }[mode];
+    var body = mode === 'add' ? addPanel(sc) : mode === 'scene' ? sceneSettings(sc) : mode === 'env' ? envPanel(sc) : mode === 'save' ? savePanel(sc) : mode === 'fight' ? fightPanel(sc) : !t ? el('p', { class: 'fine', text: 'Select a token on the map or along the bottom.' }) :
       mode === 'act' ? actPanel(sc, t) : inspector(sc, t);
     var keep = box.querySelector('.dr-body'), top = keep && U.drawerWas === mode + (t ? t.id : '') ? keep.scrollTop : 0;   // a redraw keeps the drawer where it was scrolled
     U.drawerWas = mode + (t ? t.id : '');
@@ -1243,10 +1255,161 @@
       sc.walls.length ? el('div', { class: 'row' }, [btn('Undo wall', function () { sc.walls.pop(); changed(); render(); }, 'btn-small btn-ghost'),
         btn('Clear walls', function () { if (confirm('Delete all ' + sc.walls.length + ' walls and doors on this scene?')) { sc.walls = []; changed(); render(); } }, 'btn-small btn-ghost')]) : null,
       el('h4', { text: 'Scene' }),
+      el('div', { class: 'row' }, [btn('Environment…', function () { openDrawer('env'); }, 'btn-small'), btn('Save as encounter…', function () { openDrawer('save'); }, 'btn-small')]),
       checkIn(V(), 'clean', 'Remove foes’ tokens when they leave the tracker'),
       el('div', { class: 'row' }, [btn('Duplicate scene', function () { var c2 = JSON.parse(JSON.stringify(sc)); c2.id = Tbl.uid('s'); c2.name += ' (copy)'; V().scenes.push(c2); V().cur = c2.id; changed(); render(); }, 'btn-small btn-ghost'),
         btn('Delete scene', function () { if (confirm('Delete the scene "' + sc.name + '"?')) { V().scenes = V().scenes.filter(function (k) { return k !== sc; }); V().cur = V().scenes[0] ? V().scenes[0].id : ''; U.sel = null; U.drawer = null; changed(); render(); } }, 'btn-small btn-ghost btn-danger')])
     ]);
+  }
+
+  // ------------------------------------------------------------------ the environment
+  function envDef(k) { return (REFD.ENV || []).filter(function (e) { return e[0] === k; })[0] || null; }
+  function envList(sc) { var e = sc && sc.env; return e ? (REFD.ENV || []).map(function (d) { return d[0]; }).filter(function (k) { return e[k]; }) : []; }
+  function envObj(sc) { var o = {}; envList(sc).forEach(function (k) { o[k] = true; }); return o; }
+  /* The environment where a creature or crow is fighting: the current scene's, when it has a token there (for the tracker's rolls). */
+  function envFor(x) { var sc = cur(); return sc && x && tokOf(sc, x) ? envObj(sc) : {}; }
+  function setEnv(sc, k, on) {
+    sc.env = sc.env || {};
+    if (on) sc.env[k] = true; else delete sc.env[k];
+    if (on && k === 'dark') delete sc.env.dim;
+    if (on && k === 'dim') delete sc.env.dark;   // one light level at a time
+    if (on && k === 'storm') delete sc.env.rain;
+    if (on && k === 'rain') delete sc.env.storm;
+    var e = envDef(k);
+    log('', on ? 'The environment: **' + e[1] + '**. ' + e[2] : e[1] + ' ends.');
+    if (on && V().shown) feed('**' + e[1] + '**: ' + e[2]);
+    changed(); render();
+  }
+  function envPanel(sc) {
+    var on = envObj(sc);
+    return el('div', { class: 'dr-stack env-list' }, [el('p', { class: 'fine', text: 'Conditions from the rules for this scene. They animate on the map (and on the players’ maps when it is shown), and each one’s rules are a tooltip on its chip at the top of the map. Darkness, dim light, and smoke count in the combat tracker’s rolls for creatures on this map.' })]
+      .concat((REFD.ENV || []).map(function (e) {
+        return el('button', { type: 'button', class: 'env-tog' + (on[e[0]] ? ' on' : ''), 'aria-pressed': on[e[0]] ? 'true' : 'false', onclick: function () { setEnv(sc, e[0], !on[e[0]]); } },
+          [el('span', { class: 'env-sw', 'aria-hidden': 'true' }), el('span', { class: 'env-t' }, [el('b', { text: e[1] }), el('span', { class: 'fine', text: e[2] })])]);
+      }), envList(sc).length ? [btn('Clear the environment', function () { sc.env = {}; log('', 'The environment clears.'); changed(); render(); }, 'btn-small btn-ghost')] : []));
+  }
+
+  // ------------------------------------------------------------------ the map as a saved encounter
+  function itemsOf(list) { return (list || []).map(function (it) { return { key: it.key, qty: it.qty, hidden: !!it.hidden }; }); }
+  /* A token as the layout keeps it (a creature's as `cr`, its bestiary name). */
+  function layoutTok(t, keepVitals) {
+    var o = { kind: t.kind, name: t.name, x: Math.round(t.x), y: Math.round(t.y) };
+    ['size', 'sizeSet', 'hidden', 'label', 'icon', 'speed', 'sight', 'sees', 'locked', 'noArt'].forEach(function (k) { if (t[k] != null && t[k] !== false) o[k] = t[k]; });
+    if (t.light) o.light = clone(t.light);
+    var x = combatant(t);
+    if (t.cref && (t.kind === 'foe' || t.kind === 'ally')) {
+      o.cr = x ? x.cref : t.cref;
+      if (x && x.hidden) o.hidden = true;
+      if (x && keepVitals) o.vit = { st: x.st, ad: x.ad, wounds: x.wounds || 0, conds: clone(x.conds || {}), used: clone(x.used || {}) };
+      if (x && x.items && x.items.length) o.items = itemsOf(x.items);
+    }
+    return o;
+  }
+  /* Everything on the scene that a saved encounter keeps (the crows only as where they start). */
+  function sceneLayout(sc, opts) {
+    syncTokens(sc);
+    var toks = sc.tokens.filter(function (t) { return !t.dead || t.kind === 'obj'; });
+    return {
+      v: 1, kind: sc.kind, name: sc.name, map: sc.map ? clone(sc.map) : null, w: sc.w, h: sc.h, g: sc.g, grid: sc.grid, ox: sc.ox || 0, oy: sc.oy || 0, bg: sc.bg,
+      showGrid: sc.showGrid !== false, unit: sc.unit, fog: sc.fog, ambient: sc.ambient, playerMove: sc.playerMove, env: envObj(sc),
+      walls: (sc.walls || []).map(function (w) { return { a: w.a.slice(), b: w.b.slice(), t: w.t, open: !!w.open }; }),
+      pins: (sc.pins || []).map(function (p) { return { x: Math.round(p.x), y: Math.round(p.y), label: p.label, vis: !!p.vis }; }),
+      tokens: toks.filter(function (t) { return t.kind !== 'pc'; }).map(function (t) { return layoutTok(t, opts.vitals); }),
+      crows: opts.crows ? toks.filter(function (t) { return t.kind === 'pc' && !t.marker; }).map(function (t) { return { x: Math.round(t.x), y: Math.round(t.y) }; }) : [],
+      ground: opts.ground ? itemsOf(onGround()) : []
+    };
+  }
+  function sideOf(t) { return t.kind === 'ally' ? 'ally' : 'foe'; }
+  /* The creatures on the map as an encounter lists them ([{ n, k, side }]); the layout's tokens are put in the same order, so the n-th
+     creature of a kind the encounter adds gets the n-th token of that kind. */
+  function layoutCreatures(L) {
+    var out = [];
+    L.tokens.forEach(function (t) {
+      if (!t.cr) return;
+      var hit = out.filter(function (c) { return c.n === t.cr && c.side === sideOf(t); })[0];
+      if (hit) hit.k++; else out.push({ n: t.cr, k: 1, side: sideOf(t) });
+    });
+    function rank(t) { if (!t.cr) return 1e9; for (var i = 0; i < out.length; i++) if (out[i].n === t.cr && out[i].side === sideOf(t)) return i; return 1e9; }
+    L.tokens = L.tokens.map(function (t, i) { return [t, i]; }).sort(function (a, b) { return rank(a[0]) - rank(b[0]) || a[1] - b[1]; }).map(function (p) { return p[0]; });
+    return out;
+  }
+  function saveLayout(sc, opts, into) {
+    var L = sceneLayout(sc, opts), creatures = layoutCreatures(L), e = into;
+    if (!e) e = newEncounter({ name: opts.name || sc.name, src: 'Tabletop', where: opts.where || '' });
+    else { if (opts.name) e.name = opts.name; e.where = opts.where || e.where; }
+    e.creatures = creatures; e.layout = L; e.map = L.map; e.mapTitle = sc.name;
+    sc.fromEnc = e.id;
+    var objs = L.tokens.filter(function (t) { return !t.cr; }).length, env = Object.keys(L.env || {});
+    log('enc', 'Saved the tabletop as an encounter: **' + (e.name || 'untitled') + '** (' + [creatures.length ? encSummary(e) : 'no creatures', objs ? plural(objs, 'object') : '',
+      env.length ? env.map(function (k) { return envDef(k)[1].toLowerCase(); }).join(', ') : ''].filter(Boolean).join('; ') + ').');
+    changed(); render();
+    toast((into ? 'Updated' : 'Saved') + ' "' + (e.name || 'the encounter') + '". Load it from the Add drawer, or run it from the Encounters tab.');
+    return e;
+  }
+  function savePanel(sc) {
+    var into = sc.fromEnc ? findEncounter(sc.fromEnc) : null, o = U.saveOpts || (U.saveOpts = { vitals: false, crows: true, ground: true });
+    var name = el('input', { type: 'text', class: 'in', maxlength: 80, value: into ? into.name : sc.name, 'aria-label': 'Encounter name' });
+    var where = el('input', { type: 'text', class: 'in', maxlength: 80, value: into ? into.where || '' : '', placeholder: 'Place, hex, room', 'aria-label': 'Where' });
+    var creatures = sc.tokens.filter(function (t) { return t.cref && (t.kind === 'foe' || t.kind === 'ally') && !t.dead; }).length,
+      objs = sc.tokens.filter(function (t) { return t.kind === 'obj' || t.kind === 'npc'; }).length, env = envList(sc);
+    function box(k, label, title) { return el('label', { class: 'check', title: title }, [el('input', { type: 'checkbox', checked: !!o[k], onchange: function () { o[k] = this.checked; } }), ' ' + label]); }
+    function go(update) { saveLayout(sc, { name: name.value.trim().slice(0, 80) || sc.name, where: where.value.trim().slice(0, 80), vitals: o.vitals, crows: o.crows, ground: o.ground }, update ? into : null); }
+    return el('div', { class: 'dr-stack' }, [
+      el('p', { class: 'fine', text: 'Keeps this map as a saved encounter: ' + [plural(creatures, 'creature'), plural(objs, 'other token'),
+        plural(sc.walls.length, 'wall'), plural(sc.pins.length, 'pin'), env.length ? 'the environment (' + env.map(function (k) { return envDef(k)[1]; }).join(', ') + ')' : 'no environment'].join(', ') +
+        ', the map and its grid, and where every token stands. Loading it later builds this scene again and puts each creature back in its place.' }),
+      el('label', { class: 'field' }, ['Name', name]), el('label', { class: 'field' }, ['Where', where]),
+      el('div', { class: 'checks' }, [box('crows', 'Where the crows start', 'Put the crows back on the squares they stand on now'),
+        box('ground', 'Items on the ground' + (onGround().length ? ' (' + onGround().length + ')' : ''), 'What lies unattended in the fight now'),
+        box('vitals', 'Creatures as they are now', 'Their Stamina, AD, wounds, conditions, and spent uses now, for a fight to pick up later. Off: they start fresh.')]),
+      el('div', { class: 'row' }, [btn('Save as a new encounter', function () { go(false); }, 'btn-small btn-primary'),
+        into && !into.done ? btn('Update "' + (into.name || 'its encounter') + '"', function () { go(true); }, 'btn-small', 'This map was saved as (or loaded from) that encounter: save over it') : null]),
+      into ? el('p', { class: 'fine' }, ['From the encounter ', el('a', { href: '#enc-' + into.id, class: 'enc-link', text: into.name || 'untitled', onclick: function (ev) { ev.preventDefault(); openEncounter(into.id); } }), '.']) : null
+    ]);
+  }
+  /* The scene for a saved layout: the one made from this encounter before (set back to the layout), or a new one. */
+  function layoutScene(e) {
+    var L = e.layout, v = V(), sc = v.scenes.filter(function (s) { return s.fromEnc === e.id; })[0];
+    if (!sc) { sc = makeScene(L.kind === 'dungeon' ? 'dungeon' : 'open', (e.name || L.name || 'Encounter').slice(0, 60)); v.scenes.push(sc); }
+    ['w', 'h', 'g', 'grid', 'ox', 'oy', 'bg', 'showGrid', 'unit', 'fog', 'ambient', 'playerMove'].forEach(function (k) { if (L[k] !== undefined) sc[k] = L[k]; });
+    sc.map = L.map ? clone(L.map) : null;
+    if (sc.map) sc.autoGrid = sc.map.b || sc.map.k;
+    sc.env = clone(L.env || {});
+    sc.walls = (L.walls || []).map(function (w) { return { id: Tbl.uid('w'), a: w.a.slice(), b: w.b.slice(), t: w.t, open: !!w.open }; });
+    sc.pins = (L.pins || []).map(function (p) { return { id: Tbl.uid('p'), x: p.x, y: p.y, label: p.label, vis: !!p.vis }; });
+    sc.tokens = sc.tokens.filter(function (t) { return t.kind === 'pc' || t.cid && byId(t.cid); });   // the layout's objects come back fresh
+    sc.fromEnc = e.id; sc.seen = ''; sc.seenDims = '';
+    v.cur = sc.id; U.sel = null; U.sig = ''; U.mask = null;
+    return sc;
+  }
+  /* Run a saved layout: its creatures (and the crows) go into the tracker, and each goes back where it stood. */
+  function loadLayout(e) {
+    var L = e.layout, started = S().combat.list.some(function (x) { return x.enc === e.id; });
+    if (runningEnc() !== e && !runEncounter(e, true)) return;
+    var sc = layoutScene(e), spots = L.tokens.filter(function (t) { return t.cr; }).map(function (t) { return Object.assign({ used: false }, t); }), objs = 0;
+    U.spawn = 0;
+    S().combat.list.forEach(function (x) {
+      if (x.kind === 'pc' || x.enc !== e.id || x.dead) return;
+      var side = x.kind === 'ally' ? 'ally' : 'foe', spot = spots.filter(function (t) { return !t.used && t.cr === x.cref && sideOf(t) === side; })[0];
+      var t = sc.tokens.filter(function (k) { return k.cid === x.id; })[0] || addToken(sc, { name: x.name, kind: side, cid: x.id, cref: x.cref, hidden: side === 'foe' && !!U.hideNew }, 1);
+      if (!spot) return;
+      spot.used = true;
+      ['x', 'y', 'size', 'sizeSet', 'speed', 'sight', 'noArt'].forEach(function (k) { if (spot[k] != null) t[k] = spot[k]; });
+      if (spot.light) t.light = clone(spot.light);
+      t.hidden = !!spot.hidden;
+      if (started) return;   // already fighting: leave it as it is
+      if (spot.vit) { x.st = spot.vit.st; x.ad = spot.vit.ad; x.wounds = spot.vit.wounds || 0; x.conds = clone(spot.vit.conds || {}); x.used = clone(spot.vit.used || {}); }
+      if (spot.items) x.items = spot.items.map(function (it) { return newItem(it.key, it.qty, it.hidden); });
+    });
+    L.tokens.forEach(function (t) { if (t.cr) return; var o = clone(t); delete o.vit; delete o.items; addToken(sc, o); objs++; });
+    var pcs = placeCrows(sc, -1), crowToks = sc.tokens.filter(function (t) { return t.kind === 'pc' && !t.marker; });
+    (L.crows || []).forEach(function (p, i) { if (crowToks[i]) { crowToks[i].x = p.x; crowToks[i].y = p.y; } });
+    if (!started) (L.ground || []).forEach(function (it) { onGround().push(newItem(it.key, it.qty, it.hidden)); });
+    U.sel = null;
+    var env = envList(sc), n = S().combat.list.filter(function (x) { return x.enc === e.id && !x.dead; }).length;
+    log('', 'Set up **' + (e.name || 'the encounter') + '** on the tabletop' + (env.length ? ' (' + env.map(function (k) { return envDef(k)[1].toLowerCase(); }).join(', ') + ')' : '') + '.');
+    toast('"' + (e.name || 'The encounter') + '" is on the map: ' + [plural(n, 'creature'), objs ? plural(objs, 'object') : '', pcs ? plural(pcs, 'crow') : ''].filter(Boolean).join(', ') + '.');
+    changed(); render();
   }
 
   // Redraw when the tracker, party, or clock change: render() calls renderVtt for the open tab; the clock chip is kept current here.
@@ -1258,5 +1421,7 @@
   /* For practice fights (ref-practice.js): the current scene, tokens, and moves. */
   var vtt = { cur: cur, tokOf: tokOf, addToken: addToken, moveToken: moveToken, nextSpot: nextSpot, changed: changed,
     resetSpawn: function () { U.spawn = 0; }, view: function () { return U.view; }, deselect: function () { U.sel = null; } };
-  A.add({ vtt: vtt, renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
+  /* From the Encounters tab: run a saved encounter's map layout on the Tabletop. */
+  function runOnTabletop(e) { setTab('vtt'); loadLayout(e); }
+  A.add({ envFor: envFor, saveLayout: saveLayout, runOnTabletop: runOnTabletop, vtt: vtt, renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
 })();

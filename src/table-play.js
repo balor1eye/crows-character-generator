@@ -83,6 +83,8 @@
     var sc = P.scene, c = P.data && P.data.combat; P.L.tl.innerHTML = '';
     if (!sc) return;
     P.L.tl.appendChild(el('div', { class: 'glass row-g' }, [el('b', { class: 'hud-chip dim', text: sc.name || 'Tabletop' }), c && c.round ? el('span', { class: 'hud-chip round', text: 'Round ' + c.round }) : null]));
+    // The environment the Ref set (darkness, rain, the Miasma...): its rules are the chip's tooltip.
+    if (sc.envInfo && sc.envInfo.length) P.L.tl.appendChild(el('div', { class: 'glass row-g env' }, sc.envInfo.map(function (e) { return el('span', { class: 'hud-chip env', text: e[0], title: e[0] + ': ' + e[1] }); })));
   }
   function renderBar() {
     if (!P.L) return;
@@ -331,7 +333,7 @@
         var o = Object.assign({}, k), kn = k.cid && Combat.known ? Combat.known(k.cid) : null; o.mine = mine(k); o.size = k.size;
         if (kn && o.hpf == null && kn.stMax) { o.hpf = Math.max(0, Math.min(1, kn.st / kn.stMax)); delete o.hw; }   // Monster Expert: its Stamina
         return o;
-      }), pins: t.pins || [], walls: [], move: t.move, moved: t.moved, art: t.art || {} };
+      }), pins: t.pins || [], walls: [], move: t.move, moved: t.moved, art: t.art || {}, env: t.env || null, envInfo: t.envInfo || [] };
     var key = fog ? fog.cw + 'x' + fog.ch + ':' + fog.d : '';
     if (key !== P.maskKey) { P.maskKey = key; P.mask = Tbl.unpackMask(fog); }
     // Pings made since this page last looked (the first look only notes where they are).
