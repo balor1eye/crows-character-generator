@@ -19,7 +19,7 @@
   var VERSION = 'crows-ai-vault-v1', ITER = 600000, MIN_PASS = 12, IDLE_MS = 30 * 60 * 1000, LOCAL_KEY = 'crows-ai-vault';
   var DEFAULT_MODEL = 'claude-sonnet-5-5', TEST_MODEL = 'claude-haiku-4-5-20251001';
   var MODELS = [['claude-sonnet-5-5', 'Claude Sonnet 5.5 (default)'], ['claude-opus-5-5', 'Claude Opus 5.5 (best, slower, costs more)'], [TEST_MODEL, 'Claude Haiku 4.5 (fastest, cheapest)']];
-  var MAP_OBJECT_TYPES = ['chest', 'table', 'chair', 'bed', 'shelf', 'altar', 'statue', 'pillar', 'barrel', 'crate', 'well', 'fountain', 'trap', 'door', 'stairs', 'light', 'plant', 'rubble', 'body', 'other'];
+  var MAP_OBJECT_TYPES = ['pillar', 'statue', 'shelf', 'crate', 'boulder', 'tree', 'rubble', 'other'], MAP_MAX_WALLS = 200, MAP_MAX_OBJECTS = 40;
   var subtle = typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.subtle;
 
   // ------------------------------------------------------------------ crypto (pure: no state, no DOM)
@@ -91,38 +91,52 @@
     var objSchema = { type: 'object', properties: {
       name: { type: 'string', description: 'Short name, at most 30 characters' }, type: { type: 'string', 'enum': MAP_OBJECT_TYPES },
       x: { type: 'number', description: 'Centre, fraction of image width, 0 to 1' }, y: { type: 'number', description: 'Centre, fraction of image height, 0 to 1' },
-      w: { type: 'number', description: 'Width, fraction of image width' }, h: { type: 'number', description: 'Height, fraction of image height' },
-      light: { type: 'boolean', description: 'It gives off light (lit brazier, torch, fireplace, candles)' },
-      hidden: { type: 'boolean', description: 'A secret or trap players should not see at first' }, note: { type: 'string', description: 'Optional short note, may be empty' } },
+      w: { type: 'number', description: 'Footprint width, fraction of image width' }, h: { type: 'number', description: 'Footprint height, fraction of image height' } },
       required: ['name', 'type', 'x', 'y', 'w', 'h'] };
+    var wallSchema = { type: 'object', properties: {
+      x1: { type: 'number', description: 'One end, fraction of image width' }, y1: { type: 'number', description: 'One end, fraction of image height' },
+      x2: { type: 'number', description: 'Other end, fraction of image width' }, y2: { type: 'number', description: 'Other end, fraction of image height' },
+      door: { type: 'boolean', description: 'A door across a doorway, not a wall' } },
+      required: ['x1', 'y1', 'x2', 'y2'] };
     var names = Object.keys(envKeys);
-    var tool = { name: 'report_objects', description: 'Report the objects found on the battle map.', input_schema: { type: 'object', properties: {
-      objects: { type: 'array', maxItems: 60, items: objSchema }, env: { type: 'array', items: names.length ? { type: 'string', 'enum': names } : { type: 'string' } } }, required: ['objects', 'env'] } };
+    var tool = { name: 'report_objects', description: 'Report the walls, doors, and large blocking objects on the battle map.', input_schema: { type: 'object', properties: {
+      walls: { type: 'array', maxItems: MAP_MAX_WALLS, items: wallSchema }, objects: { type: 'array', maxItems: MAP_MAX_OBJECTS, items: objSchema },
+      env: { type: 'array', items: names.length ? { type: 'string', 'enum': names } : { type: 'string' } } }, required: ['walls', 'objects', 'env'] } };
     var prompt = 'This image is a top-down tabletop RPG battle map' + (title ? ' titled "' + title + '"' : '') + ' (' + kind + ' setting' + (cols > 0 && rows > 0 ? ', ' + cols + ' x ' + rows + ' squares' : '') + '). '
-      + 'List the distinct physical objects a game master would want as movable tokens: furniture, chests, altars, statues, pillars, barrels, wells, traps, doors, stairs, lit braziers or torches, and the like. '
-      + 'Do not report walls, floors, rug patterns, or decorative texture. '
-      + 'Give each object\'s centre (x, y) and size (w, h) as fractions of the image width and height. '
-      + (body.hasLabels ? 'The map has printed labels or a legend: use them to name objects, and do NOT report the label text itself as an object. ' : '')
-      + 'Keep names short (30 characters or fewer). Report at most 60 objects. '
+      + (cols > 0 ? 'One grid square is 1/' + cols + ' of the image width' + (rows > 0 ? ' and 1/' + rows + ' of its height' : '') + '. ' : 'If the map shows a grid, measure against it. ')
+      + 'Report only what stops a person both moving and seeing past it. '
+      + 'Walls: each straight run of wall as one segment along its middle, from corner to corner; split a curved or cave wall into short straight segments; follow grid lines where the wall does. '
+      + 'Leave a gap at every doorway and report each door as its own segment across the doorway with door true. Open archways, windows, low walls, cliff edges, and map borders with no wall drawn are not walls. '
+      + 'Objects: only large solid things a person cannot see over or walk through, about one square across or more, such as pillars, columns, big statues, bookcases and tall shelves, stacked crates, boulders, tree trunks, standing stones. '
+      + 'Give each one\'s centre (x, y) and the footprint it is drawn with (w, h), measured on the grid. '
+      + 'Do not report anything a person can see over or that is small: tables, chairs, beds, chests, barrels, altars, wells, lights, traps, stairs, rugs, bodies, or decoration. '
+      + 'All positions and sizes are fractions of the image width (x, w) and height (y, h), 0 to 1. '
+      + (body.hasLabels ? 'The map has printed labels or a legend: use them to name objects, and do NOT report the label text itself. ' : '')
+      + 'Keep names short (30 characters or fewer). Report at most ' + MAP_MAX_WALLS + ' wall segments and ' + MAP_MAX_OBJECTS + ' objects. '
       + (names.length ? 'In env, list keys from the allowed set only when the picture clearly implies them (for example a dark cave); usually leave it empty. Allowed: '
         + names.map(function (k) { return envKeys[k] ? k + ' (' + envKeys[k] + ')' : k; }).join(', ') + '. ' : 'Leave env empty. ')
       + 'Answer by calling report_objects.';
-    return { envKeys: envKeys, payload: { model: model, max_tokens: 4096, tools: [tool], tool_choice: { type: 'auto' },
+    return { envKeys: envKeys, payload: { model: model, max_tokens: 16000, tools: [tool], tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: ['image/jpeg', 'image/png', 'image/webp'].indexOf(body.mime) >= 0 ? body.mime : 'image/jpeg', data: body.image } }, { type: 'text', text: prompt }] }] } };
   }
   function detectResult(j, envKeys, model) {
     var input = null;
     (Array.isArray(j && j.content) ? j.content : []).forEach(function (b) { if (!input && b && b.type === 'tool_use' && b.name === 'report_objects' && b.input && typeof b.input === 'object') input = b.input; });
     if (!input) throw new Error('The model gave no answer.');
-    var objects = [], env = [];
+    var objects = [], walls = [], env = [];
     (Array.isArray(input.objects) ? input.objects : []).forEach(function (o) {
-      if (objects.length >= 60 || !o || typeof o.x !== 'number' || typeof o.y !== 'number') return;
+      if (objects.length >= MAP_MAX_OBJECTS || !o || typeof o.x !== 'number' || typeof o.y !== 'number') return;
       var name = clip(o.name, 30); if (!name) return;
-      objects.push({ name: name, type: MAP_OBJECT_TYPES.indexOf(o.type) >= 0 ? o.type : 'other', x: frac(o.x), y: frac(o.y), w: Math.max(0.005, frac(o.w, 0.03)), h: Math.max(0.005, frac(o.h, 0.03)),
-        light: o.light === true, hidden: o.hidden === true, note: clip(o.note, 120) });
+      objects.push({ name: name, type: MAP_OBJECT_TYPES.indexOf(o.type) >= 0 ? o.type : 'other', x: frac(o.x), y: frac(o.y), w: Math.max(0.005, frac(o.w, 0.03)), h: Math.max(0.005, frac(o.h, 0.03)) });
+    });
+    (Array.isArray(input.walls) ? input.walls : []).forEach(function (w) {
+      if (walls.length >= MAP_MAX_WALLS || !w || ['x1', 'y1', 'x2', 'y2'].some(function (k) { return typeof w[k] !== 'number'; })) return;
+      var seg = { x1: frac(w.x1), y1: frac(w.y1), x2: frac(w.x2), y2: frac(w.y2) };
+      if (Math.abs(seg.x1 - seg.x2) + Math.abs(seg.y1 - seg.y2) < 0.002) return;
+      seg.door = w.door === true; walls.push(seg);
     });
     (Array.isArray(input.env) ? input.env : []).forEach(function (e) { if (typeof e === 'string' && Object.prototype.hasOwnProperty.call(envKeys, e) && env.indexOf(e) < 0) env.push(e); });
-    return { objects: objects, env: env, model: model };
+    return { objects: objects, walls: walls, env: env, model: model };
   }
   /* One call to the Anthropic API from the browser. Rejects with Error(message from Anthropic) and .status. */
   function callAnthropic(apiKey, payload) {
@@ -348,7 +362,7 @@
     var about = document.getElementById('sec-ai-about');
     if (about && !about.firstChild) {
       about.appendChild(el('h2', { text: 'How your key is protected' }));
-      [ 'With your own key, Claude reads the maps you upload and lists their furniture and lights. You pay Anthropic directly; nothing is billed through this site.',
+      [ 'With your own key, Claude reads the maps you upload and traces their walls, doors, and large objects that block sight. You pay Anthropic directly; nothing is billed through this site.',
         'Your key is encrypted in this browser with a vault passphrase you choose (not your account password), using AES-GCM with a key made from the passphrase by 600,000 rounds of PBKDF2. Only the scrambled result is stored: in your account when you are logged in, or in this browser when you are not. The site\'s server, its administrator, and anyone who gets into its database see only that, and cannot read the key. Nobody can recover a forgotten passphrase; you would add the key again.',
         'To scan a map, your browser unlocks the key and talks to Anthropic directly. The decrypted key is held in memory only: never saved with the campaign, never shown again after you type it, and dropped after 30 minutes idle, on logout, or when you leave the page.',
         'What this cannot stop: whoever controls this site\'s scripts could change them to capture the key at the moment you unlock it. The page\'s security policy blocks scripts injected by others, but you are trusting whoever publishes this page. Use a key with a spending limit you are comfortable with, and revoke it at Anthropic if you doubt anything.'

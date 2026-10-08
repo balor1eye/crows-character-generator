@@ -42,7 +42,10 @@ V.seal(payload, pass, user, 'wxyz').then(function (s) {
   var d = V.detectPayload({ image: 'AAAA', mime: 'image/png', kind: 'dungeon', hasLabels: true, cols: 30, rows: 20, title: 'Crypt', envKeys: [['dark', 'Darkness'], ['bad key!', 'x']] }, 'claude-sonnet-5-5');
   ok(d.payload.tool_choice.type === 'auto' && d.payload.tools[0].name === 'report_objects' && Object.keys(d.envKeys).join() === 'dark', 'detect payload: auto tool choice, env keys filtered');
   var r = V.detectResult({ content: [{ type: 'tool_use', name: 'report_objects', input: { objects: [
-    { name: '  Chest  ', type: 'chest', x: 0.5, y: 2, w: 0, h: 0.1 }, { name: '', type: 'chest', x: .1, y: .1 }, { name: 'Odd', type: 'weird', x: .2, y: .2, light: true }, { name: 'NoPos', type: 'door' }], env: ['dark', 'nope', 'dark'] } }] }, d.envKeys, 'm');
-  ok(r.objects.length === 2 && r.objects[0].name === 'Chest' && r.objects[0].y === 1 && r.objects[0].w === 0.005 && r.objects[1].type === 'other' && r.objects[1].light === true && r.env.join() === 'dark', 'detect result clamped and validated like the server');
+    { name: '  Pillar  ', type: 'pillar', x: 0.5, y: 2, w: 0, h: 0.1 }, { name: '', type: 'pillar', x: .1, y: .1 }, { name: 'Odd', type: 'chest', x: .2, y: .2, light: true }, { name: 'NoPos', type: 'statue' }],
+    walls: [{ x1: 0, y1: 0, x2: .5, y2: 0 }, { x1: .2, y1: .2, x2: .2, y2: .2 }, { x1: .4, y1: .1, x2: .4, y2: 1.5, door: true }, { x1: .1, y1: .1, x2: 'x', y2: .3 }], env: ['dark', 'nope', 'dark'] } }] }, d.envKeys, 'm');
+  ok(r.objects.length === 2 && r.objects[0].name === 'Pillar' && r.objects[0].y === 1 && r.objects[0].w === 0.005 && r.objects[1].type === 'other' && r.objects[1].light === undefined && r.env.join() === 'dark', 'detect result clamped and validated like the server');
+  ok(r.walls.length === 2 && r.walls[0].door === false && r.walls[1].door === true && r.walls[1].y2 === 1, 'detect walls: zero-length and malformed dropped, ends clamped, doors kept');
+  ok(/stops a person both moving and seeing/.test(d.payload.messages[0].content[1].text) && d.payload.tools[0].input_schema.required.indexOf('walls') >= 0, 'detect asks only for walls, doors, and blocking objects');
   console.log('PASS (' + steps + ' checks)');
 }).catch(function (e) { console.error('FAIL: ' + (e && e.stack || e)); process.exit(1); });

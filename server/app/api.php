@@ -1794,7 +1794,9 @@ function a_admin_audit(): array {
 }
 
 // ---------------------------------------------------------------- map object detection (Claude vision)
-const MAP_OBJECT_TYPES = ['chest','table','chair','bed','shelf','altar','statue','pillar','barrel','crate','well','fountain','trap','door','stairs','light','plant','rubble','body','other'];
+// Only what blocks movement and sight is read from a map: walls, doors, and large solid objects of these types.
+const MAP_OBJECT_TYPES = ['pillar','statue','shelf','crate','boulder','tree','rubble','other'];
+const MAP_MAX_WALLS = 200, MAP_MAX_OBJECTS = 40;
 
 /** Clip a model-supplied string to $max characters, with control characters and runs of space removed. */
 function map_clip($v, int $max): string {
@@ -1913,38 +1915,48 @@ function a_map_detect(): array {
         'type' => ['type' => 'string', 'enum' => MAP_OBJECT_TYPES],
         'x' => ['type' => 'number', 'description' => 'Centre, fraction of image width, 0 to 1'],
         'y' => ['type' => 'number', 'description' => 'Centre, fraction of image height, 0 to 1'],
-        'w' => ['type' => 'number', 'description' => 'Width, fraction of image width'],
-        'h' => ['type' => 'number', 'description' => 'Height, fraction of image height'],
-        'light' => ['type' => 'boolean', 'description' => 'It gives off light (lit brazier, torch, fireplace, candles)'],
-        'hidden' => ['type' => 'boolean', 'description' => 'A secret or trap players should not see at first'],
-        'note' => ['type' => 'string', 'description' => 'Optional short note, may be empty'],
+        'w' => ['type' => 'number', 'description' => 'Footprint width, fraction of image width'],
+        'h' => ['type' => 'number', 'description' => 'Footprint height, fraction of image height'],
     ], 'required' => ['name', 'type', 'x', 'y', 'w', 'h']];
+    $wallSchema = ['type' => 'object', 'properties' => [
+        'x1' => ['type' => 'number', 'description' => 'One end, fraction of image width'], 'y1' => ['type' => 'number', 'description' => 'One end, fraction of image height'],
+        'x2' => ['type' => 'number', 'description' => 'Other end, fraction of image width'], 'y2' => ['type' => 'number', 'description' => 'Other end, fraction of image height'],
+        'door' => ['type' => 'boolean', 'description' => 'A door across a doorway, not a wall'],
+    ], 'required' => ['x1', 'y1', 'x2', 'y2']];
     $envSchema = ['type' => 'array', 'items' => $envKeys ? ['type' => 'string', 'enum' => array_keys($envKeys)] : ['type' => 'string']];
-    $tool = ['name' => 'report_objects', 'description' => 'Report the objects found on the battle map.',
+    $tool = ['name' => 'report_objects', 'description' => 'Report the walls, doors, and large blocking objects on the battle map.',
         'input_schema' => ['type' => 'object', 'properties' => [
-            'objects' => ['type' => 'array', 'maxItems' => 60, 'items' => $objSchema],
+            'walls' => ['type' => 'array', 'maxItems' => MAP_MAX_WALLS, 'items' => $wallSchema],
+            'objects' => ['type' => 'array', 'maxItems' => MAP_MAX_OBJECTS, 'items' => $objSchema],
             'env' => $envSchema,
-        ], 'required' => ['objects', 'env']]];
+        ], 'required' => ['walls', 'objects', 'env']]];
 
+    // Keep in step with detectPayload in ref/src/ref-ai.js (the same scan with the Ref's own key).
     $prompt = 'This image is a top-down tabletop RPG battle map' . ($title !== '' ? ' titled "' . $title . '"' : '')
         . ' (' . $kind . ' setting' . ($cols > 0 && $rows > 0 ? ", $cols x $rows squares" : '') . '). '
-        . 'List the distinct physical objects a game master would want as movable tokens: furniture, chests, altars, statues, pillars, barrels, wells, traps, doors, stairs, lit braziers or torches, and the like. '
-        . 'Do not report walls, floors, rug patterns, or decorative texture. '
-        . 'Give each object\'s centre (x, y) and size (w, h) as fractions of the image width and height. '
-        . ($hasLabels ? 'The map has printed labels or a legend: use them to name objects, and do NOT report the label text itself as an object. ' : '')
-        . 'Keep names short (30 characters or fewer). Report at most 60 objects. '
+        . ($cols > 0 ? 'One grid square is 1/' . $cols . ' of the image width' . ($rows > 0 ? ' and 1/' . $rows . ' of its height' : '') . '. ' : 'If the map shows a grid, measure against it. ')
+        . 'Report only what stops a person both moving and seeing past it. '
+        . 'Walls: each straight run of wall as one segment along its middle, from corner to corner; split a curved or cave wall into short straight segments; follow grid lines where the wall does. '
+        . 'Leave a gap at every doorway and report each door as its own segment across the doorway with door true. Open archways, windows, low walls, cliff edges, and map borders with no wall drawn are not walls. '
+        . 'Objects: only large solid things a person cannot see over or walk through, about one square across or more, such as pillars, columns, big statues, bookcases and tall shelves, stacked crates, boulders, tree trunks, standing stones. '
+        . 'Give each one\'s centre (x, y) and the footprint it is drawn with (w, h), measured on the grid. '
+        . 'Do not report anything a person can see over or that is small: tables, chairs, beds, chests, barrels, altars, wells, lights, traps, stairs, rugs, bodies, or decoration. '
+        . 'All positions and sizes are fractions of the image width (x, w) and height (y, h), 0 to 1. '
+        . ($hasLabels ? 'The map has printed labels or a legend: use them to name objects, and do NOT report the label text itself. ' : '')
+        . 'Keep names short (30 characters or fewer). Report at most ' . MAP_MAX_WALLS . ' wall segments and ' . MAP_MAX_OBJECTS . ' objects. '
         . ($envKeys ? 'In env, list keys from the allowed set only when the picture clearly implies them (for example a dark cave); usually leave it empty. Allowed: '
             . implode(', ', array_map(fn($k, $l) => $l !== '' ? "$k ($l)" : (string)$k, array_keys($envKeys), $envKeys)) . '. ' : 'Leave env empty. ')
         . 'Answer by calling report_objects.';
     $model = is_string($c['anthropic_model'] ?? null) && $c['anthropic_model'] !== '' ? $c['anthropic_model'] : 'claude-sonnet-5-5';
-    $payload = ['model' => $model, 'max_tokens' => 4096, 'tools' => [$tool], 'tool_choice' => ['type' => 'auto'],   // newer models refuse a forced tool; the prompt asks for it
+    $payload = ['model' => $model, 'max_tokens' => 16000, 'tools' => [$tool], 'tool_choice' => ['type' => 'auto'],   // newer models refuse a forced tool; the prompt asks for it
         'messages' => [['role' => 'user', 'content' => [
             ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mime, 'data' => $img]],
             ['type' => 'text', 'text' => $prompt],
         ]]]];
 
+    @set_time_limit(200);   // tracing every wall is a long answer
     $ch = curl_init('https://api.anthropic.com/v1/messages');
-    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 90, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_FOLLOWLOCATION => false,
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 180, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_FOLLOWLOCATION => false,
         CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($payload),
         CURLOPT_HTTPHEADER => ['x-api-key: ' . $key, 'anthropic-version: 2023-06-01', 'content-type: application/json']]);
     $out = curl_exec($ch);
@@ -1963,21 +1975,29 @@ function a_map_detect(): array {
 
     $objects = [];
     foreach (is_array($input['objects'] ?? null) ? $input['objects'] : [] as $o) {
-        if (count($objects) >= 60) break;
+        if (count($objects) >= MAP_MAX_OBJECTS) break;
         if (!is_array($o) || !isset($o['x'], $o['y']) || !is_numeric($o['x']) || !is_numeric($o['y'])) continue;
         $name = map_clip($o['name'] ?? '', 30);
         if ($name === '') continue;
         $type = is_string($o['type'] ?? null) && in_array($o['type'], MAP_OBJECT_TYPES, true) ? $o['type'] : 'other';
         $w = map_frac($o['w'] ?? 0, 0.03); $h = map_frac($o['h'] ?? 0, 0.03);
-        $objects[] = ['name' => $name, 'type' => $type, 'x' => map_frac($o['x']), 'y' => map_frac($o['y']),
-            'w' => max(0.005, $w), 'h' => max(0.005, $h), 'light' => ($o['light'] ?? false) === true, 'hidden' => ($o['hidden'] ?? false) === true,
-            'note' => map_clip($o['note'] ?? '', 120)];
+        $objects[] = ['name' => $name, 'type' => $type, 'x' => map_frac($o['x']), 'y' => map_frac($o['y']), 'w' => max(0.005, $w), 'h' => max(0.005, $h)];
+    }
+    $walls = [];
+    foreach (is_array($input['walls'] ?? null) ? $input['walls'] : [] as $wl) {
+        if (count($walls) >= MAP_MAX_WALLS) break;
+        if (!is_array($wl)) continue;
+        foreach (['x1', 'y1', 'x2', 'y2'] as $k) if (!isset($wl[$k]) || !is_numeric($wl[$k])) continue 2;
+        $seg = ['x1' => map_frac($wl['x1']), 'y1' => map_frac($wl['y1']), 'x2' => map_frac($wl['x2']), 'y2' => map_frac($wl['y2'])];
+        if (abs($seg['x1'] - $seg['x2']) + abs($seg['y1'] - $seg['y2']) < 0.002) continue;
+        $seg['door'] = ($wl['door'] ?? false) === true;
+        $walls[] = $seg;
     }
     $env = [];
     foreach (is_array($input['env'] ?? null) ? $input['env'] : [] as $e) {
         if (is_string($e) && isset($envKeys[$e]) && !in_array($e, $env, true)) $env[] = $e;
     }
-    return ['objects' => $objects, 'env' => $env, 'model' => $model];
+    return ['objects' => $objects, 'walls' => $walls, 'env' => $env, 'model' => $model];
 }
 
 // ---------------------------------------------------------------- dispatch

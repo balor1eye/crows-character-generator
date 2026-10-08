@@ -87,6 +87,13 @@ the round and who has acted, a creature's Act drawer (its combat tracker row), i
 scrolls by, Apply and Undo, Acted and the count, the Fight drawer (everyone in it, the battlefield buttons, the items, the end;
 a name selects that creature), Next round, and End (the tracker clears, the log notes it, the crows stay on the map).
 
+## Wall editing on the battle map (`vtt_walls_test.js`, run by `run_vtt_walls_test.py`)
+
+On the local build: `python3 -u ref/test/run_vtt_walls_test.py` (`--headed` shows the browser). With the Select tool it drags a wall
+(whole segment, one square), drags a shared end (the joint moves; Alt detaches), cancels a drag with Escape, deletes with Delete and
+Backspace, uses the right-click wall menu (Open it, Make it, Split here, Delete), and checks that an empty click clears the selection
+and a movable token over a wall is dragged instead of the wall.
+
 ## The Workshop and saved maps (`workshop_test.js`, run by `run_workshop_test.py`)
 
 On the local build (no accounts or server): `python3 ref/test/run_workshop_test.py` (`--headed` shows the browser). It makes a
