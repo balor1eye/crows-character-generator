@@ -277,7 +277,7 @@
   /*
    * options: ref (the Ref's controls and view), scene() -> the scene, mask() -> the fog mask, tokenSrc(t), mapSrc(scene), canMove(t),
    * speedOf(t), onSelect(t | null), onMove(t, x, y), onPing(x, y), onWall(seg), onErase(wall), onDoor(wall), onPaint(x, y, r, reveal),
-   * onRoom(rect), onFogRect(pts, reveal), onMenu(t, event), onPin(pin), onDrop(x, y), onFrame() (after each drawn frame: overlays follow the camera)
+   * onRoom(rect), onFogRect(pts, reveal), onMenu(token | null, event, world point), onPin(pin), onDrop(x, y), onFrame() (after each drawn frame: overlays follow the camera)
    *
    * Everything that changes is animated (unless the system asks for reduced motion): tokens glide to where they moved, pop in when they
    * arrive and fade out when they go, flash red when hurt and green when healed, and fall when they die; new conditions pop, the fog fades
@@ -815,7 +815,9 @@
     cv.addEventListener('contextmenu', function (e) {
       e.preventDefault();
       if (V.chain) { V.chain = null; redraw(); return; }
-      var t = hitToken(toWorld(e)); if (t && o.onMenu) o.onMenu(t, e);
+      var w = toWorld(e), t = hitToken(w);
+      if (!o.onMenu || V.drag && V.drag.type !== 'pan') return;
+      o.onMenu(t || null, e, w);
     });
     cv.addEventListener('wheel', function (e) {
       e.preventDefault(); V.camTw = null; var r = cv.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
@@ -965,6 +967,8 @@
       canvas: cv, redraw: redraw, fit: fit, centerOn: centerOn, resize: resize, zoom: function (f) { zoomAt(f, V.size.w / 2, V.size.h / 2, true); },
       tool: function (t) { V.tool = t; V.chain = null; V.ruler = null; if (!/poly/.test(t)) V.drag = null; cv.style.cursor = t === 'select' ? 'default' : t === 'ping' || t === 'measure' ? 'crosshair' : 'cell'; redraw(); },
       getTool: function () { return V.tool; },
+      /* A right-click menu over the map (T.menu), kept inside the host so it shows in fullscreen too. */
+      menu: function (x, y, items) { T.menu(x, y, items, host); },
       brush: function (n) { V.brush = n; redraw(); },
       player: function (on) { V.player = !!on; V.fogMask = null; redraw(); },
       isPlayer: function () { return V.player; },
@@ -1132,6 +1136,64 @@
     }
     return { reset: function () { place(defaults()); save(); }, measure: measure };
   }
+
+  // ------------------------------------------------------------------ the right-click menu
+  /*
+   * T.menu(x, y, items, host): a menu at the pointer (viewport pixels), appended to `host` (the map, so fullscreen shows it). Items:
+   * { head } a title, { sep } a rule, { label, fn, danger, on (checkmark), off (disabled), sub: [items] (opens in place, with a Back row), hint }.
+   * Escape, a click elsewhere, a right-drag (panning), or the window losing focus closes it. Arrow keys move between rows.
+   */
+  T.menu = function (x, y, items, host) {
+    var old = document.querySelector('.tbl-menu'); if (old) old.remove();
+    var box = document.createElement('div'); box.className = 'tbl-menu'; box.setAttribute('role', 'menu');
+    var x0 = x, y0 = y;
+    function close() {
+      box.remove(); document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', key, true);
+      document.removeEventListener('pointermove', drag, true); window.removeEventListener('blur', close);
+    }
+    function away(e) { if (!box.contains(e.target)) close(); }
+    function drag(e) { if ((e.buttons & 2) && Math.hypot(e.clientX - x0, e.clientY - y0) > 6) close(); }   // a right-drag pans instead
+    function key(e) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      e.preventDefault();
+      var bs = Array.prototype.slice.call(box.querySelectorAll('button:not([disabled])')), i = bs.indexOf(document.activeElement);
+      if (bs.length) bs[(i + (e.key === 'ArrowDown' ? 1 : -1) + bs.length) % bs.length].focus();
+    }
+    function fill(list, back) {
+      box.innerHTML = '';
+      if (back) {
+        var b0 = document.createElement('button'); b0.type = 'button'; b0.setAttribute('role', 'menuitem'); b0.className = 'tm-back'; b0.textContent = '◂ Back';
+        b0.addEventListener('click', function () { fill(back); place(); }); box.appendChild(b0);
+      }
+      list.forEach(function (it) {
+        if (!it) return;
+        if (it.sep) { if (box.lastChild && box.lastChild.tagName !== 'HR' && !box.lastChild.classList.contains('tm-back')) box.appendChild(document.createElement('hr')); return; }
+        if (it.head) { var h = document.createElement('div'); h.className = 'tm-head'; h.textContent = it.head; box.appendChild(h); return; }
+        var b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', it.on != null ? 'menuitemcheckbox' : 'menuitem');
+        if (it.on != null) b.setAttribute('aria-checked', it.on ? 'true' : 'false');
+        if (it.danger) b.classList.add('danger');
+        if (it.off) b.disabled = true;
+        if (it.hint) b.title = it.hint;
+        var l = document.createElement('span'); l.className = 'tm-l'; l.textContent = (it.on != null ? (it.on ? '✓ ' : ' ') : '') + it.label; b.appendChild(l);
+        if (it.sub) { var a = document.createElement('span'); a.className = 'tm-a'; a.textContent = '▸'; b.appendChild(a); }
+        b.addEventListener('click', function () {
+          if (it.sub) { fill(it.sub, list); place(); var f = box.querySelector('button'); if (f) f.focus(); } else { close(); if (it.fn) it.fn(); }
+        });
+        box.appendChild(b);
+      });
+      if (box.lastChild && box.lastChild.tagName === 'HR') box.lastChild.remove();
+    }
+    function place() {
+      var W = window.innerWidth, H = window.innerHeight;
+      box.style.left = Math.max(4, Math.min(x, W - box.offsetWidth - 4)) + 'px'; box.style.top = Math.max(4, Math.min(y, H - box.offsetHeight - 4)) + 'px';
+    }
+    fill(items);
+    (host || document.body).appendChild(box); place();
+    document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', key, true); document.addEventListener('pointermove', drag, true); window.addEventListener('blur', close);
+    var f = box.querySelector('button:not([disabled])'); if (f) f.focus({ preventScroll: true });
+    return { close: close };
+  };
 
   T.docks = docks;
   T.icon = icon; T.REDUCED_MOTION = RM;

@@ -39,6 +39,7 @@
       onSelect: function (t) { P.sel = t ? t.id : null; renderInfo(); },
       onMove: function (t, x, y) { Combat.sendTable({ type: 'move', token: t.id, x: Math.round(x), y: Math.round(y) }); },
       onPing: function (x, y) { Combat.sendTable({ type: 'ping', x: Math.round(x), y: Math.round(y) }); },
+      onMenu: function (t, e, w) { tableMenu(t, e, w); },
       onKey: function (e) { if (e.ctrlKey || e.metaKey || e.altKey) return; var k = { v: 'select', m: 'measure', p: 'ping' }[e.key.toLowerCase()]; if (k) pickTool(k); },
       onFrame: placeHud,
       tooltip: tipLines,
@@ -65,6 +66,34 @@
       });
     }
     renderBar();
+  }
+
+  /* Right-click: on a creature, what a player can do with it; on the board, the tools and the view. */
+  function tableMenu(t, e, w) {
+    var sc = P.scene; if (!sc) return;
+    var me = sc.tokens.filter(mine)[0], out = [];
+    function ping(x, y) { Combat.sendTable({ type: 'ping', x: Math.round(x), y: Math.round(y) }); }
+    if (t) {
+      P.sel = t.id; P.view.select(t.id); renderInfo();
+      var k = mine(t) ? 'You' : { pc: 'Crow', foe: 'Foe', ally: 'Ally', npc: 'Person', obj: 'Marker' }[t.kind] || '';
+      out.push({ head: t.name + (k ? ' · ' + k : '') });
+      var inFight = t.cid && P.data && P.data.combat && !mine(t) && Combat.setTarget, tg = Combat.targets ? Combat.targets() : [];
+      if (inFight) {
+        out.push({ label: 'Target', on: tg[0] === t.cid, fn: function () { if (Combat.setTarget(t.cid)) C.toast('Targeting ' + t.name + '.'); else C.toast(t.name + ' isn’t in the fight.'); renderInfo(); } });
+        if (Combat.toggleTarget && tg.length && tg[0] !== t.cid) out.push({ label: 'Also target', on: tg.indexOf(t.cid) > 0, hint: 'Spells and attacks on several creatures', fn: function () { Combat.toggleTarget(t.cid); renderInfo(); } });
+        out.push({ sep: true });
+      }
+      out.push({ label: 'Ping it', fn: function () { ping(t.x, t.y); } },
+        { label: 'Center the view on it', fn: function () { P.view.centerOn(t.x, t.y, true); } });
+    } else {
+      out.push({ head: sc.name || 'Tabletop' }, { label: 'Ping here', fn: function () { ping(w.x, w.y); } });
+      if (me && sc.move) out.push({ label: 'Move my crow here', fn: function () { var pt = Tbl.snap(sc, w.x, w.y, 1); Combat.sendTable({ type: 'move', token: me.id, x: Math.round(pt.x), y: Math.round(pt.y) }); } });
+      out.push({ label: 'Measure', fn: function () { pickTool('measure'); } }, { sep: true });
+      if (me) out.push({ label: 'Find my crow', fn: function () { P.view.centerOn(me.x, me.y, true); } });
+    }
+    out.push({ sep: true }, { label: 'Zoom in', fn: function () { P.view.zoom(1.25); } }, { label: 'Zoom out', fn: function () { P.view.zoom(.8); } }, { label: 'Fit the map', fn: function () { P.view.fit(true); } },
+      { label: 'Fullscreen', on: !!document.fullscreenElement, fn: function () { if (document.fullscreenElement) document.exitFullscreen(); else if (P.host.requestFullscreen) P.host.requestFullscreen(); } });
+    P.view.menu(e.clientX, e.clientY, out);
   }
   function fab(name, label, onclick, cls, text) {
     return el('button', { type: 'button', class: 'fab' + (cls ? ' ' + cls : ''), title: label, 'aria-label': text ? null : label, onclick: onclick },

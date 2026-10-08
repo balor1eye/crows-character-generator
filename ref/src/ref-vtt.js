@@ -619,7 +619,7 @@
         if (!v.trim()) sc.pins = sc.pins.filter(function (k) { return k !== p; }); else { p.vis = v.charAt(0) === '+'; p.label = v.replace(/^\+/, '').slice(0, 40); }
         changed(); render();
       },
-      onMenu: function (t) { U.sel = t.id; U.view.select(t.id); openDrawer(combatant(t) ? 'act' : 'token'); },
+      onMenu: function (t, e, w) { var sc = cur(); if (sc) tableMenu(sc, t, e, w); },
       onPick: onPick,
       links: links,
       onKey: onKey,
@@ -643,6 +643,92 @@
     });
     return host;
   }
+
+  // ------------------------------------------------------------------ the right-click menu
+  /* Right-click on a token: what the Ref can do with that token, by what it is. On the bare board: the scene (maps, encounters, tokens, the environment). */
+  function tableMenu(sc, t, e, w) {
+    var items = t ? tokenMenu(sc, t, w) : boardMenu(sc, w);
+    U.view.menu(e.clientX, e.clientY, items);
+  }
+  function pingAt(sc, x, y) { sc.pings = (sc.pings || []).concat([{ id: ++sc.pingId, x: x, y: y, by: 'Ref' }]).slice(-5); changed(); }
+  function amounts(fn) { return [1, 2, 3, 4, 5, 6, 8, 10, 15, 20].map(function (n) { return { label: String(n), fn: function () { fn(n); } }; }); }
+  function tokenMenu(sc, t, w) {
+    U.sel = t.id; U.view.select(t.id); renderHud(sc); renderRoster(sc);
+    var x = combatant(t), p = pcOfTok(t), round = S().combat.round, kind = { pc: 'Crow', foe: 'Foe', ally: 'Ally', npc: 'Person', obj: t.light ? 'Light' : 'Marker' }[t.kind] || 'Token';
+    var out = [{ head: t.name + ' · ' + kind + (t.hidden ? ' · hidden' : '') }];
+    if (x) {
+      out.push({ label: 'Act: attacks, maneuvers, items…', fn: function () { openDrawer('act'); } });
+      if (x.kind !== 'pc' && !x.dead && targetsFor(x).length) out.push({ label: 'Pick its target' + (targetOf(x) ? ' (now ' + targetOf(x).name + ')' : ''), fn: function () { startPick(x); } });
+      if (x.kind !== 'pc' && round) out.push({ label: 'Acted this round', on: x.acted === round, fn: function () { x.acted = x.acted === round ? 0 : round; save(); render(); } });
+      out.push({ sep: true },
+        { label: 'Hurt', sub: amounts(function (n) { damage(x, n, false); }) },
+        { label: 'Piercing damage', sub: amounts(function (n) { damage(x, n, true); }) },
+        { label: 'Heal', sub: amounts(function (n) { heal(x, n); }) },
+        { label: 'Conditions', sub: CONDS.map(function (k) { var on = !!(x.conds && x.conds[k]); return { label: k, on: on, fn: function () { setCond(x, k, !on); save(); render(); } }; }) });
+    } else if ((t.kind === 'foe' || t.kind === 'ally') && t.cref) {
+      out.push({ label: 'Add to the combat tracker', fn: function () {
+        var before = S().combat.list.length; addCombatant(t.cref, 1, t.kind === 'ally' ? 'ally' : 'foe');
+        if (S().combat.list.length > before) { var n = S().combat.list[S().combat.list.length - 1]; t.cid = n.id; t.name = n.name; changed(); render(); }
+      } });
+    } else if (p && !x && S().combat.round) out.push({ label: 'Not in the fight', off: true });
+    if (t.kind === 'obj' || t.kind === 'npc') out.push({ label: 'Rename…', fn: function () { var v = prompt('Name', t.name); if (v !== null && v.trim()) { t.name = v.trim().slice(0, 40); changed(); render(); } } });
+    if (t.kind === 'obj') out.push({ label: 'Show its label on the map', on: !!t.label, fn: function () { t.label = !t.label; changed(); render(); } });
+    out.push({ sep: true },
+      { label: 'Details…', fn: function () { openDrawer('token'); } },
+      { label: t.hidden ? 'Show to the players' : 'Hide from the players', fn: function () { t.hidden = !t.hidden; changed(); render(); } },
+      { label: 'Locked in place', on: !!t.locked, fn: function () { t.locked = !t.locked; changed(); render(); } },
+      { label: 'Light it carries', sub: PRESETS.map(function (o) {
+        return { label: o[1], on: presetOf(t) === o[0], fn: function () { t.light = parsePreset(o[0].replace('c', '')); if (o[0] === '10/10c' && t.light) t.light.fire = true; changed(); render(); } };
+      }).concat(t.light ? [{ sep: true }, { label: t.light.on === false ? 'Relight' : 'Put out', fn: function () { t.light.on = t.light.on === false; changed(); render(); } }] : []) },
+      { sep: true },
+      { label: 'Ping here', fn: function () { pingAt(sc, t.x, t.y); } },
+      { label: 'Center the view on it', fn: function () { U.view.centerOn(t.x, t.y, true); } },
+      { label: 'Duplicate', fn: function () { var c2 = JSON.parse(JSON.stringify(t)); c2.id = Tbl.uid('k'); c2.cid = null; c2.pcId = null; c2.link = null; c2.x += sc.g; sc.tokens.push(c2); U.sel = c2.id; changed(); render(); } },
+      { label: 'Remove from the map', danger: true, fn: function () { removeToken(sc, t); } });
+    return out;
+  }
+  function boardMenu(sc, w) {
+    var v = V(), open = state.encounters.filter(function (e) { return !e.done; }), run = runningEnc(), on = envObj(sc), travel = sc.kind === 'travel';
+    function put(o, side) { var tk = addToken(sc, o, side), pt = Tbl.snap(sc, w.x, w.y, 1); tk.x = pt.x; tk.y = pt.y; changed(); render(); return tk; }
+    var maps = mapChoices().filter(function (o) { return o[0]; }), out = [{ head: sc.name }];
+    out.push({ label: 'Ping here', fn: function () { pingAt(sc, w.x, w.y); } },
+      { label: 'Drop a pin here…', fn: function () {
+        var label = prompt('Pin label', ''); if (label === null) return;
+        sc.pins.push({ id: Tbl.uid('p'), x: w.x, y: w.y, label: label.slice(0, 40), vis: false }); changed(); render();
+      } },
+      { label: 'Measure', fn: function () { pickTool('measure'); } },
+      { sep: true });
+    out.push({ label: 'Load a map', sub: maps.map(function (o) {
+      return { label: o[1], on: !!sc.map && o[0] === (sc.map.b ? 'b|' + sc.map.b : 'k|' + sc.map.k), fn: function () { setMap(sc, o[0].charAt(0) === 'b' ? { b: o[0].slice(2) } : { k: o[0].slice(2) }); } };
+    }).concat(sc.map ? [{ sep: true }, { label: 'Plain board (no map)', fn: function () { sc.map = null; changed(); render(); } }] : []) });
+    out.push({ label: 'Load a saved encounter', off: !open.length && !run, hint: open.length || run ? '' : 'No saved encounters: roll or build one on the Encounters tab.',
+      sub: (run ? [{ label: 'Running: ' + (run.name || 'untitled') + ' (put its creatures here)', fn: function () { loadEncounter(sc, run); } }, open.length ? { sep: true } : null] : [])
+        .concat(open.filter(function (e) { return e !== run; }).map(function (e) { return { label: (e.name || 'untitled') + (encSummary(e) ? ' — ' + encSummary(e) : ''), fn: function () { loadEncounter(sc, e); } }; })) });
+    out.push({ label: 'Save this map as an encounter…', fn: function () { openDrawer('save'); } }, { sep: true });
+    out.push({ label: 'Add here', sub: [
+      { label: 'The crows', off: !A.activePCs().length, fn: function () { addCrows(sc); } },
+      { label: 'A creature…', fn: function () { openDrawer('add'); } },
+      { label: 'An NPC', off: !state.npcs.length, sub: state.npcs.map(function (n, i) { return { label: n.name || 'NPC ' + (i + 1), fn: function () { put({ name: n.name || 'NPC', kind: 'npc' }); } }; }) },
+      { label: 'A torch', fn: function () { put({ name: 'Torch', kind: 'obj', light: parsePreset('5/5'), icon: '✶', hidden: false }); } },
+      { label: 'A marker', fn: function () { put({ name: 'Marker', kind: 'obj', label: true }); } },
+      travel ? { label: 'The party marker', off: sc.tokens.some(function (k) { return k.marker; }), fn: function () { put({ name: 'The party', kind: 'pc', marker: true, speed: 0 }); } } : null] });
+    out.push({ label: 'Environment', sub: (REFD.ENV || []).slice().sort(function (a, b) { return a[1].localeCompare(b[1]); }).map(function (e) {
+      return { label: e[1], on: !!on[e[0]], hint: e[2], fn: function () { setEnv(sc, e[0], !on[e[0]]); } };
+    }).concat(envList(sc).length ? [{ sep: true }, { label: 'Clear the environment', fn: function () { sc.env = {}; log('', 'The environment clears.'); changed(); render(); } }] : []) });
+    if (sc.fog !== 'off') out.push({ label: 'Fog of war', sub: [
+      { label: 'Reveal all', fn: function () { Tbl.fillSeen(sc, true); changed(); render(); } }, { label: 'Hide all', fn: function () { Tbl.fillSeen(sc, false); changed(); render(); } }] });
+    out.push({ sep: true },
+      { label: 'Go to scene', off: v.scenes.length < 2, sub: v.scenes.map(function (s) { return { label: s.name + ' · ' + (KINDS.filter(function (k) { return k[0] === s.kind; })[0] || ['', ''])[1], on: s === sc,
+        fn: function () { v.cur = s.id; U.sel = null; U.sig = ''; U.mask = null; save(); render(); } }; }) },
+      { label: 'New scene', sub: KINDS.map(function (k) { return { label: k[1], hint: k[2], fn: function () { addScene(k[0]); } }; }) },
+      { label: 'Scene settings…', fn: function () { openDrawer('scene'); } },
+      { sep: true },
+      { label: 'Players see the map', on: !!v.shown, fn: function () { v.shown = !v.shown; log('', v.shown ? 'The tabletop is shown to the players.' : 'The tabletop is hidden from the players.'); changed(); render(); } },
+      { label: 'Player view (what they see)', on: !!U.playerView, fn: function () { U.playerView = !U.playerView; render(); } },
+      { label: 'Fit the map', fn: function () { U.view.fit(true); } });
+    return out;
+  }
+
   function onKey(e) {
     var sc = cur(), t = sc && tok(sc, U.sel);
     if (e.key === 'Escape' && U.pick) { endPick('No target picked.'); render(); return; }
@@ -1283,7 +1369,7 @@
   function envPanel(sc) {
     var on = envObj(sc);
     return el('div', { class: 'dr-stack env-list' }, [el('p', { class: 'fine', text: 'Conditions from the rules for this scene. They animate on the map (and on the players’ maps when it is shown), and each one’s rules are a tooltip on its chip at the top of the map. Darkness, dim light, and smoke count in the combat tracker’s rolls for creatures on this map.' })]
-      .concat((REFD.ENV || []).map(function (e) {
+      .concat((REFD.ENV || []).slice().sort(function (a, b) { return a[1].localeCompare(b[1]); }).map(function (e) {
         return el('button', { type: 'button', class: 'env-tog' + (on[e[0]] ? ' on' : ''), 'aria-pressed': on[e[0]] ? 'true' : 'false', onclick: function () { setEnv(sc, e[0], !on[e[0]]); } },
           [el('span', { class: 'env-sw', 'aria-hidden': 'true' }), el('span', { class: 'env-t' }, [el('b', { text: e[1] }), el('span', { class: 'fine', text: e[2] })])]);
       }), envList(sc).length ? [btn('Clear the environment', function () { sc.env = {}; log('', 'The environment clears.'); changed(); render(); }, 'btn-small btn-ghost')] : []));

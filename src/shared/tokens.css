@@ -399,3 +399,15 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .hud-chip.env { background: rgba(120,165,215,.22); border-color: rgba(150,190,235,.35); cursor: help; }
 .hud-grp.env .ico-wrap { opacity: .8; }
 @media (prefers-reduced-motion: reduce) { .env-sw, .env-sw::after { transition: none; } }
+
+/* The tabletop's right-click menu (T.menu) */
+.tbl-menu { position: fixed; z-index: 1200; min-width: 13rem; max-width: min(92vw, 22rem); max-height: 78vh; overflow: auto; display: flex; flex-direction: column; padding: .3rem; color: #f1ebe2; font: 500 .86rem var(--font);
+  background: rgba(22,19,20,.94); border: 1px solid rgba(255,255,255,.14); border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.5); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); }
+.tbl-menu button { display: flex; justify-content: space-between; gap: 1rem; align-items: center; text-align: left; background: none; border: 0; border-radius: 6px; padding: .38rem .6rem; font: inherit; color: inherit; cursor: pointer; }
+.tbl-menu button:hover:not(:disabled), .tbl-menu button:focus-visible { background: rgba(255,255,255,.12); outline: none; }
+.tbl-menu button:disabled { opacity: .4; cursor: default; }
+.tbl-menu button.danger { color: #ff8a80; }
+.tbl-menu .tm-back { color: #d9a441; }
+.tbl-menu .tm-a { opacity: .6; }
+.tbl-menu hr { border: 0; border-top: 1px solid rgba(255,255,255,.14); margin: .25rem 0; width: 100%; }
+.tbl-menu .tm-head { font-weight: 700; padding: .3rem .6rem; color: #d9a441; max-width: 20rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }

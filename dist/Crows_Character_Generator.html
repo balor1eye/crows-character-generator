@@ -407,6 +407,18 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
 .hud-grp.env .ico-wrap { opacity: .8; }
 @media (prefers-reduced-motion: reduce) { .env-sw, .env-sw::after { transition: none; } }
 
+/* The tabletop's right-click menu (T.menu) */
+.tbl-menu { position: fixed; z-index: 1200; min-width: 13rem; max-width: min(92vw, 22rem); max-height: 78vh; overflow: auto; display: flex; flex-direction: column; padding: .3rem; color: #f1ebe2; font: 500 .86rem var(--font);
+  background: rgba(22,19,20,.94); border: 1px solid rgba(255,255,255,.14); border-radius: 10px; box-shadow: 0 8px 28px rgba(0,0,0,.5); backdrop-filter: blur(9px); -webkit-backdrop-filter: blur(9px); }
+.tbl-menu button { display: flex; justify-content: space-between; gap: 1rem; align-items: center; text-align: left; background: none; border: 0; border-radius: 6px; padding: .38rem .6rem; font: inherit; color: inherit; cursor: pointer; }
+.tbl-menu button:hover:not(:disabled), .tbl-menu button:focus-visible { background: rgba(255,255,255,.12); outline: none; }
+.tbl-menu button:disabled { opacity: .4; cursor: default; }
+.tbl-menu button.danger { color: #ff8a80; }
+.tbl-menu .tm-back { color: #d9a441; }
+.tbl-menu .tm-a { opacity: .6; }
+.tbl-menu hr { border: 0; border-top: 1px solid rgba(255,255,255,.14); margin: .25rem 0; width: 100%; }
+.tbl-menu .tm-head { font-weight: 700; padding: .3rem .6rem; color: #d9a441; max-width: 20rem; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+
 </style>
 <style>
 * { box-sizing: border-box; }
@@ -1890,7 +1902,7 @@ CROWS.NAME_IDEAS = {
   /*
    * options: ref (the Ref's controls and view), scene() -> the scene, mask() -> the fog mask, tokenSrc(t), mapSrc(scene), canMove(t),
    * speedOf(t), onSelect(t | null), onMove(t, x, y), onPing(x, y), onWall(seg), onErase(wall), onDoor(wall), onPaint(x, y, r, reveal),
-   * onRoom(rect), onFogRect(pts, reveal), onMenu(t, event), onPin(pin), onDrop(x, y), onFrame() (after each drawn frame: overlays follow the camera)
+   * onRoom(rect), onFogRect(pts, reveal), onMenu(token | null, event, world point), onPin(pin), onDrop(x, y), onFrame() (after each drawn frame: overlays follow the camera)
    *
    * Everything that changes is animated (unless the system asks for reduced motion): tokens glide to where they moved, pop in when they
    * arrive and fade out when they go, flash red when hurt and green when healed, and fall when they die; new conditions pop, the fog fades
@@ -2428,7 +2440,9 @@ CROWS.NAME_IDEAS = {
     cv.addEventListener('contextmenu', function (e) {
       e.preventDefault();
       if (V.chain) { V.chain = null; redraw(); return; }
-      var t = hitToken(toWorld(e)); if (t && o.onMenu) o.onMenu(t, e);
+      var w = toWorld(e), t = hitToken(w);
+      if (!o.onMenu || V.drag && V.drag.type !== 'pan') return;
+      o.onMenu(t || null, e, w);
     });
     cv.addEventListener('wheel', function (e) {
       e.preventDefault(); V.camTw = null; var r = cv.getBoundingClientRect(); zoomAt(e.deltaY < 0 ? 1.15 : 1 / 1.15, e.clientX - r.left, e.clientY - r.top);
@@ -2578,6 +2592,8 @@ CROWS.NAME_IDEAS = {
       canvas: cv, redraw: redraw, fit: fit, centerOn: centerOn, resize: resize, zoom: function (f) { zoomAt(f, V.size.w / 2, V.size.h / 2, true); },
       tool: function (t) { V.tool = t; V.chain = null; V.ruler = null; if (!/poly/.test(t)) V.drag = null; cv.style.cursor = t === 'select' ? 'default' : t === 'ping' || t === 'measure' ? 'crosshair' : 'cell'; redraw(); },
       getTool: function () { return V.tool; },
+      /* A right-click menu over the map (T.menu), kept inside the host so it shows in fullscreen too. */
+      menu: function (x, y, items) { T.menu(x, y, items, host); },
       brush: function (n) { V.brush = n; redraw(); },
       player: function (on) { V.player = !!on; V.fogMask = null; redraw(); },
       isPlayer: function () { return V.player; },
@@ -2745,6 +2761,64 @@ CROWS.NAME_IDEAS = {
     }
     return { reset: function () { place(defaults()); save(); }, measure: measure };
   }
+
+  // ------------------------------------------------------------------ the right-click menu
+  /*
+   * T.menu(x, y, items, host): a menu at the pointer (viewport pixels), appended to `host` (the map, so fullscreen shows it). Items:
+   * { head } a title, { sep } a rule, { label, fn, danger, on (checkmark), off (disabled), sub: [items] (opens in place, with a Back row), hint }.
+   * Escape, a click elsewhere, a right-drag (panning), or the window losing focus closes it. Arrow keys move between rows.
+   */
+  T.menu = function (x, y, items, host) {
+    var old = document.querySelector('.tbl-menu'); if (old) old.remove();
+    var box = document.createElement('div'); box.className = 'tbl-menu'; box.setAttribute('role', 'menu');
+    var x0 = x, y0 = y;
+    function close() {
+      box.remove(); document.removeEventListener('pointerdown', away, true); document.removeEventListener('keydown', key, true);
+      document.removeEventListener('pointermove', drag, true); window.removeEventListener('blur', close);
+    }
+    function away(e) { if (!box.contains(e.target)) close(); }
+    function drag(e) { if ((e.buttons & 2) && Math.hypot(e.clientX - x0, e.clientY - y0) > 6) close(); }   // a right-drag pans instead
+    function key(e) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+      if (e.key !== 'ArrowDown' && e.key !== 'ArrowUp') return;
+      e.preventDefault();
+      var bs = Array.prototype.slice.call(box.querySelectorAll('button:not([disabled])')), i = bs.indexOf(document.activeElement);
+      if (bs.length) bs[(i + (e.key === 'ArrowDown' ? 1 : -1) + bs.length) % bs.length].focus();
+    }
+    function fill(list, back) {
+      box.innerHTML = '';
+      if (back) {
+        var b0 = document.createElement('button'); b0.type = 'button'; b0.setAttribute('role', 'menuitem'); b0.className = 'tm-back'; b0.textContent = '◂ Back';
+        b0.addEventListener('click', function () { fill(back); place(); }); box.appendChild(b0);
+      }
+      list.forEach(function (it) {
+        if (!it) return;
+        if (it.sep) { if (box.lastChild && box.lastChild.tagName !== 'HR' && !box.lastChild.classList.contains('tm-back')) box.appendChild(document.createElement('hr')); return; }
+        if (it.head) { var h = document.createElement('div'); h.className = 'tm-head'; h.textContent = it.head; box.appendChild(h); return; }
+        var b = document.createElement('button'); b.type = 'button'; b.setAttribute('role', it.on != null ? 'menuitemcheckbox' : 'menuitem');
+        if (it.on != null) b.setAttribute('aria-checked', it.on ? 'true' : 'false');
+        if (it.danger) b.classList.add('danger');
+        if (it.off) b.disabled = true;
+        if (it.hint) b.title = it.hint;
+        var l = document.createElement('span'); l.className = 'tm-l'; l.textContent = (it.on != null ? (it.on ? '✓ ' : ' ') : '') + it.label; b.appendChild(l);
+        if (it.sub) { var a = document.createElement('span'); a.className = 'tm-a'; a.textContent = '▸'; b.appendChild(a); }
+        b.addEventListener('click', function () {
+          if (it.sub) { fill(it.sub, list); place(); var f = box.querySelector('button'); if (f) f.focus(); } else { close(); if (it.fn) it.fn(); }
+        });
+        box.appendChild(b);
+      });
+      if (box.lastChild && box.lastChild.tagName === 'HR') box.lastChild.remove();
+    }
+    function place() {
+      var W = window.innerWidth, H = window.innerHeight;
+      box.style.left = Math.max(4, Math.min(x, W - box.offsetWidth - 4)) + 'px'; box.style.top = Math.max(4, Math.min(y, H - box.offsetHeight - 4)) + 'px';
+    }
+    fill(items);
+    (host || document.body).appendChild(box); place();
+    document.addEventListener('pointerdown', away, true); document.addEventListener('keydown', key, true); document.addEventListener('pointermove', drag, true); window.addEventListener('blur', close);
+    var f = box.querySelector('button:not([disabled])'); if (f) f.focus({ preventScroll: true });
+    return { close: close };
+  };
 
   T.docks = docks;
   T.icon = icon; T.REDUCED_MOTION = RM;
@@ -13719,6 +13793,7 @@ var CROWS_TRAIT_TREES = [
       onSelect: function (t) { P.sel = t ? t.id : null; renderInfo(); },
       onMove: function (t, x, y) { Combat.sendTable({ type: 'move', token: t.id, x: Math.round(x), y: Math.round(y) }); },
       onPing: function (x, y) { Combat.sendTable({ type: 'ping', x: Math.round(x), y: Math.round(y) }); },
+      onMenu: function (t, e, w) { tableMenu(t, e, w); },
       onKey: function (e) { if (e.ctrlKey || e.metaKey || e.altKey) return; var k = { v: 'select', m: 'measure', p: 'ping' }[e.key.toLowerCase()]; if (k) pickTool(k); },
       onFrame: placeHud,
       tooltip: tipLines,
@@ -13745,6 +13820,34 @@ var CROWS_TRAIT_TREES = [
       });
     }
     renderBar();
+  }
+
+  /* Right-click: on a creature, what a player can do with it; on the board, the tools and the view. */
+  function tableMenu(t, e, w) {
+    var sc = P.scene; if (!sc) return;
+    var me = sc.tokens.filter(mine)[0], out = [];
+    function ping(x, y) { Combat.sendTable({ type: 'ping', x: Math.round(x), y: Math.round(y) }); }
+    if (t) {
+      P.sel = t.id; P.view.select(t.id); renderInfo();
+      var k = mine(t) ? 'You' : { pc: 'Crow', foe: 'Foe', ally: 'Ally', npc: 'Person', obj: 'Marker' }[t.kind] || '';
+      out.push({ head: t.name + (k ? ' · ' + k : '') });
+      var inFight = t.cid && P.data && P.data.combat && !mine(t) && Combat.setTarget, tg = Combat.targets ? Combat.targets() : [];
+      if (inFight) {
+        out.push({ label: 'Target', on: tg[0] === t.cid, fn: function () { if (Combat.setTarget(t.cid)) C.toast('Targeting ' + t.name + '.'); else C.toast(t.name + ' isn’t in the fight.'); renderInfo(); } });
+        if (Combat.toggleTarget && tg.length && tg[0] !== t.cid) out.push({ label: 'Also target', on: tg.indexOf(t.cid) > 0, hint: 'Spells and attacks on several creatures', fn: function () { Combat.toggleTarget(t.cid); renderInfo(); } });
+        out.push({ sep: true });
+      }
+      out.push({ label: 'Ping it', fn: function () { ping(t.x, t.y); } },
+        { label: 'Center the view on it', fn: function () { P.view.centerOn(t.x, t.y, true); } });
+    } else {
+      out.push({ head: sc.name || 'Tabletop' }, { label: 'Ping here', fn: function () { ping(w.x, w.y); } });
+      if (me && sc.move) out.push({ label: 'Move my crow here', fn: function () { var pt = Tbl.snap(sc, w.x, w.y, 1); Combat.sendTable({ type: 'move', token: me.id, x: Math.round(pt.x), y: Math.round(pt.y) }); } });
+      out.push({ label: 'Measure', fn: function () { pickTool('measure'); } }, { sep: true });
+      if (me) out.push({ label: 'Find my crow', fn: function () { P.view.centerOn(me.x, me.y, true); } });
+    }
+    out.push({ sep: true }, { label: 'Zoom in', fn: function () { P.view.zoom(1.25); } }, { label: 'Zoom out', fn: function () { P.view.zoom(.8); } }, { label: 'Fit the map', fn: function () { P.view.fit(true); } },
+      { label: 'Fullscreen', on: !!document.fullscreenElement, fn: function () { if (document.fullscreenElement) document.exitFullscreen(); else if (P.host.requestFullscreen) P.host.requestFullscreen(); } });
+    P.view.menu(e.clientX, e.clientY, out);
   }
   function fab(name, label, onclick, cls, text) {
     return el('button', { type: 'button', class: 'fab' + (cls ? ' ' + cls : ''), title: label, 'aria-label': text ? null : label, onclick: onclick },
