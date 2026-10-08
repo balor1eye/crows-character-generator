@@ -48,9 +48,9 @@
     ['blank', 'Blank board', 'An empty board for theater of the mind.']];
   var PRESETS = [['', 'No light'], ['5/5', 'Torch (5/5)'], ['10/10', 'Lantern (10/10)'], ['10/10c', 'Campfire (10/10)'], ['2/2', 'Candle (2/2)'], ['15/15', 'Large fire (15/15)']];
   // [id, name, what it does, hotkey, group]: the palette down the map's left side
-  var TOOLS = [['select', 'Select', 'Move tokens (drag), select, and pan (drag the board). Right-click a token for its details; double-click a door to open or close it. Drag a wall, door, or window to move it, or drag its end to move a corner; Delete removes it; right-click it for more.', 'v', 'play'],
+  var TOOLS = [['select', 'Select', 'Move tokens (drag), select, and pan (drag the board). Right-click a token for its details; double-click a door to open or close it. Drag a wall, door, or window to move it, or drag its end to move a corner; Delete removes it; right-click it for more. Ctrl+Z undoes the last change (Ctrl+Y redoes).', 'v', 'play'],
     ['measure', 'Measure', 'Drag to measure squares or hexes.', 'm', 'play'], ['ping', 'Ping', 'Click to point something out to everyone (Alt-click works in any tool).', 'p', 'play'],
-    ['wall', 'Wall', 'Click points to draw walls that block sight and movement. Double-click or Esc to finish; Shift snaps to half squares.', 'w', 'walls'],
+    ['wall', 'Wall', 'Click points to draw walls that block sight and movement. Double-click to finish (Esc finishes and goes back to Select); Shift snaps to half squares.', 'w', 'walls'],
     ['door', 'Door', 'Click both ends of a door (closed doors block sight and movement).', 'd', 'walls'], ['window', 'Window', 'A window blocks movement but not sight.', 'n', 'walls'],
     ['room', 'Room', 'Drag a rectangle to wall it in.', 'r', 'walls'], ['eraser', 'Erase', 'Click a wall, door, or window to delete it.', 'e', 'walls'],
     ['reveal', 'Reveal', 'Paint to reveal the map to the players.', 'f', 'fog'], ['hide', 'Hide', 'Paint to hide the map again.', 'g', 'fog'],
@@ -71,7 +71,42 @@
     var p = pcOfTok(t);
     return p ? S().combat.list.filter(function (x) { return x.kind === 'pc' && x.pcId === p.id; })[0] || null : null;
   }
-  function changed() { U.sig = ''; save(); }
+  /* Undo and redo: the last 5 tabletop changes. A step is the whole tabletop as JSON (pings left out, so pointing never makes one), taken when changed() runs. */
+  var HIST = 5;
+  function snap() { return JSON.stringify(V(), function (k, v) { return k === 'pings' || k === 'pingId' ? undefined : v; }); }
+  function histFor() {   // the history belongs to one state.vtt object: loading or replacing the state starts it over
+    if (!U.hist || U.hist.vtt !== V()) U.hist = { vtt: V(), last: snap(), undo: [], redo: [] };
+    return U.hist;
+  }
+  function changed() {
+    var h = U.hist, now;
+    if (!h || h.vtt !== V()) histFor();
+    else if ((now = snap()) !== h.last) { h.undo.push(h.last); if (h.undo.length > HIST) h.undo.shift(); h.redo = []; h.last = now; }
+    U.sig = ''; save();
+  }
+  function restore(snapStr) {   // put a snapshot back inside state.vtt (other modules hold it), keeping today's pings
+    var v = V(), old = {}, o = JSON.parse(snapStr);
+    v.scenes.forEach(function (s) { old[s.id] = s; });
+    (o.scenes || []).forEach(function (s) { var c = old[s.id]; if (c) { s.pings = c.pings; s.pingId = c.pingId; } });
+    Object.keys(v).forEach(function (k) { delete v[k]; });
+    Object.keys(o).forEach(function (k) { v[k] = o[k]; });
+    var sc = cur(); if (!sc || !tok(sc, U.sel)) U.sel = null;
+  }
+  function step(from, to, word) {
+    var h = histFor();
+    if (!h[from].length) { toast('Nothing to ' + (word === 'Undone' ? 'undo' : 'redo') + '.'); return; }
+    h[to].push(h.last); if (h[to].length > HIST) h[to].shift();
+    h.last = h[from].pop(); restore(h.last);
+    U.sig = ''; U.mask = null; U.view && U.view.selectWall && U.view.selectWall(null); save(); render();
+    h.last = snap();   // render may tidy the scene (tokens, grid): that tidying is not a change to undo
+    toast(word + ' (' + h[from].length + ' more to ' + (word === 'Undone' ? 'undo' : 'redo') + ').');
+  }
+  function undo() { step('undo', 'redo', 'Undone'); }
+  function redo() { step('redo', 'undo', 'Redone'); }
+  function undoItems() {
+    var h = histFor(), tip = 'Up to the last ' + HIST + ' changes on the tabletop';
+    return [{ label: 'Undo (Ctrl+Z)', off: !h.undo.length, hint: h.undo.length ? '' : tip, fn: undo }, { label: 'Redo (Ctrl+Y)', off: !h.redo.length, hint: h.redo.length ? '' : tip, fn: redo }];
+  }
   /* A combatant's token on a scene (a crow's own token, not the party marker). */
   function tokOf(sc, x) {
     if (!sc || !x) return null;
@@ -452,8 +487,8 @@
   function tokenSrc(t) { return artSrc(artKey(t)); }
   /* The fog mask for this scene (worked out again only when something that affects it changed). */
   function maskFor(sc) {
-    if (sc.fog === 'off') return null;
-    var sig = [sc.id, sc.fog, sc.ambient, sc.w, sc.h, sc.g, sc.seen, JSON.stringify(sc.walls), JSON.stringify(sc.tokens.map(function (t) { return [t.id, t.x, t.y, t.kind, t.dead, t.hidden, t.light, t.sight, t.sees, t.size, t.blocks, t.fw, t.fh]; }))].join('|');
+    if (sc.fog === 'off' && !Tbl.isDark(sc)) return null;
+    var sig = [sc.id, sc.fog, sc.ambient, Tbl.isDark(sc), sc.w, sc.h, sc.g, sc.seen, JSON.stringify(sc.walls), JSON.stringify(sc.tokens.map(function (t) { return [t.id, t.x, t.y, t.kind, t.dead, t.hidden, t.light, t.sight, t.sees, t.size, t.blocks, t.fw, t.fh]; }))].join('|');
     if (sig === U.sig && U.mask) return U.mask;
     var m = Tbl.computeVision(sc);
     U.mask = m; U.sig = sig;
@@ -469,7 +504,7 @@
     var vis = sc.tokens.filter(function (t) {
       if (t.hidden) return false;
       var x = combatant(t); if (x && x.hidden && x.kind === 'foe') return false;
-      if (sc.fog === 'off' || !m) return true;
+      if (!m) return true;
       if (CARRIERS.indexOf(t.kind) >= 0) return true;
       var c = Tbl.maskAt(m, t.x, t.y);
       return t.kind === 'obj' && !t.light ? c >= 1 : c >= 2;
@@ -498,7 +533,7 @@
       return o;
     });
     return { id: sc.id, name: sc.name, kind: sc.kind, w: sc.w, h: sc.h, g: sc.g, grid: sc.grid, ox: sc.ox, oy: sc.oy, bg: sc.bg, showGrid: sc.showGrid !== false, unit: sc.unit,
-      map: sc.map ? (sc.map.b ? { b: sc.map.b } : { k: sc.map.k }) : null, fog: sc.fog === 'off' ? null : Tbl.packMask(m), tokens: tokens, art: art,
+      map: sc.map ? (sc.map.b ? { b: sc.map.b } : { k: sc.map.k }) : null, fog: m ? Tbl.packMask(m) : null, tokens: tokens, art: art,
       pins: sc.pins.filter(function (p) { return p.vis; }).map(function (p) { return { id: p.id, x: Math.round(p.x), y: Math.round(p.y), label: p.label, vis: true }; }),
       pings: (sc.pings || []).slice(-5), move: sc.playerMove !== false, moved: sc.kind === 'travel' ? sc.moved || 0 : null,
       env: envList(sc).length ? envObj(sc) : null, envInfo: envList(sc).map(function (k) { var e = envDef(k); return [e[1], e[2]]; }) };
@@ -640,10 +675,21 @@
     U.L = {};
     if (!escBound) {
       escBound = true;
-      // Escape (once the right-click menu, a pop-up, or the map's own ruler hasn't taken it) stops picking a target, else closes the open drawer.
+      // Ctrl/Cmd+Z undoes the last tabletop change, Ctrl+Y or Ctrl+Shift+Z redoes it (not while typing in a field or with a menu open).
       document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Escape' || e.defaultPrevented || !U.host || !U.host.getClientRects().length) return;
-        if (U.pick) { e.preventDefault(); endPick('No target picked.'); render(); return; }
+        if (!(e.ctrlKey || e.metaKey) || e.altKey || e.defaultPrevented || !U.host || !U.host.getClientRects().length) return;
+        var k = String(e.key).toLowerCase(), tg = e.target;
+        if (tg && (/^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName) || tg.isContentEditable)) return;
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if (k === 'y' || k === 'z' && e.shiftKey) { e.preventDefault(); redo(); }
+      });
+      // Escape (once the right-click menu or a pop-up hasn't taken it) stops picking a target; else it leaves any tool but Select (ending the wall,
+      // ruler, or shape under way: the map's own handler has just done that) and goes back to Select; else it closes the open drawer.
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape' || !U.host || !U.host.getClientRects().length) return;
+        if (U.pick && !e.defaultPrevented) { e.preventDefault(); endPick('No target picked.'); render(); return; }
+        var tool = U.view && U.view.getTool();
+        if (tool && tool !== 'select' && cur()) { e.preventDefault(); pickTool('select'); return; }
+        if (e.defaultPrevented) return;
         if (U.drawer) { e.preventDefault(); U.drawer = null; render(); }
       });
     }
@@ -673,6 +719,7 @@
     U.sel = t.id; U.view.select(t.id); renderHud(sc); renderRoster(sc);
     var x = combatant(t), p = pcOfTok(t), round = S().combat.round, kind = { pc: 'Crow', foe: 'Foe', ally: 'Ally', npc: 'Person', obj: t.light ? 'Light' : 'Marker' }[t.kind] || 'Token';
     var out = [{ head: t.name + ' · ' + kind + (t.hidden ? ' · hidden' : '') }];
+    var ud = undoItems();
     if (x) {
       out.push({ label: 'Act: attacks, maneuvers, items…', fn: function () { openDrawer('act'); } });
       if (x.kind !== 'pc' && !x.dead && targetsFor(x).length) out.push({ label: 'Pick its target' + (targetOf(x) ? ' (now ' + targetOf(x).name + ')' : ''), fn: function () { startPick(x); } });
@@ -702,7 +749,8 @@
       { label: 'Ping here', fn: function () { pingAt(sc, t.x, t.y); } },
       { label: 'Center the view on it', fn: function () { U.view.centerOn(t.x, t.y, true); } },
       { label: 'Duplicate', fn: function () { var c2 = JSON.parse(JSON.stringify(t)); c2.id = Tbl.uid('k'); c2.cid = null; c2.pcId = null; c2.link = null; c2.x += sc.g; sc.tokens.push(c2); U.sel = c2.id; changed(); render(); } },
-      { label: 'Remove from the map', danger: true, fn: function () { removeToken(sc, t); } });
+      { label: 'Remove from the map', danger: true, fn: function () { removeToken(sc, t); } },
+      { sep: true }, ud[0], ud[1]);
     return out;
   }
   /* Right-click a wall, door, or window: open or close it, change what it is, cut it in two, delete it. */
@@ -718,6 +766,7 @@
         var nw = { id: Tbl.uid('w'), a: [c.x, c.y], b: w.b, t: w.t, open: w.open }; if (w.gen) nw.gen = w.gen;
         w.b = [c.x, c.y]; sc.walls.splice(sc.walls.indexOf(w) + 1, 0, nw); changed(); render();
       } },
+      { sep: true }, undoItems()[0], undoItems()[1],
       { sep: true },
       { label: 'Delete', danger: true, fn: function () { sc.walls = sc.walls.filter(function (k) { return k !== w; }); U.view.flash((w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2, '#ff9f43'); changed(); render(); } });
     return out;
@@ -733,6 +782,7 @@
       } },
       { label: 'Measure', fn: function () { pickTool('measure'); } },
       { sep: true });
+    out.push.apply(out, undoItems()); out.push({ sep: true });
     out.push({ label: 'Load a map', sub: maps.map(function (o) {
       return { label: o[1], on: !!sc.map && o[0] === (sc.map.b ? 'b|' + sc.map.b : 'k|' + sc.map.k), fn: function () { pickMap(sc, o[0].charAt(0) === 'b' ? { b: o[0].slice(2) } : { k: o[0].slice(2) }); } };
     }).concat(sc.map ? [{ sep: true }, { label: 'Plain board (no map)', fn: function () { sc.map = null; changed(); render(); } }] : []) });
@@ -779,6 +829,7 @@
   function renderVtt() {
     var sc = cur();
     if (!U.built) { U.host = build(); U.built = true; }
+    histFor();   // baseline for the first change
     if (sc) { syncTokens(sc); vitalsFx(sc); checkGrid(sc); }
     var box = $('sec-vtt');
     // Keep the canvas where it is: only the layers floating on it are rebuilt.

@@ -1861,15 +1861,19 @@ CROWS.NAME_IDEAS = {
   /*
    * The fog mask for a scene: { cw, ch, cell, cells: Uint8Array } (0 hidden, 1 explored, 2 dim, 3 bright), or null with no fog. In vision mode the
    * explored memory grows (scene.seen); in manual mode a revealed cell is bright. Returns what changed in .grew.
+   * Darkness (scene.env.dark) leaves only what the lights there now show: the ambient light counts as dark, explored ground that no light
+   * reaches goes black again, and a scene with no fog (or fog by hand, where a cell also has to be revealed) gets one by light all the same.
    */
+  function isDark(sc) { return !!(sc.env && sc.env.dark); }
   function computeVision(sc) {
-    if (sc.fog === 'off') return null;
+    var dark = isDark(sc);
+    if (sc.fog === 'off' && !dark) return null;
     var d = fogDims(sc), seen = seenOf(sc), cells = new Uint8Array(d.cw * d.ch), i;
-    if (sc.fog === 'manual') { for (i = 0; i < cells.length; i++) cells[i] = seen[i] ? 3 : 0; return { cw: d.cw, ch: d.ch, cell: d.cell, cells: cells, grew: false }; }
+    if (sc.fog === 'manual' && !dark) { for (i = 0; i < cells.length; i++) cells[i] = seen[i] ? 3 : 0; return { cw: d.cw, ch: d.ch, cell: d.cell, cells: cells, grew: false }; }
     var segs = blockers(sc, 'sight'), rects = blockRects(sc), vs = viewers(sc), big = Math.max(sc.w, sc.h) * 1.5, k = 1 / d.cell;
     var L = canvas('L', d.cw, d.ch), V = canvas('V', d.cw, d.ch), grew = false;
     L.setTransform(k, 0, 0, k, 0, 0); V.setTransform(k, 0, 0, k, 0, 0);
-    if (sc.ambient !== 'dark') { L.fillStyle = 'rgba(255,255,255,' + (sc.ambient === 'dim' ? .5 : 1) + ')'; L.fillRect(0, 0, sc.w, sc.h); }
+    if (sc.ambient !== 'dark' && !dark) { L.fillStyle = 'rgba(255,255,255,' + (sc.ambient === 'dim' ? .5 : 1) + ')'; L.fillRect(0, 0, sc.w, sc.h); }
     lightsOf(sc).forEach(function (l) {
       var rb = (l.b + l.s / 2) * sc.g, rd = rb + l.d * sc.g, g = L;
       g.save(); seenArea(g, l.x, l.y, segs, rd, rects); g.clip();
@@ -1884,8 +1888,10 @@ CROWS.NAME_IDEAS = {
     var px = L.getImageData(0, 0, d.cw, d.ch).data;
     for (i = 0; i < cells.length; i++) {
       var a = px[i * 4 + 3];
-      cells[i] = a >= 200 ? 3 : a >= 70 ? 2 : seen[i] ? 1 : 0;
-      if (cells[i] >= 2 && !seen[i]) { seen[i] = 1; grew = true; }
+      var lit = a >= 200 ? 3 : a >= 70 ? 2 : 0;
+      if (sc.fog === 'manual') { cells[i] = seen[i] ? lit : 0; continue; }   // dark, by hand: revealed and lit now
+      cells[i] = lit || (seen[i] && !dark ? 1 : 0);
+      if (lit && sc.fog === 'vision' && !seen[i]) { seen[i] = 1; grew = true; }
     }
     if (grew) saveSeen(sc);
     return { cw: d.cw, ch: d.ch, cell: d.cell, cells: cells, grew: grew };
@@ -2907,7 +2913,7 @@ CROWS.NAME_IDEAS = {
   T.docks = docks;
   T.icon = icon; T.REDUCED_MOTION = RM;
   T.SIZES = SIZES; T.KIND_COLOR = KIND_COLOR; T.COND_STYLE = COND_STYLE; T.condStyle = condStyle; T.uid = uid; T.newScene = newScene; T.isHex = isHex; T.hexAt = hexAt; T.hexCenter = hexCenter; T.snap = snap;
-  T.dist = dist; T.distText = distText; T.fogDims = fogDims; T.seenOf = seenOf; T.paintSeen = paintSeen; T.paintPoly = paintPoly; T.fillSeen = fillSeen; T.computeVision = computeVision;
+  T.dist = dist; T.distText = distText; T.fogDims = fogDims; T.seenOf = seenOf; T.paintSeen = paintSeen; T.paintPoly = paintPoly; T.fillSeen = fillSeen; T.computeVision = computeVision; T.isDark = isDark;
   T.packMask = packMask; T.unpackMask = unpackMask; T.maskAt = maskAt; T.pathBlocked = pathBlocked; T.snapTok = snapTok; T.snapCorner = snapCorner; T.footprint = footprint; T.los = los; T.view = view; T.tokenArt = tokenArt; T.lightsOf = lightsOf;
   T.viewers = viewers;
 })();

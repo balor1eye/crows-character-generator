@@ -14,7 +14,7 @@
   'use strict';
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var aiDetect = f('aiDetect'), aiHas = f('aiHas'), aiUnlock = f('aiUnlock'), blobUrl = f('blobUrl'), customMaps = f('customMaps'), render = f('render'), save = f('save'), vttChanged = f('vttChanged'), artRemote = f('artRemote');
+  var aiDetect = f('aiDetect'), aiHas = f('aiHas'), aiUnlock = f('aiUnlock'), blobUrl = f('blobUrl'), saveMapPicture = f('saveMapPicture'), customMaps = f('customMaps'), render = f('render'), save = f('save'), vttChanged = f('vttChanged'), artRemote = f('artRemote');
   var el = A.el, toast = A.toast, plural = A.plural, clone = A.clone, REFD = window.REF, Tbl = window.CrowsTable;
   var state = A.state; A.share('state', function (v) { state = v; });
   var KINDS_OK = { dungeon: 1, open: 1, village: 1 };
@@ -278,20 +278,23 @@
     if (n) vttChanged();
     return n;
   }
+  /* One object token as a kit object (positions as fractions of the map). */
+  function objRec(sc, t) {
+    var o = { name: t.name, type: t.otype || (t.light ? 'light' : 'other'), x: t.x / sc.w, y: t.y / sc.h, w: (t.size || 1) * sc.g / sc.w, h: (t.size || 1) * sc.g / sc.h,
+      light: !!t.light, hidden: t.secret != null ? !!t.secret : !!t.hidden && !!t.light, note: t.note || '' };
+    if (!t.light && !t.hidden) o.shown = true;
+    if (t.light) { o.lp = t.light.b + '/' + t.light.d; if (t.light.fire) o.fire = true; }
+    if (t.fw && t.fh) { o.w = t.fw * sc.g / sc.w; o.h = t.fh * sc.g / sc.h; if (t.blocks) o.blocks = true; }
+    return o;
+  }
+  function wallRecs(sc) { return (sc.walls || []).map(function (w) { return { x1: w.a[0] / sc.w, y1: w.a[1] / sc.h, x2: w.b[0] / sc.w, y2: w.b[1] / sc.h, door: w.t === 'door' }; }); }
+  function envOf(sc) { var env = {}; Object.keys(sc.env || {}).forEach(function (k) { if (sc.env[k]) env[k] = true; }); return env; }
   /* Keep the walls, doors, objects (all the scene's marker tokens), and environment on the scene's map as that map's kit; offers to copy to its other versions. */
   function saveFromScene(sc) {
     var id = mapIdOf(sc && sc.map); if (!id) return toast('Put a map on this scene first.');
     if (!sc.w || !sc.h) return;
-    var objs = objTokens(sc).map(function (t) {
-      var o = { name: t.name, type: t.otype || (t.light ? 'light' : 'other'), x: t.x / sc.w, y: t.y / sc.h, w: (t.size || 1) * sc.g / sc.w, h: (t.size || 1) * sc.g / sc.h,
-        light: !!t.light, hidden: t.secret != null ? !!t.secret : !!t.hidden && !!t.light, note: t.note || '' };
-      if (!t.light && !t.hidden) o.shown = true;
-      if (t.light) { o.lp = t.light.b + '/' + t.light.d; if (t.light.fire) o.fire = true; }
-      if (t.fw && t.fh) { o.w = t.fw * sc.g / sc.w; o.h = t.fh * sc.g / sc.h; if (t.blocks) o.blocks = true; }
-      return o;
-    });
-    var walls = (sc.walls || []).map(function (w) { return { x1: w.a[0] / sc.w, y1: w.a[1] / sc.h, x2: w.b[0] / sc.w, y2: w.b[1] / sc.h, door: w.t === 'door' }; });
-    var env = {}; Object.keys(sc.env || {}).forEach(function (k) { if (sc.env[k]) env[k] = true; });
+    var objs = objTokens(sc).map(function (t) { return objRec(sc, t); });
+    var walls = wallRecs(sc), env = envOf(sc);
     var old = kits()[id];
     kits()[id] = { objects: objs, walls: walls, env: env, src: 'ref', at: Date.now(), noAsk: !!(old && old.noAsk) };
     objTokens(sc).forEach(function (t) { t.gen = id; }); (sc.walls || []).forEach(function (w) { w.gen = id; });
@@ -370,6 +373,50 @@
     });
   }
 
+  /* Objects that can be drawn into the map's picture: visible object tokens that aren't lights. */
+  function bakable(sc) { return objTokens(sc).filter(function (t) { return !t.hidden && !t.light; }); }
+  /* Draw an object token on the map canvas the way the table shows it: a footprint box or a disc, with its icon. */
+  function drawObj(g, sc, t) {
+    var r = Math.max(.35, (t.fw && t.fh ? Math.min(t.fw, t.fh) : t.size || 1) * .46) * sc.g, kc = t.color || '#8a8576';
+    g.save(); g.translate(t.x, t.y); g.beginPath();
+    if (t.fw && t.fh) {
+      var hw = t.fw * sc.g / 2 - sc.g * .05, hh = t.fh * sc.g / 2 - sc.g * .05;
+      if (g.roundRect) g.roundRect(-hw, -hh, hw * 2, hh * 2, Math.min(hw, hh) * .2); else g.rect(-hw, -hh, hw * 2, hh * 2);
+    } else g.arc(0, 0, r, 0, 7);
+    g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = sc.g * .1; g.shadowOffsetY = sc.g * .03;
+    g.globalAlpha = t.fw && t.fh ? .55 : 1; g.fillStyle = kc; g.fill();
+    g.shadowColor = 'transparent'; g.globalAlpha = 1; g.lineWidth = Math.max(2.5, r * .1); g.strokeStyle = kc; g.stroke();
+    g.fillStyle = 'rgba(0,0,0,.45)'; g.font = 'bold ' + r * 1.1 + 'px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t.icon || '◆', 0, 0);
+    g.restore();
+  }
+  /* Save the scene's map with its visible objects drawn on as a new map picture of the Ref's own; the new map keeps the walls, environment, lights, and hidden objects as its set. */
+  function bakeToMap(sc) {
+    var id = mapIdOf(sc && sc.map), baked = id ? bakable(sc) : [];
+    if (!id || !baked.length || !sc.w || !sc.h) return toast('Put a map and at least one object on this scene first.');
+    var title = prompt('Name for the new map', (titleOf(id) + ' (with objects)').slice(0, 60)); if (title === null) return;
+    toast('Drawing the objects onto the map…');
+    loadImg(id).then(function (img) {
+      var c = document.createElement('canvas'); c.width = Math.round(sc.w); c.height = Math.round(sc.h);
+      var g = c.getContext('2d'); g.drawImage(img, 0, 0, c.width, c.height);
+      baked.forEach(function (t) { drawObj(g, sc, t); });
+      return saveMapPicture(c, title.trim() || titleOf(id));
+    }).then(function (rec) {
+      var nid = 'k|' + rec.key, keep = objTokens(sc).filter(function (t) { return baked.indexOf(t) < 0; });
+      kits()[nid] = { objects: keep.map(function (t) { return objRec(sc, t); }), walls: wallRecs(sc), env: envOf(sc), src: 'ref', at: Date.now(), noAsk: true };
+      save(); render();
+      ask('Use the new map on this scene?', '"' + rec.title + '" is saved in your maps. Switch this scene to it? The ' + plural(baked.length, 'object') + ' drawn on it come off the scene.', [
+        { label: 'Switch to it', primary: true, fn: function () {
+          sc.tokens = sc.tokens.filter(function (t) { return baked.indexOf(t) < 0; });
+          keep.forEach(function (t) { t.gen = nid; }); (sc.walls || []).forEach(function (w) { w.gen = nid; });
+          sc.map = { k: rec.key }; sc.autoGrid = rec.key;
+          vttChanged(); render(); toast('Switched to ' + rec.title + '.');
+        } }, { label: 'Stay on this map' }]);
+      toast('Saved "' + rec.title + '" to your maps.');
+    }).catch(function (e) {
+      toast(e && e.name === 'SecurityError' ? 'The browser won\'t let this map\'s picture be copied (it comes from another site), so it can\'t be saved with objects.' : 'Couldn\'t save the map: ' + (e && e.message || e));
+    });
+  }
+
   // ------------------------------------------------------------------ the menus
   /* The board menu's "Map objects" submenu for the scene (null when it has no map). */
   function menuItems(sc) {
@@ -377,6 +424,7 @@
     var k = kitOf(id), mine = genTokens(sc, id).length + genWalls(sc, id).length, busy = !!running[id];
     return { label: 'Map objects', sub: [
       { label: 'Save walls, objects & environment for this map', hint: 'Keeps the walls and doors, every marker token, and the environment as this map\'s set, to place whenever the map is loaded.', fn: function () { saveFromScene(sc); } },
+      { label: 'Save as a new map with these objects drawn on it…', off: !bakable(sc).length, hint: 'Makes a new picture in your maps with the visible objects drawn on the map. Lights and hidden objects stay as markers.', fn: function () { bakeToMap(sc); } },
       { label: 'Place saved objects', off: !k || !k.objects.length && !(k.walls || []).length && !Object.keys(k.env || {}).length, hint: k ? '' : 'No saved or found objects for this map yet.', fn: function () {
         var n = placeKit(sc, id, { again: true }); toast(n ? 'Placed ' + plural(n, 'piece') + ' (' + kitText(k) + ').' : 'Nothing new to place.'); render(); } },
       { label: busy ? 'Looking for objects…' : k ? 'Generate objects again' : 'Generate objects', off: busy, hint: 'Reads the picture for walls, doors, and large objects that block sight (Claude with your own key from the AI tab, or the site\'s key when logged in; shapes otherwise).',

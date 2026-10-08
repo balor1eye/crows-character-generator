@@ -2428,15 +2428,19 @@ CROWS.NAME_IDEAS = {
   /*
    * The fog mask for a scene: { cw, ch, cell, cells: Uint8Array } (0 hidden, 1 explored, 2 dim, 3 bright), or null with no fog. In vision mode the
    * explored memory grows (scene.seen); in manual mode a revealed cell is bright. Returns what changed in .grew.
+   * Darkness (scene.env.dark) leaves only what the lights there now show: the ambient light counts as dark, explored ground that no light
+   * reaches goes black again, and a scene with no fog (or fog by hand, where a cell also has to be revealed) gets one by light all the same.
    */
+  function isDark(sc) { return !!(sc.env && sc.env.dark); }
   function computeVision(sc) {
-    if (sc.fog === 'off') return null;
+    var dark = isDark(sc);
+    if (sc.fog === 'off' && !dark) return null;
     var d = fogDims(sc), seen = seenOf(sc), cells = new Uint8Array(d.cw * d.ch), i;
-    if (sc.fog === 'manual') { for (i = 0; i < cells.length; i++) cells[i] = seen[i] ? 3 : 0; return { cw: d.cw, ch: d.ch, cell: d.cell, cells: cells, grew: false }; }
+    if (sc.fog === 'manual' && !dark) { for (i = 0; i < cells.length; i++) cells[i] = seen[i] ? 3 : 0; return { cw: d.cw, ch: d.ch, cell: d.cell, cells: cells, grew: false }; }
     var segs = blockers(sc, 'sight'), rects = blockRects(sc), vs = viewers(sc), big = Math.max(sc.w, sc.h) * 1.5, k = 1 / d.cell;
     var L = canvas('L', d.cw, d.ch), V = canvas('V', d.cw, d.ch), grew = false;
     L.setTransform(k, 0, 0, k, 0, 0); V.setTransform(k, 0, 0, k, 0, 0);
-    if (sc.ambient !== 'dark') { L.fillStyle = 'rgba(255,255,255,' + (sc.ambient === 'dim' ? .5 : 1) + ')'; L.fillRect(0, 0, sc.w, sc.h); }
+    if (sc.ambient !== 'dark' && !dark) { L.fillStyle = 'rgba(255,255,255,' + (sc.ambient === 'dim' ? .5 : 1) + ')'; L.fillRect(0, 0, sc.w, sc.h); }
     lightsOf(sc).forEach(function (l) {
       var rb = (l.b + l.s / 2) * sc.g, rd = rb + l.d * sc.g, g = L;
       g.save(); seenArea(g, l.x, l.y, segs, rd, rects); g.clip();
@@ -2451,8 +2455,10 @@ CROWS.NAME_IDEAS = {
     var px = L.getImageData(0, 0, d.cw, d.ch).data;
     for (i = 0; i < cells.length; i++) {
       var a = px[i * 4 + 3];
-      cells[i] = a >= 200 ? 3 : a >= 70 ? 2 : seen[i] ? 1 : 0;
-      if (cells[i] >= 2 && !seen[i]) { seen[i] = 1; grew = true; }
+      var lit = a >= 200 ? 3 : a >= 70 ? 2 : 0;
+      if (sc.fog === 'manual') { cells[i] = seen[i] ? lit : 0; continue; }   // dark, by hand: revealed and lit now
+      cells[i] = lit || (seen[i] && !dark ? 1 : 0);
+      if (lit && sc.fog === 'vision' && !seen[i]) { seen[i] = 1; grew = true; }
     }
     if (grew) saveSeen(sc);
     return { cw: d.cw, ch: d.ch, cell: d.cell, cells: cells, grew: grew };
@@ -3474,7 +3480,7 @@ CROWS.NAME_IDEAS = {
   T.docks = docks;
   T.icon = icon; T.REDUCED_MOTION = RM;
   T.SIZES = SIZES; T.KIND_COLOR = KIND_COLOR; T.COND_STYLE = COND_STYLE; T.condStyle = condStyle; T.uid = uid; T.newScene = newScene; T.isHex = isHex; T.hexAt = hexAt; T.hexCenter = hexCenter; T.snap = snap;
-  T.dist = dist; T.distText = distText; T.fogDims = fogDims; T.seenOf = seenOf; T.paintSeen = paintSeen; T.paintPoly = paintPoly; T.fillSeen = fillSeen; T.computeVision = computeVision;
+  T.dist = dist; T.distText = distText; T.fogDims = fogDims; T.seenOf = seenOf; T.paintSeen = paintSeen; T.paintPoly = paintPoly; T.fillSeen = fillSeen; T.computeVision = computeVision; T.isDark = isDark;
   T.packMask = packMask; T.unpackMask = unpackMask; T.maskAt = maskAt; T.pathBlocked = pathBlocked; T.snapTok = snapTok; T.snapCorner = snapCorner; T.footprint = footprint; T.los = los; T.view = view; T.tokenArt = tokenArt; T.lightsOf = lightsOf;
   T.viewers = viewers;
 })();
@@ -9133,6 +9139,17 @@ CROWS.NAME_IDEAS = {
     var b = !deep && A.beast(name);   // a Workshop creature that looks like another
     return b && b.custom && b.art && b.art !== name ? artFor(b.art, true) : null;
   }
+  /* Shrink a picture or canvas (nw x nh px) to a JPEG (long side `max` px, under about 1.3 MB) plus a small thumbnail: Promise of { blob, thumb } (null if it can't be encoded). */
+  function shrinkPicture(src, nw, nh, max, thumbW) {
+    function draw(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(src, 0, 0, w, h); return c; }
+    function encode(k, q) {
+      return new Promise(function (ok) { draw(Math.max(1, Math.round(nw * k)), Math.max(1, Math.round(nh * k))).toBlob(ok, 'image/jpeg', q); }).then(function (blob) {
+        return !blob || (blob.size <= 1300000) || (k < .2) ? blob : encode(q > .55 ? k : k * .8, q > .55 ? q - .12 : q);
+      });
+    }
+    var tk = Math.min(1, thumbW / nw), th = draw(Math.max(1, Math.round(nw * tk)), Math.max(1, Math.round(nh * tk)));
+    return encode(Math.min(1, max / Math.max(nw, nh)), .86).then(function (blob) { return blob ? { blob: blob, thumb: th.toDataURL('image/jpeg', .78) } : null; });
+  }
   /* Choose a picture, shrink it (long side `max` px, under about 1.3 MB, plus a small thumbnail) and hand back { blob, thumb, name }. */
   function pickImage(max, thumbW, done) {
     var inp = el('input', { type: 'file', accept: 'image/*' });
@@ -9141,17 +9158,10 @@ CROWS.NAME_IDEAS = {
       var url = URL.createObjectURL(file), img = new Image();
       img.onerror = function () { URL.revokeObjectURL(url); toast('That file isn\'t a picture this browser can open.'); };
       img.onload = function () {
-        function draw(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h); return c; }
-        function encode(k, q) {
-          return new Promise(function (ok) { draw(Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k)).toBlob(ok, 'image/jpeg', q); }).then(function (blob) {
-            return !blob || (blob.size <= 1300000) || (k < .2) ? blob : encode(q > .55 ? k : k * .8, q > .55 ? q - .12 : q);
-          });
-        }
-        var tk = Math.min(1, thumbW / img.naturalWidth), th = draw(Math.round(img.naturalWidth * tk), Math.round(img.naturalHeight * tk));
-        encode(Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight)), .86).then(function (blob) {
+        shrinkPicture(img, img.naturalWidth, img.naturalHeight, max, thumbW).then(function (p) {
           URL.revokeObjectURL(url);
-          if (!blob) return toast('That picture could not be shrunk.');
-          done({ blob: blob, thumb: th.toDataURL('image/jpeg', .78), name: file.name.replace(/\.[^.]+$/, '') });
+          if (!p) return toast('That picture could not be shrunk.');
+          p.name = file.name.replace(/\.[^.]+$/, ''); done(p);
         });
       };
       img.src = url;
@@ -9165,11 +9175,20 @@ CROWS.NAME_IDEAS = {
         function (e) { toast('Couldn\'t save it: ' + e.message); });
     });
   }
+  function newMapRec(title, p) { return { key: 'm:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: title.slice(0, 60), thumb: p.thumb, blob: p.blob, at: Date.now() }; }
   function addMap() {
     pickImage(4500, 420, function (p) {
       var title = prompt('Map name', p.name); if (title === null) return;
-      var rec = { key: 'm:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: (title.trim() || p.name).slice(0, 60), thumb: p.thumb, blob: p.blob, at: Date.now() };
+      var rec = newMapRec(title.trim() || p.name, p);
       putArt(rec).then(function () { custom.maps.push(rec); toast('Map added.'); render(); mapUploaded(rec); }, function (e) { toast('Couldn\'t save it: ' + e.message); });
+    });
+  }
+  /* Save a canvas as a new picture in the Ref's own maps (no object detection): Promise of the record. */
+  function saveMapPicture(canvas, title) {
+    return shrinkPicture(canvas, canvas.width, canvas.height, 4500, 420).then(function (p) {
+      if (!p) throw new Error('the picture could not be shrunk');
+      var rec = newMapRec(title || 'Map', p);
+      return putArt(rec).then(function () { custom.maps.push(rec); render(); return rec; });
     });
   }
   loadCustom();
@@ -9413,7 +9432,7 @@ CROWS.NAME_IDEAS = {
   }
 
   A.add({ renderWorld: renderWorld, randomNPC: randomNPC, renderBestiary: renderBestiary, renderMaps: renderMaps, beastCard: beastCard, renderTables: renderTables, lightbox: lightbox,
-      artFor: artFor, artRemote: function () { return remote; }, blobUrl: blobUrl, customMaps: function () { return custom.maps; }, parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
+      artFor: artFor, artRemote: function () { return remote; }, blobUrl: blobUrl, saveMapPicture: saveMapPicture, customMaps: function () { return custom.maps; }, parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
 })();
 
 </script>
@@ -9532,9 +9551,9 @@ CROWS.NAME_IDEAS = {
     ['blank', 'Blank board', 'An empty board for theater of the mind.']];
   var PRESETS = [['', 'No light'], ['5/5', 'Torch (5/5)'], ['10/10', 'Lantern (10/10)'], ['10/10c', 'Campfire (10/10)'], ['2/2', 'Candle (2/2)'], ['15/15', 'Large fire (15/15)']];
   // [id, name, what it does, hotkey, group]: the palette down the map's left side
-  var TOOLS = [['select', 'Select', 'Move tokens (drag), select, and pan (drag the board). Right-click a token for its details; double-click a door to open or close it. Drag a wall, door, or window to move it, or drag its end to move a corner; Delete removes it; right-click it for more.', 'v', 'play'],
+  var TOOLS = [['select', 'Select', 'Move tokens (drag), select, and pan (drag the board). Right-click a token for its details; double-click a door to open or close it. Drag a wall, door, or window to move it, or drag its end to move a corner; Delete removes it; right-click it for more. Ctrl+Z undoes the last change (Ctrl+Y redoes).', 'v', 'play'],
     ['measure', 'Measure', 'Drag to measure squares or hexes.', 'm', 'play'], ['ping', 'Ping', 'Click to point something out to everyone (Alt-click works in any tool).', 'p', 'play'],
-    ['wall', 'Wall', 'Click points to draw walls that block sight and movement. Double-click or Esc to finish; Shift snaps to half squares.', 'w', 'walls'],
+    ['wall', 'Wall', 'Click points to draw walls that block sight and movement. Double-click to finish (Esc finishes and goes back to Select); Shift snaps to half squares.', 'w', 'walls'],
     ['door', 'Door', 'Click both ends of a door (closed doors block sight and movement).', 'd', 'walls'], ['window', 'Window', 'A window blocks movement but not sight.', 'n', 'walls'],
     ['room', 'Room', 'Drag a rectangle to wall it in.', 'r', 'walls'], ['eraser', 'Erase', 'Click a wall, door, or window to delete it.', 'e', 'walls'],
     ['reveal', 'Reveal', 'Paint to reveal the map to the players.', 'f', 'fog'], ['hide', 'Hide', 'Paint to hide the map again.', 'g', 'fog'],
@@ -9555,7 +9574,42 @@ CROWS.NAME_IDEAS = {
     var p = pcOfTok(t);
     return p ? S().combat.list.filter(function (x) { return x.kind === 'pc' && x.pcId === p.id; })[0] || null : null;
   }
-  function changed() { U.sig = ''; save(); }
+  /* Undo and redo: the last 5 tabletop changes. A step is the whole tabletop as JSON (pings left out, so pointing never makes one), taken when changed() runs. */
+  var HIST = 5;
+  function snap() { return JSON.stringify(V(), function (k, v) { return k === 'pings' || k === 'pingId' ? undefined : v; }); }
+  function histFor() {   // the history belongs to one state.vtt object: loading or replacing the state starts it over
+    if (!U.hist || U.hist.vtt !== V()) U.hist = { vtt: V(), last: snap(), undo: [], redo: [] };
+    return U.hist;
+  }
+  function changed() {
+    var h = U.hist, now;
+    if (!h || h.vtt !== V()) histFor();
+    else if ((now = snap()) !== h.last) { h.undo.push(h.last); if (h.undo.length > HIST) h.undo.shift(); h.redo = []; h.last = now; }
+    U.sig = ''; save();
+  }
+  function restore(snapStr) {   // put a snapshot back inside state.vtt (other modules hold it), keeping today's pings
+    var v = V(), old = {}, o = JSON.parse(snapStr);
+    v.scenes.forEach(function (s) { old[s.id] = s; });
+    (o.scenes || []).forEach(function (s) { var c = old[s.id]; if (c) { s.pings = c.pings; s.pingId = c.pingId; } });
+    Object.keys(v).forEach(function (k) { delete v[k]; });
+    Object.keys(o).forEach(function (k) { v[k] = o[k]; });
+    var sc = cur(); if (!sc || !tok(sc, U.sel)) U.sel = null;
+  }
+  function step(from, to, word) {
+    var h = histFor();
+    if (!h[from].length) { toast('Nothing to ' + (word === 'Undone' ? 'undo' : 'redo') + '.'); return; }
+    h[to].push(h.last); if (h[to].length > HIST) h[to].shift();
+    h.last = h[from].pop(); restore(h.last);
+    U.sig = ''; U.mask = null; U.view && U.view.selectWall && U.view.selectWall(null); save(); render();
+    h.last = snap();   // render may tidy the scene (tokens, grid): that tidying is not a change to undo
+    toast(word + ' (' + h[from].length + ' more to ' + (word === 'Undone' ? 'undo' : 'redo') + ').');
+  }
+  function undo() { step('undo', 'redo', 'Undone'); }
+  function redo() { step('redo', 'undo', 'Redone'); }
+  function undoItems() {
+    var h = histFor(), tip = 'Up to the last ' + HIST + ' changes on the tabletop';
+    return [{ label: 'Undo (Ctrl+Z)', off: !h.undo.length, hint: h.undo.length ? '' : tip, fn: undo }, { label: 'Redo (Ctrl+Y)', off: !h.redo.length, hint: h.redo.length ? '' : tip, fn: redo }];
+  }
   /* A combatant's token on a scene (a crow's own token, not the party marker). */
   function tokOf(sc, x) {
     if (!sc || !x) return null;
@@ -9936,8 +9990,8 @@ CROWS.NAME_IDEAS = {
   function tokenSrc(t) { return artSrc(artKey(t)); }
   /* The fog mask for this scene (worked out again only when something that affects it changed). */
   function maskFor(sc) {
-    if (sc.fog === 'off') return null;
-    var sig = [sc.id, sc.fog, sc.ambient, sc.w, sc.h, sc.g, sc.seen, JSON.stringify(sc.walls), JSON.stringify(sc.tokens.map(function (t) { return [t.id, t.x, t.y, t.kind, t.dead, t.hidden, t.light, t.sight, t.sees, t.size, t.blocks, t.fw, t.fh]; }))].join('|');
+    if (sc.fog === 'off' && !Tbl.isDark(sc)) return null;
+    var sig = [sc.id, sc.fog, sc.ambient, Tbl.isDark(sc), sc.w, sc.h, sc.g, sc.seen, JSON.stringify(sc.walls), JSON.stringify(sc.tokens.map(function (t) { return [t.id, t.x, t.y, t.kind, t.dead, t.hidden, t.light, t.sight, t.sees, t.size, t.blocks, t.fw, t.fh]; }))].join('|');
     if (sig === U.sig && U.mask) return U.mask;
     var m = Tbl.computeVision(sc);
     U.mask = m; U.sig = sig;
@@ -9953,7 +10007,7 @@ CROWS.NAME_IDEAS = {
     var vis = sc.tokens.filter(function (t) {
       if (t.hidden) return false;
       var x = combatant(t); if (x && x.hidden && x.kind === 'foe') return false;
-      if (sc.fog === 'off' || !m) return true;
+      if (!m) return true;
       if (CARRIERS.indexOf(t.kind) >= 0) return true;
       var c = Tbl.maskAt(m, t.x, t.y);
       return t.kind === 'obj' && !t.light ? c >= 1 : c >= 2;
@@ -9982,7 +10036,7 @@ CROWS.NAME_IDEAS = {
       return o;
     });
     return { id: sc.id, name: sc.name, kind: sc.kind, w: sc.w, h: sc.h, g: sc.g, grid: sc.grid, ox: sc.ox, oy: sc.oy, bg: sc.bg, showGrid: sc.showGrid !== false, unit: sc.unit,
-      map: sc.map ? (sc.map.b ? { b: sc.map.b } : { k: sc.map.k }) : null, fog: sc.fog === 'off' ? null : Tbl.packMask(m), tokens: tokens, art: art,
+      map: sc.map ? (sc.map.b ? { b: sc.map.b } : { k: sc.map.k }) : null, fog: m ? Tbl.packMask(m) : null, tokens: tokens, art: art,
       pins: sc.pins.filter(function (p) { return p.vis; }).map(function (p) { return { id: p.id, x: Math.round(p.x), y: Math.round(p.y), label: p.label, vis: true }; }),
       pings: (sc.pings || []).slice(-5), move: sc.playerMove !== false, moved: sc.kind === 'travel' ? sc.moved || 0 : null,
       env: envList(sc).length ? envObj(sc) : null, envInfo: envList(sc).map(function (k) { var e = envDef(k); return [e[1], e[2]]; }) };
@@ -10124,10 +10178,21 @@ CROWS.NAME_IDEAS = {
     U.L = {};
     if (!escBound) {
       escBound = true;
-      // Escape (once the right-click menu, a pop-up, or the map's own ruler hasn't taken it) stops picking a target, else closes the open drawer.
+      // Ctrl/Cmd+Z undoes the last tabletop change, Ctrl+Y or Ctrl+Shift+Z redoes it (not while typing in a field or with a menu open).
       document.addEventListener('keydown', function (e) {
-        if (e.key !== 'Escape' || e.defaultPrevented || !U.host || !U.host.getClientRects().length) return;
-        if (U.pick) { e.preventDefault(); endPick('No target picked.'); render(); return; }
+        if (!(e.ctrlKey || e.metaKey) || e.altKey || e.defaultPrevented || !U.host || !U.host.getClientRects().length) return;
+        var k = String(e.key).toLowerCase(), tg = e.target;
+        if (tg && (/^(INPUT|TEXTAREA|SELECT)$/.test(tg.tagName) || tg.isContentEditable)) return;
+        if (k === 'z' && !e.shiftKey) { e.preventDefault(); undo(); } else if (k === 'y' || k === 'z' && e.shiftKey) { e.preventDefault(); redo(); }
+      });
+      // Escape (once the right-click menu or a pop-up hasn't taken it) stops picking a target; else it leaves any tool but Select (ending the wall,
+      // ruler, or shape under way: the map's own handler has just done that) and goes back to Select; else it closes the open drawer.
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape' || !U.host || !U.host.getClientRects().length) return;
+        if (U.pick && !e.defaultPrevented) { e.preventDefault(); endPick('No target picked.'); render(); return; }
+        var tool = U.view && U.view.getTool();
+        if (tool && tool !== 'select' && cur()) { e.preventDefault(); pickTool('select'); return; }
+        if (e.defaultPrevented) return;
         if (U.drawer) { e.preventDefault(); U.drawer = null; render(); }
       });
     }
@@ -10157,6 +10222,7 @@ CROWS.NAME_IDEAS = {
     U.sel = t.id; U.view.select(t.id); renderHud(sc); renderRoster(sc);
     var x = combatant(t), p = pcOfTok(t), round = S().combat.round, kind = { pc: 'Crow', foe: 'Foe', ally: 'Ally', npc: 'Person', obj: t.light ? 'Light' : 'Marker' }[t.kind] || 'Token';
     var out = [{ head: t.name + ' · ' + kind + (t.hidden ? ' · hidden' : '') }];
+    var ud = undoItems();
     if (x) {
       out.push({ label: 'Act: attacks, maneuvers, items…', fn: function () { openDrawer('act'); } });
       if (x.kind !== 'pc' && !x.dead && targetsFor(x).length) out.push({ label: 'Pick its target' + (targetOf(x) ? ' (now ' + targetOf(x).name + ')' : ''), fn: function () { startPick(x); } });
@@ -10186,7 +10252,8 @@ CROWS.NAME_IDEAS = {
       { label: 'Ping here', fn: function () { pingAt(sc, t.x, t.y); } },
       { label: 'Center the view on it', fn: function () { U.view.centerOn(t.x, t.y, true); } },
       { label: 'Duplicate', fn: function () { var c2 = JSON.parse(JSON.stringify(t)); c2.id = Tbl.uid('k'); c2.cid = null; c2.pcId = null; c2.link = null; c2.x += sc.g; sc.tokens.push(c2); U.sel = c2.id; changed(); render(); } },
-      { label: 'Remove from the map', danger: true, fn: function () { removeToken(sc, t); } });
+      { label: 'Remove from the map', danger: true, fn: function () { removeToken(sc, t); } },
+      { sep: true }, ud[0], ud[1]);
     return out;
   }
   /* Right-click a wall, door, or window: open or close it, change what it is, cut it in two, delete it. */
@@ -10202,6 +10269,7 @@ CROWS.NAME_IDEAS = {
         var nw = { id: Tbl.uid('w'), a: [c.x, c.y], b: w.b, t: w.t, open: w.open }; if (w.gen) nw.gen = w.gen;
         w.b = [c.x, c.y]; sc.walls.splice(sc.walls.indexOf(w) + 1, 0, nw); changed(); render();
       } },
+      { sep: true }, undoItems()[0], undoItems()[1],
       { sep: true },
       { label: 'Delete', danger: true, fn: function () { sc.walls = sc.walls.filter(function (k) { return k !== w; }); U.view.flash((w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2, '#ff9f43'); changed(); render(); } });
     return out;
@@ -10217,6 +10285,7 @@ CROWS.NAME_IDEAS = {
       } },
       { label: 'Measure', fn: function () { pickTool('measure'); } },
       { sep: true });
+    out.push.apply(out, undoItems()); out.push({ sep: true });
     out.push({ label: 'Load a map', sub: maps.map(function (o) {
       return { label: o[1], on: !!sc.map && o[0] === (sc.map.b ? 'b|' + sc.map.b : 'k|' + sc.map.k), fn: function () { pickMap(sc, o[0].charAt(0) === 'b' ? { b: o[0].slice(2) } : { k: o[0].slice(2) }); } };
     }).concat(sc.map ? [{ sep: true }, { label: 'Plain board (no map)', fn: function () { sc.map = null; changed(); render(); } }] : []) });
@@ -10263,6 +10332,7 @@ CROWS.NAME_IDEAS = {
   function renderVtt() {
     var sc = cur();
     if (!U.built) { U.host = build(); U.built = true; }
+    histFor();   // baseline for the first change
     if (sc) { syncTokens(sc); vitalsFx(sc); checkGrid(sc); }
     var box = $('sec-vtt');
     // Keep the canvas where it is: only the layers floating on it are rebuilt.
@@ -11059,7 +11129,7 @@ CROWS.NAME_IDEAS = {
   'use strict';
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var aiDetect = f('aiDetect'), aiHas = f('aiHas'), aiUnlock = f('aiUnlock'), blobUrl = f('blobUrl'), customMaps = f('customMaps'), render = f('render'), save = f('save'), vttChanged = f('vttChanged'), artRemote = f('artRemote');
+  var aiDetect = f('aiDetect'), aiHas = f('aiHas'), aiUnlock = f('aiUnlock'), blobUrl = f('blobUrl'), saveMapPicture = f('saveMapPicture'), customMaps = f('customMaps'), render = f('render'), save = f('save'), vttChanged = f('vttChanged'), artRemote = f('artRemote');
   var el = A.el, toast = A.toast, plural = A.plural, clone = A.clone, REFD = window.REF, Tbl = window.CrowsTable;
   var state = A.state; A.share('state', function (v) { state = v; });
   var KINDS_OK = { dungeon: 1, open: 1, village: 1 };
@@ -11323,20 +11393,23 @@ CROWS.NAME_IDEAS = {
     if (n) vttChanged();
     return n;
   }
+  /* One object token as a kit object (positions as fractions of the map). */
+  function objRec(sc, t) {
+    var o = { name: t.name, type: t.otype || (t.light ? 'light' : 'other'), x: t.x / sc.w, y: t.y / sc.h, w: (t.size || 1) * sc.g / sc.w, h: (t.size || 1) * sc.g / sc.h,
+      light: !!t.light, hidden: t.secret != null ? !!t.secret : !!t.hidden && !!t.light, note: t.note || '' };
+    if (!t.light && !t.hidden) o.shown = true;
+    if (t.light) { o.lp = t.light.b + '/' + t.light.d; if (t.light.fire) o.fire = true; }
+    if (t.fw && t.fh) { o.w = t.fw * sc.g / sc.w; o.h = t.fh * sc.g / sc.h; if (t.blocks) o.blocks = true; }
+    return o;
+  }
+  function wallRecs(sc) { return (sc.walls || []).map(function (w) { return { x1: w.a[0] / sc.w, y1: w.a[1] / sc.h, x2: w.b[0] / sc.w, y2: w.b[1] / sc.h, door: w.t === 'door' }; }); }
+  function envOf(sc) { var env = {}; Object.keys(sc.env || {}).forEach(function (k) { if (sc.env[k]) env[k] = true; }); return env; }
   /* Keep the walls, doors, objects (all the scene's marker tokens), and environment on the scene's map as that map's kit; offers to copy to its other versions. */
   function saveFromScene(sc) {
     var id = mapIdOf(sc && sc.map); if (!id) return toast('Put a map on this scene first.');
     if (!sc.w || !sc.h) return;
-    var objs = objTokens(sc).map(function (t) {
-      var o = { name: t.name, type: t.otype || (t.light ? 'light' : 'other'), x: t.x / sc.w, y: t.y / sc.h, w: (t.size || 1) * sc.g / sc.w, h: (t.size || 1) * sc.g / sc.h,
-        light: !!t.light, hidden: t.secret != null ? !!t.secret : !!t.hidden && !!t.light, note: t.note || '' };
-      if (!t.light && !t.hidden) o.shown = true;
-      if (t.light) { o.lp = t.light.b + '/' + t.light.d; if (t.light.fire) o.fire = true; }
-      if (t.fw && t.fh) { o.w = t.fw * sc.g / sc.w; o.h = t.fh * sc.g / sc.h; if (t.blocks) o.blocks = true; }
-      return o;
-    });
-    var walls = (sc.walls || []).map(function (w) { return { x1: w.a[0] / sc.w, y1: w.a[1] / sc.h, x2: w.b[0] / sc.w, y2: w.b[1] / sc.h, door: w.t === 'door' }; });
-    var env = {}; Object.keys(sc.env || {}).forEach(function (k) { if (sc.env[k]) env[k] = true; });
+    var objs = objTokens(sc).map(function (t) { return objRec(sc, t); });
+    var walls = wallRecs(sc), env = envOf(sc);
     var old = kits()[id];
     kits()[id] = { objects: objs, walls: walls, env: env, src: 'ref', at: Date.now(), noAsk: !!(old && old.noAsk) };
     objTokens(sc).forEach(function (t) { t.gen = id; }); (sc.walls || []).forEach(function (w) { w.gen = id; });
@@ -11415,6 +11488,50 @@ CROWS.NAME_IDEAS = {
     });
   }
 
+  /* Objects that can be drawn into the map's picture: visible object tokens that aren't lights. */
+  function bakable(sc) { return objTokens(sc).filter(function (t) { return !t.hidden && !t.light; }); }
+  /* Draw an object token on the map canvas the way the table shows it: a footprint box or a disc, with its icon. */
+  function drawObj(g, sc, t) {
+    var r = Math.max(.35, (t.fw && t.fh ? Math.min(t.fw, t.fh) : t.size || 1) * .46) * sc.g, kc = t.color || '#8a8576';
+    g.save(); g.translate(t.x, t.y); g.beginPath();
+    if (t.fw && t.fh) {
+      var hw = t.fw * sc.g / 2 - sc.g * .05, hh = t.fh * sc.g / 2 - sc.g * .05;
+      if (g.roundRect) g.roundRect(-hw, -hh, hw * 2, hh * 2, Math.min(hw, hh) * .2); else g.rect(-hw, -hh, hw * 2, hh * 2);
+    } else g.arc(0, 0, r, 0, 7);
+    g.shadowColor = 'rgba(0,0,0,.55)'; g.shadowBlur = sc.g * .1; g.shadowOffsetY = sc.g * .03;
+    g.globalAlpha = t.fw && t.fh ? .55 : 1; g.fillStyle = kc; g.fill();
+    g.shadowColor = 'transparent'; g.globalAlpha = 1; g.lineWidth = Math.max(2.5, r * .1); g.strokeStyle = kc; g.stroke();
+    g.fillStyle = 'rgba(0,0,0,.45)'; g.font = 'bold ' + r * 1.1 + 'px sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle'; g.fillText(t.icon || '◆', 0, 0);
+    g.restore();
+  }
+  /* Save the scene's map with its visible objects drawn on as a new map picture of the Ref's own; the new map keeps the walls, environment, lights, and hidden objects as its set. */
+  function bakeToMap(sc) {
+    var id = mapIdOf(sc && sc.map), baked = id ? bakable(sc) : [];
+    if (!id || !baked.length || !sc.w || !sc.h) return toast('Put a map and at least one object on this scene first.');
+    var title = prompt('Name for the new map', (titleOf(id) + ' (with objects)').slice(0, 60)); if (title === null) return;
+    toast('Drawing the objects onto the map…');
+    loadImg(id).then(function (img) {
+      var c = document.createElement('canvas'); c.width = Math.round(sc.w); c.height = Math.round(sc.h);
+      var g = c.getContext('2d'); g.drawImage(img, 0, 0, c.width, c.height);
+      baked.forEach(function (t) { drawObj(g, sc, t); });
+      return saveMapPicture(c, title.trim() || titleOf(id));
+    }).then(function (rec) {
+      var nid = 'k|' + rec.key, keep = objTokens(sc).filter(function (t) { return baked.indexOf(t) < 0; });
+      kits()[nid] = { objects: keep.map(function (t) { return objRec(sc, t); }), walls: wallRecs(sc), env: envOf(sc), src: 'ref', at: Date.now(), noAsk: true };
+      save(); render();
+      ask('Use the new map on this scene?', '"' + rec.title + '" is saved in your maps. Switch this scene to it? The ' + plural(baked.length, 'object') + ' drawn on it come off the scene.', [
+        { label: 'Switch to it', primary: true, fn: function () {
+          sc.tokens = sc.tokens.filter(function (t) { return baked.indexOf(t) < 0; });
+          keep.forEach(function (t) { t.gen = nid; }); (sc.walls || []).forEach(function (w) { w.gen = nid; });
+          sc.map = { k: rec.key }; sc.autoGrid = rec.key;
+          vttChanged(); render(); toast('Switched to ' + rec.title + '.');
+        } }, { label: 'Stay on this map' }]);
+      toast('Saved "' + rec.title + '" to your maps.');
+    }).catch(function (e) {
+      toast(e && e.name === 'SecurityError' ? 'The browser won\'t let this map\'s picture be copied (it comes from another site), so it can\'t be saved with objects.' : 'Couldn\'t save the map: ' + (e && e.message || e));
+    });
+  }
+
   // ------------------------------------------------------------------ the menus
   /* The board menu's "Map objects" submenu for the scene (null when it has no map). */
   function menuItems(sc) {
@@ -11422,6 +11539,7 @@ CROWS.NAME_IDEAS = {
     var k = kitOf(id), mine = genTokens(sc, id).length + genWalls(sc, id).length, busy = !!running[id];
     return { label: 'Map objects', sub: [
       { label: 'Save walls, objects & environment for this map', hint: 'Keeps the walls and doors, every marker token, and the environment as this map\'s set, to place whenever the map is loaded.', fn: function () { saveFromScene(sc); } },
+      { label: 'Save as a new map with these objects drawn on it…', off: !bakable(sc).length, hint: 'Makes a new picture in your maps with the visible objects drawn on the map. Lights and hidden objects stay as markers.', fn: function () { bakeToMap(sc); } },
       { label: 'Place saved objects', off: !k || !k.objects.length && !(k.walls || []).length && !Object.keys(k.env || {}).length, hint: k ? '' : 'No saved or found objects for this map yet.', fn: function () {
         var n = placeKit(sc, id, { again: true }); toast(n ? 'Placed ' + plural(n, 'piece') + ' (' + kitText(k) + ').' : 'Nothing new to place.'); render(); } },
       { label: busy ? 'Looking for objects…' : k ? 'Generate objects again' : 'Generate objects', off: busy, hint: 'Reads the picture for walls, doors, and large objects that block sight (Claude with your own key from the AI tab, or the site\'s key when logged in; shapes otherwise).',

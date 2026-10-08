@@ -180,6 +180,17 @@
     var b = !deep && A.beast(name);   // a Workshop creature that looks like another
     return b && b.custom && b.art && b.art !== name ? artFor(b.art, true) : null;
   }
+  /* Shrink a picture or canvas (nw x nh px) to a JPEG (long side `max` px, under about 1.3 MB) plus a small thumbnail: Promise of { blob, thumb } (null if it can't be encoded). */
+  function shrinkPicture(src, nw, nh, max, thumbW) {
+    function draw(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(src, 0, 0, w, h); return c; }
+    function encode(k, q) {
+      return new Promise(function (ok) { draw(Math.max(1, Math.round(nw * k)), Math.max(1, Math.round(nh * k))).toBlob(ok, 'image/jpeg', q); }).then(function (blob) {
+        return !blob || (blob.size <= 1300000) || (k < .2) ? blob : encode(q > .55 ? k : k * .8, q > .55 ? q - .12 : q);
+      });
+    }
+    var tk = Math.min(1, thumbW / nw), th = draw(Math.max(1, Math.round(nw * tk)), Math.max(1, Math.round(nh * tk)));
+    return encode(Math.min(1, max / Math.max(nw, nh)), .86).then(function (blob) { return blob ? { blob: blob, thumb: th.toDataURL('image/jpeg', .78) } : null; });
+  }
   /* Choose a picture, shrink it (long side `max` px, under about 1.3 MB, plus a small thumbnail) and hand back { blob, thumb, name }. */
   function pickImage(max, thumbW, done) {
     var inp = el('input', { type: 'file', accept: 'image/*' });
@@ -188,17 +199,10 @@
       var url = URL.createObjectURL(file), img = new Image();
       img.onerror = function () { URL.revokeObjectURL(url); toast('That file isn\'t a picture this browser can open.'); };
       img.onload = function () {
-        function draw(w, h) { var c = document.createElement('canvas'); c.width = w; c.height = h; var g = c.getContext('2d'); g.fillStyle = '#fff'; g.fillRect(0, 0, w, h); g.drawImage(img, 0, 0, w, h); return c; }
-        function encode(k, q) {
-          return new Promise(function (ok) { draw(Math.round(img.naturalWidth * k), Math.round(img.naturalHeight * k)).toBlob(ok, 'image/jpeg', q); }).then(function (blob) {
-            return !blob || (blob.size <= 1300000) || (k < .2) ? blob : encode(q > .55 ? k : k * .8, q > .55 ? q - .12 : q);
-          });
-        }
-        var tk = Math.min(1, thumbW / img.naturalWidth), th = draw(Math.round(img.naturalWidth * tk), Math.round(img.naturalHeight * tk));
-        encode(Math.min(1, max / Math.max(img.naturalWidth, img.naturalHeight)), .86).then(function (blob) {
+        shrinkPicture(img, img.naturalWidth, img.naturalHeight, max, thumbW).then(function (p) {
           URL.revokeObjectURL(url);
-          if (!blob) return toast('That picture could not be shrunk.');
-          done({ blob: blob, thumb: th.toDataURL('image/jpeg', .78), name: file.name.replace(/\.[^.]+$/, '') });
+          if (!p) return toast('That picture could not be shrunk.');
+          p.name = file.name.replace(/\.[^.]+$/, ''); done(p);
         });
       };
       img.src = url;
@@ -212,11 +216,20 @@
         function (e) { toast('Couldn\'t save it: ' + e.message); });
     });
   }
+  function newMapRec(title, p) { return { key: 'm:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: title.slice(0, 60), thumb: p.thumb, blob: p.blob, at: Date.now() }; }
   function addMap() {
     pickImage(4500, 420, function (p) {
       var title = prompt('Map name', p.name); if (title === null) return;
-      var rec = { key: 'm:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: (title.trim() || p.name).slice(0, 60), thumb: p.thumb, blob: p.blob, at: Date.now() };
+      var rec = newMapRec(title.trim() || p.name, p);
       putArt(rec).then(function () { custom.maps.push(rec); toast('Map added.'); render(); mapUploaded(rec); }, function (e) { toast('Couldn\'t save it: ' + e.message); });
+    });
+  }
+  /* Save a canvas as a new picture in the Ref's own maps (no object detection): Promise of the record. */
+  function saveMapPicture(canvas, title) {
+    return shrinkPicture(canvas, canvas.width, canvas.height, 4500, 420).then(function (p) {
+      if (!p) throw new Error('the picture could not be shrunk');
+      var rec = newMapRec(title || 'Map', p);
+      return putArt(rec).then(function () { custom.maps.push(rec); render(); return rec; });
     });
   }
   loadCustom();
@@ -460,5 +473,5 @@
   }
 
   A.add({ renderWorld: renderWorld, randomNPC: randomNPC, renderBestiary: renderBestiary, renderMaps: renderMaps, beastCard: beastCard, renderTables: renderTables, lightbox: lightbox,
-      artFor: artFor, artRemote: function () { return remote; }, blobUrl: blobUrl, customMaps: function () { return custom.maps; }, parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
+      artFor: artFor, artRemote: function () { return remote; }, blobUrl: blobUrl, saveMapPicture: saveMapPicture, customMaps: function () { return custom.maps; }, parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
 })();

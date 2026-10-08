@@ -94,6 +94,19 @@ On the local build: `python3 -u ref/test/run_vtt_walls_test.py` (`--headed` show
 Backspace, uses the right-click wall menu (Open it, Make it, Split here, Delete), and checks that an empty click clears the selection
 and a movable token over a wall is dragged instead of the wall.
 
+## Undo and redo on the Tabletop (`vtt_undo_test.js`, run by `run_vtt_undo_test.py`)
+
+On the local build: `python3 -u ref/test/run_vtt_undo_test.py` (`--headed` shows the browser). Moves a token and checks Ctrl+Z, Ctrl+Y, Ctrl+Shift+Z and
+Cmd+Z; that only the last 5 of six changes can be undone; that a ping makes no step; that a new change clears redo; the Undo and Redo items (and their
+greyed-out states) on the board, token, and wall right-click menus; that Ctrl+Z in a text field is left alone; and that a wall deleted with Delete comes back.
+
+## Darkness and Escape on the Tabletop (`vtt_dark_esc_test.js`, run by `run_vtt_dark_esc_test.py`)
+
+On the local build: `python3 -u ref/test/run_vtt_dark_esc_test.py` (`--headed` shows the browser). Checks that Escape leaves the Wall, Measure,
+and Reveal tools for Select (and then closes the drawer), and that with darkness on the fog mask shows only what lights reach now: a scene with
+no fog gets a mask, explored ground no light reaches goes black, a torch put out darkens its ground, fog by hand shows revealed ground only where
+lit, and the players' copy leaves out a creature standing in the dark.
+
 ## The Workshop and saved maps (`workshop_test.js`, run by `run_workshop_test.py`)
 
 On the local build (no accounts or server): `python3 ref/test/run_workshop_test.py` (`--headed` shows the browser). It makes a
