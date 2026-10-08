@@ -125,6 +125,8 @@
     if (fight() && Combat.setView) kids.push(fab('list', 'Show the fight as text lists instead (the map steps aside during fights; switch back from the Combat card)', function () {
       if (document.fullscreenElement) document.exitFullscreen(); Combat.setView('text'); var b = $('play-combat'); if (b) b.scrollIntoView({ block: 'start' }); }, 'sm ghost', 'Lists'));
     P.L.tl.appendChild(el('div', { class: 'hud-grp' }, kids));
+    // The environment the Ref set (darkness, rain, the Miasma...): its rules are the chip's tooltip.
+    if (sc.envInfo && sc.envInfo.length) P.L.tl.appendChild(el('div', { class: 'hud-grp env' }, sc.envInfo.map(function (e) { return chip(e[0], 'env', e[0] + ': ' + e[1]); })));
     var t = P.sel && sc.tokens.filter(function (k) { return k.id === P.sel; })[0];
     if (!t) { P.hudFor = null; P.L.hud.className = 'vtt-hud'; return; }
     var enter = P.hudFor !== t.id; P.hudFor = t.id; P.L.hud.className = 'vtt-hud' + (enter ? ' enter' : '');
@@ -331,7 +333,7 @@
         var o = Object.assign({}, k), kn = k.cid && Combat.known ? Combat.known(k.cid) : null; o.mine = mine(k); o.size = k.size;
         if (kn && o.hpf == null && kn.stMax) { o.hpf = Math.max(0, Math.min(1, kn.st / kn.stMax)); delete o.hw; }   // Monster Expert: its Stamina
         return o;
-      }), pins: t.pins || [], walls: [], move: t.move, moved: t.moved, art: t.art || {} };
+      }), pins: t.pins || [], walls: [], move: t.move, moved: t.moved, art: t.art || {}, env: t.env || null, envInfo: t.envInfo || [] };
     var key = fog ? fog.cw + 'x' + fog.ch + ':' + fog.d : '';
     if (key !== P.maskKey) { P.maskKey = key; P.mask = Tbl.unpackMask(fog); }
     // Pings made since this page last looked (the first look only notes where they are).

@@ -209,6 +209,8 @@
   function adopt(s) {
     var base = freshState(s.bg);
     Object.keys(base).forEach(function (k) { if (!(k in s)) s[k] = base[k]; });
+    // Cards for equipment the Ref made (Workshop), kept with the crow that got it: known before its cards are read below.
+    if (s.hb && typeof s.hb === 'object' && !Array.isArray(s.hb)) { var hb = {}; Sheet.registerItems(s.hb).forEach(function (k) { hb[k] = CROWS.ITEMS[k]; }); s.hb = hb; } else delete s.hb;
     s.inv = s.inv.filter(function (c) { return c && typeof c.key === 'string' && c.key && c.key.length <= 80; }).map(function (c) {
       return liveProps(c, { id: nextUid(), key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 });
     });

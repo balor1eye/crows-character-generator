@@ -140,7 +140,7 @@ A separate, self-contained app for running sessions and keeping the campaign bet
 on the accounts site (Ref accounts only), or offline as
 **`dist/Crows_Ref_Screen.html`** (one file, works offline, autosaves in the browser; **Save campaign /
 Load campaign** writes a `.json` file). The tabs come in three groups: **Run** (Session, Tabletop, Encounters, Travel),
-**Campaign** (Party, Village, World, Preferences), and **Reference** (Bestiary, Maps, Tables, Rules). The sidebar keeps the timer, the dice,
+**Campaign** (Party, Village, World, Workshop, Preferences), and **Reference** (Bestiary, Maps, Tables, Rules). The sidebar keeps the timer, the dice,
 and the session log (the last 14 entries, or Show all, with a box for notes).
 
 - **Tabletop** (Run group): a graphical tabletop in the spirit of Foundry VTT, for every mode of play. Make a **scene**: a **Dungeon** (a map or
@@ -171,6 +171,32 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
   the party can see are sent, and players' moves and pings come back like their combat actions. Dungeon scenes also carry the dungeon turn clock
   and End DT. Scenes are saved with the campaign. (The map picture itself is the whole picture, as with any virtual tabletop: fog hides it on
   screen, not from someone who digs through the page.)
+  **Environment** (the cloud button, top right): toggles for the conditions the rules describe: dim light, darkness, smoke, the Miasma
+  haze, Strong Miasma, rain, thunderstorm, blizzard, cold snap, heat wave, sandstorm, deep water, blood-soaked ground, and fire. Each
+  animates subtly over the map (rain and snow fall, haze and smoke drift, lightning flashes, embers rise; still tints only when the system
+  asks for reduced motion), shows as a chip with its rules as the tooltip, reaches the players' maps when the scene is shown, and goes in
+  the log. Darkness, dim light, and smoke count in the combat tracker's rolls for creatures on the map (monsters see in the dark).
+  **Save as encounter** (the disk button, top right, or Scene settings) keeps the battle map as a saved encounter: every creature on it
+  (foes and allies, in the encounter's creature list), objects, lights, markers, and NPC tokens, walls, doors, pins, the map and its grid,
+  the environment, where every token stands (and where the crows start), the items on the ground and what each creature holds, and, if
+  asked, each creature's Stamina, AD, conditions, and spent uses as they are now. Loading it (the Add drawer, or **Run on the Tabletop** on
+  the Encounters tab) builds the scene again and puts everyone back in place; **Update** saves a changed map over it.
+- **Workshop** (Campaign group): your own **creatures** and **equipment**, kept with the campaign.
+  A creature can start blank or from any creature in the Bestiary (**Make a variant** on its card) and has every stat a stat block has:
+  type, size, power, Stamina, AD, slots, reactions, Agility/Mind/Strength, speed (climb, upside down, swim, fly, burrow), attacks (bonus,
+  reach or range, tier 2 and 3 damage, and riders such as "T3 vs Medium or smaller: grabbed" that the tracker reads), special abilities
+  picked from every creature in the rules and the Dungeons book (their text and limited uses can be changed; the tracker counts the uses),
+  expertises, equipment (from the rules or the Workshop; **Attacks from its weapons** and its armor, shield, and parry AD fill in the stat
+  block), likes, hates, notes, and the art it borrows. Custom creatures appear in the Bestiary (**Mine**), encounters, the combat tracker,
+  and the Tabletop; one in a fight holds its equipment, drops it when it dies, and the crows can take it.
+  An item can be any kind on the cards: a weapon (type, hands, reach, thrown or bow range, attack characteristic, damage, the qualities
+  Brutal, Cumbersome, Disengage, Dismember, Light, Parry X, Pummeling, Reload, and ignores cover, a metal or wood upgrade, and weapon
+  enchantments), armor or a shield (type, AD, the material upgrades, and armor enchantments for suits, shields, or both), ammunition, gear
+  (tools, lights with bright/dim radius, traps, food, and so on, with usage dice and their tags, Fine and Masterwork), alchemy items and
+  magic items (slot, usage dice, action, resistance roll and tier outcomes), spellbooks (rank, discipline, casting time, range, targets,
+  duration, attack damage + Mind or tier outcomes), crafting materials, treasure, or vehicles, with an optional crafting recipe. The editor
+  shows the card as it will read, checks the 4 Enchanting uses limit, and offers the rules' price for the base item, upgrades, and
+  enchantments. Items join the item lists (items on the ground, creature equipment); a crow that picks one up gets its card on their sheet.
 - **Session**: Start session and End session (ending one fills in the XP award from the players' claims, with the greed
   bonus, and reminds you of the village cycle; starting the next archives the log), the shared dungeon-turn timer (60/30/20 minutes or every 1d6 rooms), Encounter Number with
   crowded/chaos adjustments, greed bonus, End DT (ends DT conditions, rolls the encounter check and the monster

@@ -6,7 +6,7 @@
   'use strict';
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var activePCs = f('activePCs'), beast = f('beast'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
+  var activePCs = f('activePCs'), beast = f('beast'), envFor = f('envFor'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
       clamp = f('clamp'), cloudOn = f('cloudOn'), feat = f('feat'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
       int = f('int'), lightbox = f('lightbox'), linkOn = f('linkOn'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
       rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), sheetOp = f('sheetOp'),
@@ -25,6 +25,8 @@
       var same = list.filter(function (c) { return c.cref === name; }).length;
       list.push({ id: nid(), kind: side === 'ally' ? 'ally' : 'foe', cref: name, name: name + ' ' + (same + 1), st: b ? b.st : 10, stMax: b ? b.st : 10,
         ad: b ? b.ad : 0, adMax: b ? b.ad : 0, wounds: 0, conds: {}, used: {}, dead: false, note: '', enc: encId });
+      // A Workshop creature carries its equipment (it can drop it, and does when it dies).
+      if (b && b.gear && b.gear.length) list[list.length - 1].items = b.gear.map(function (g) { return newItem(g[0], g[1] || 1, false); });
     }
     save();
   }
@@ -53,7 +55,7 @@
   }
   function slotsOf(c) { var b = beast(c.cref); return c.kind === 'pc' ? 10 : b && (b.t === 'Human' || b.t === 'Animal') ? b.sl : 0; }
   function byId(id) { return id ? S().combat.list.filter(function (x) { return x.id === id; })[0] || null : null; }
-  var SIZE_ORDER = 'TSMLH';
+  var SIZE_ORDER = 'TSMLHG';
   function sizeOf(x) { var b = beast(x && x.cref); return !x || x.kind === 'pc' || !b ? 'M' : b.sz; }
   /* x is `than`'s size or smaller (than: a creature or a size letter). */
   function noBigger(x, than) { return SIZE_ORDER.indexOf(sizeOf(x)) <= SIZE_ORDER.indexOf(typeof than === 'string' ? than : sizeOf(than)); }
@@ -174,6 +176,10 @@
     c.prompts = (c.prompts || []).filter(function (p) { return p.round >= c.round; });
     c.assists = (c.assists || []).filter(function (a) { return a.round >= c.round - 1; });
   }
+  /* No penalty in darkness (◐; every monster) or in dim light (⌂), from the stat block's symbols or words. */
+  function seesInDark(b) { return !!b && (/◐|No darkness/.test(b.x || '') || MONSTERS.indexOf(b.t) >= 0); }
+  var MONSTERS = ['Blood Creature', 'Undead', 'Unique', 'Angel', 'Demon', 'Plant'];   // all see in the dark (the Ref book)
+  function seesInDim(b) { return seesInDark(b) || !!b && /⌂|No dim light penalty/.test(b.x || ''); }
   /* Modifiers on a creature's roll against a target: its own conditions, the target's state, and the battlefield (ui.sit). */
   function rollMods(att, t, melee, a) {
     var dice = state.dice, sit = ui.sit || {}, b = beast(att.cref), x = (b && b.x) || '', note = (a && a[5]) || '';
@@ -194,8 +200,9 @@
     if (sit.flank && melee) { m.e++; m.why.push('flanking'); }
     if (sit.high) { m.e++; m.why.push('high ground'); }
     if (sit.cover && !/ignores cover/.test(note)) { m.b++; m.why.push('cover'); }
-    if (sit.dark && !/◐/.test(x)) { m.b += 2; m.why.push('darkness'); }
-    else if (sit.dim && !/[⌂◐]/.test(x)) { m.b++; m.why.push('dim light'); }
+    var env = envFor(att) || {};   // the Tabletop scene's environment, when it is fighting there
+    if ((sit.dark || env.dark || env.smoke) && !seesInDark(b)) { m.b += 2; m.why.push(sit.dark || env.dark ? 'darkness' : 'smoke'); }
+    else if ((sit.dim || env.dim) && !seesInDim(b)) { m.b++; m.why.push('dim light'); }
     if (sit.adj && !melee) { m.b++; m.why.push('ranged vs adjacent'); }
     if (sit.far > 0 && !melee) { m.bonus -= 2 * sit.far; m.why.push('-' + (2 * sit.far) + ' beyond range'); }
     return m;
@@ -308,8 +315,8 @@
     if (c.conds.Weakened) { m.b++; m.why.push('weakened'); }
     if (c.conds.Blessed) { m.e++; m.why.push('blessed'); }
     var ch = b ? (kind === 'escape' ? Math.max(b.c[0], b.c[2]) : b.c[2]) : 0;
-    if (kind === 'grab' && /E to grab/.test(x)) { m.e++; m.why.push('good grabber'); }
-    if (kind === 'escape' && /B (to escape|for others to escape)/.test(tx)) { m.b++; m.why.push(t.name + ' holds tight'); }
+    if (kind === 'grab' && /\b(E|edge) to grab/.test(x)) { m.e++; m.why.push('good grabber'); }
+    if (kind === 'escape' && /\b(B|bane) (to escape|for others to escape)/.test(tx)) { m.b++; m.why.push(t.name + ' holds tight'); }
     var r = test(ch + m.bonus, netEdges(m.e, m.b), 19), name = kind === 'grab' ? 'Grab' : kind === 'knockback' ? 'Knockback' : 'Escape Grab';
     var act = { who: c.name, label: name, items: [], applied: false }, res, counters = [];
     if (kind === 'escape') {
@@ -648,6 +655,10 @@
       prompts: (c.prompts || []).filter(function (p) { return !p.done && p.round === c.round; }),
       assists: c.assists || [],
       feed: (c.feed || []).slice(-25) };
+    // Cards for the Workshop's equipment among them, so the players' sheets know what they pick up.
+    var defs = {};
+    out.items.concat(out.given || []).forEach(function (it) { var k = it.key, card = k && CROWS.ITEMS[k]; if (card && card.custom) defs[k] = card; });
+    if (Object.keys(defs).length) out.defs = defs;
     // Each player gets only their own crow's part (the server keeps the rest from them); a server too old to do that gets none.
     var ex = expertKnows();
     if (live.expertOk && Object.keys(ex).length) out.expert = ex;

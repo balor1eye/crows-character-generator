@@ -12,7 +12,7 @@
       nowStamp = f('nowStamp'), endPractice = f('endPractice'), practiceOn = f('practiceOn'), render = f('render'), renderCombat = f('renderCombat'), rollMerchant = f('rollMerchant'), rollMiasmaTouched = f('rollMiasmaTouched'),
       rollTravelEncounter = f('rollTravelEncounter'), rollTravelers = f('rollTravelers'), rollWildAnimal = f('rollWildAnimal'), S = f('S'),
       save = f('save'), sel = f('sel'), setTab = f('setTab'), test = f('test'), testLine = f('testLine'), today = f('today'),
-      travelResultBox = f('travelResultBox');
+      travelResultBox = f('travelResultBox'), feat = f('feat');
   var $ = A.$, clone = A.clone, d = A.d, el = A.el, plural = A.plural, rollDice = A.rollDice, signed = A.signed, SIZES = A.SIZES, toast = A.toast,
       ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -206,7 +206,7 @@
 
   function beastSelect(value, onchange) {
     var groups = {};
-    REF.BESTIARY.forEach(function (b) { (groups[b.t] = groups[b.t] || []).push(b.n); });
+    REF.BESTIARY.forEach(function (b) { var g = b.custom ? 'Mine (Workshop)' : b.t; (groups[g] = groups[g] || []).push(b.n); });
     var n = el('select', { class: 'in', 'aria-label': 'Creature', onchange: function () { onchange(this.value); } },
       Object.keys(groups).map(function (g) { return el('optgroup', { label: g }, groups[g].map(function (b) { return el('option', { value: b, text: b }); })); }));
     if (value && !beast(value)) n.insertBefore(el('option', { value: value, text: value }), n.firstChild);
@@ -344,6 +344,7 @@
         runningEnc() === e ? el('span', { class: 'chip warn', text: 'running' }) : null,
         due ? el('span', { class: 'chip accent', text: 'due this DT' }) : null,
         e.done ? el('span', { class: 'chip ok', text: 'resolved' + (e.outcome ? ': ' + e.outcome.toLowerCase() : '') }) : null,
+        e.layout ? el('span', { class: 'chip', text: 'map layout', title: 'Saved from the Tabletop: the map, where everyone stands, objects, items, and the environment' }) : null,
         el('span', { class: 'enc-sum', text: [encSummary(e), e.mapTitle ? 'map: ' + e.mapTitle : '', e.where, 'session ' + e.session + (e.dt ? ', DT ' + e.dt : '')].filter(Boolean).join(' · ') })]),
       runningEnc() === e ? el('div', { class: 'enc-body' }, [el('p', { class: 'fine' }, ['Running now: its notes and creatures are in the card at the top of this tab. ',
         el('a', { href: '#sec-enc-run', class: 'enc-link', onclick: function (ev) { ev.preventDefault(); $('sec-enc-run').scrollIntoView({ block: 'start' }); }, text: 'Go to the fight' })])]) :
@@ -355,7 +356,8 @@
         creatures.length ? el('div', { class: 'enc-cre' }, creatures) : el('p', { class: 'fine', text: 'No creatures yet.' }),
         el('div', { class: 'row' }, [btn('Add creature', function () { e.creatures.push({ n: ui.addName || 'Blood Creature A', k: 1, side: 'foe' }); save(); render(); }, 'btn-small btn-ghost')]),
         field('Ref notes', area(e, 'notes', { rows: 2, placeholder: 'Tactics, loot, how it went…' })),
-        el('div', { class: 'row' }, [runEncBtn(e), encCombatBtn(e, 'btn-small btn-ghost'),
+        el('div', { class: 'row' }, [runEncBtn(e), e.layout && feat('vtt') ? btn('Run on the Tabletop', function () { A.runOnTabletop(e); }, 'btn-small', 'Build its saved map again and put everyone where they stood') : null, encCombatBtn(e, 'btn-small btn-ghost'),
+          e.layout ? btn('Forget the map layout', function () { if (!confirm('Forget the saved map layout of ' + (e.name || 'this encounter') + '? Its creatures stay.')) return; delete e.layout; save(); render(); }, 'btn-small btn-ghost') : null,
           due || e.done ? null : btn('Make it due this DT', function () {
             s.pending = { dt: s.dt, text: encSummary(e) || e.name, adds: e.creatures.map(function (c) { return [c.n, c.k, null]; }), encId: e.id };
             log('enc', 'Encounter due this DT: **' + (e.name || 'untitled') + '**.'); save(); render(); toast('Shown in the Dungeon Turn block.');

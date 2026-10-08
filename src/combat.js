@@ -133,6 +133,7 @@
       var was = cur(), prompts = was ? myPrompts().map(function (p) { return p.id; }) : [];
       var sessWas = JSON.stringify(session()), restWas = resting();
       fight = { charId: id, version: j.version, watch: j.watch, campaign: j.campaign, combat: j.combat, you: j.you };
+      if (j.combat && j.combat.defs) window.CrowsSheet.registerItems(j.combat.defs);   // the Ref's own equipment on the ground (its cards)
       var now = cur();
       if (resting() && !restWas) C.toast('The party is resting: pick your food and rest activity on the Rest & turns tab, and send them to the Ref.', 6000);
       if (now && !was) C.toast('Combat! ' + (fight.campaign ? fight.campaign.name + ': ' : '') + 'your Ref started a fight.', 5000);
@@ -214,6 +215,8 @@
     (c.given || []).forEach(function (g) {
       if (g.to !== fight.you || got.indexOf(g.id) >= 0) return;
       got.push(g.id); delete reaching[g.item];
+      var def = c.defs && c.defs[g.key];   // equipment the Ref made: the sheet keeps its card
+      if (def && !window.CrowsSheet.isOfficial(g.key)) { var hb = sheet().hb && typeof sheet().hb === 'object' ? sheet().hb : (sheet().hb = {}); hb[g.key] = window.CrowsSheet.cleanItem(def); }
       var area = C.takeItem(g);
       msgs.push('Picked up ' + g.key + (area === 'hand' ? '.' : area === 'none' ? ': no room for it, so it’s set aside.' : ': no free hand, so it went in your ' + (area === 'pack' ? 'backpack' : 'belt') + '.'));
     });

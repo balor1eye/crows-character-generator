@@ -474,3 +474,187 @@ REF.QUICK = [
   ['Damage', 'AD first, then Stamina; piercing skips AD. Crows (and humans, animals) at 0 AD and 0 Stamina take 1 wound per damage, each filling a backpack slot; all 10 wounded = dead. Ref creatures die at 0 Stamina (a crow may ask to knock out instead).'],
   ['XP', 'Recovered treasure outside a village: each crow gains total gc value / number of players. Applies after the next rest. Not for bought, crafted, stolen-from-innocents, or ally-owned items.']
 ];
+
+/* ------------------------------------------------------------------ Homebrew (the Workshop tab: ref-homebrew.js)
+ * What a custom creature or piece of equipment can be given: every special ability, attack rider, weapon quality, upgrade,
+ * and enchantment in the rules (creature stat blocks, the Dungeons book, the equipment cards).
+ */
+REF.HB_TYPES = ['Animal', 'Human', 'Blood Creature', 'Undead', 'Angel', 'Demon', 'Plant', 'Unique', 'Other'];
+REF.HB_SIZES = [['T', 'Tiny'], ['S', 'Small'], ['M', 'Medium'], ['L', 'Large'], ['H', 'Huge'], ['G', 'Holy Shit!']];
+/* [name, text (written into the stat block; numbers in it can be edited), uses: [n, 'Rest' | 'Day'] or null, where it comes from].
+   The combat tracker reads some of these words: "At N Stamina or less: +N damage", "Charge: ... +N damage", "edge to grab",
+   "bane to escape", "No dim light penalty", "No darkness or dim light penalty". */
+REF.HB_ABILITIES = [
+  ['No dim light penalty', 'No dim light penalty.', null, 'Bear, cats, deer, dogs, wolves'],
+  ['No darkness or dim light penalty', 'No darkness or dim light penalty.', null, 'Crocodile; every monster'],
+  ['Hurt and dangerous', 'At 15 Stamina or less: +2 damage.', null, 'Bear, Cave Bear'],
+  ['Last stand', 'At 0 Stamina: +2 damage.', null, 'Ape'],
+  ['Charge', 'Charge: moved 4+ squares first: +3 damage.', null, 'Big Cat, Wildcat, Deer'],
+  ['Mounted Charge', 'Mounted Charge: moved 4+ squares before the rider attacks: rider +2 damage.', null, 'War Horse'],
+  ['Pack Hunter', 'Pack Hunter: flanking with another of its kind gives +3 total.', null, 'Wolf, Dire Wolf'],
+  ['Lacerate', 'Lacerate: a T3 that damages Stamina or wounds leaves a laceration until the target regains Stamina; a target taking a maneuver and an action in a turn takes 1 piercing damage per laceration.', null, 'Monitor Lizard, Undead A and B'],
+  ['Grabber', 'Grabber: edge to grab, bane to escape it; maneuver: 2 piercing damage to the grabbed creature.', null, 'Constrictor Snake'],
+  ['Crushing grip', 'While grabbing it can\'t bite others; maneuver: 3 piercing damage to the grabbed creature.', null, 'Crocodile'],
+  ['Squeeze', 'Squeeze (maneuver): 2 piercing damage to each creature it has grabbed.', null, 'Undead C, Giant Scorpion'],
+  ['Drain the grabbed', 'Maneuver: 2 damage to the grabbed creature.', null, 'Blood Creature B'],
+  ['Aerial grabber', 'While flying: edge to grab; bane for others to escape its grab.', null, 'Giant Crow'],
+  ['Vibration Sense', 'Vibration Sense 2 squares (exact location, no penalties).', null, 'Spiders, Giant Scorpion'],
+  ['Heat Sense', 'Heat Sense 2 squares (humans, blood creatures, demons, birds, mammals).', null, 'Snakes'],
+  ['Web', 'Web (action): 3-square area within 1; web has 10 Stamina; Agility RR: grabbed; speed halved until end of next turn; none.', null, 'Giant Spider'],
+  ['Flier', 'Falls if still airborne when it stops flying.', null, 'Chicken'],
+  ['Draft animal', 'Draft: 10 open slots while hauling.', null, 'Draft Horse, Ox, Elephant'],
+  ['Hardy', 'Gets rest benefits without food or water for up to 3 days; starves only after 3 days.', null, 'Camel'],
+  ['Carrier', 'Carries 1 Tiny object (or 1 sheet of paper); a pet can return home on command.', null, 'Crow, Hawk'],
+  ['Drop Attack', 'Drop Attack: falls count as 10 squares shorter; after a fall with no damage, edge on attacks and damage until end of turn.', null, 'Blood Creature A'],
+  ['Formless', 'Fits through 1-inch gaps, never squeezes, can\'t be grabbed or knocked prone.', null, 'Blood Creature C'],
+  ['Leap', 'Leap (maneuver): jump its speed.', null, 'Undead A, B'],
+  ['Hard counters', 'Its counters deal 5 damage.', null, 'Undead B'],
+  ['Extra action', 'Extra action or maneuver each turn.', null, 'Ring Collector, Undead G, H'],
+  ['Ring sense', 'Senses magic rings within 20 squares.', null, 'Ring Collector'],
+  ['Vanish', 'Vanish: teleport 50 miles to a place it has visited.', [1, 'Rest'], 'Ring Collector'],
+  ['Fire Beam', 'Fire Beam (action): 10x2 line within 1, Agility RR: 10; 5; 0 damage.', [1, 'Day'], 'Undead D'],
+  ['Absorb', 'Absorb (maneuver): destroy a human corpse (died <24h) within 2 and its mundane gear; regain 10 Stamina.', null, 'Undead D'],
+  ['Bite Frenzy', 'Bite Frenzy (action): bite each enemy within 1.', [1, 'Day'], 'Undead E'],
+  ['Horrid Gnashing', 'Horrid Gnashing: non-undead with Mind 1 or less starting a turn within 1: bane on all tests until its next turn starts.', null, 'Undead E'],
+  ['Exploding Mote', 'Exploding Mote (action): 4 cube within 10, non-undead Strength RR: 15; 7; 0 damage.', [2, 'Day'], 'Undead F'],
+  ['Glorp Through', 'Glorp Through (maneuver): move its speed, no opportunity attacks, through occupied spaces; 1d6 damage to each occupant whose space it enters; ending in a space slides the occupant to the nearest free space.', [3, 'Day'], 'Undead F'],
+  ['Death burst', 'At 0 Stamina it explodes: 1d10 damage to all within 2.', null, 'Undead F'],
+  ['Insect Breath', 'Insect Breath (action, 1/turn): 5 cube within 1, enemies Agility RR: 20; 10; 0 damage.', [3, 'Day'], 'Undead G'],
+  ['Rise!', 'Rise!: humans it kills rise as undead A in 1d6 rounds.', null, 'Undead G'],
+  ['Whirlwind', 'Whirlwind (action, 1/turn): move its speed, no opportunity attacks; each enemy within 2 at the start, end, or during takes 1d10.', [3, 'Day'], 'Undead H'],
+  ['Damned Shriek', 'Damned Shriek (maneuver, 1/turn): enemies within 5 Mind RR: prone and vulnerable; prone; none.', [2, 'Day'], 'Undead H'],
+  ['Fire Bomb', 'Fire Bomb (action): throw 10 squares, 3 cube, Agility RR: 10; 5; 0 damage.', null, 'Alchemist'],
+  ['Split Shot', 'Split Shot: 2 arrows, 2 targets.', null, 'Archer (P10)'],
+  ['Pummeling', 'Pummeling: T3 pushes Medium or smaller 1; crit knocks prone.', null, 'Blacksmith'],
+  ['Jumper', 'Jumper: its teleports +1 square.', null, 'Conjurer'],
+  ['Elemental power', 'Its damaging elemental spells +1 damage.', null, 'Elementalist'],
+  ['Material Transfer', 'Material Transfer (rest activity): two weapons or armor craftable from the same materials but made of different ones swap materials.', null, 'Enchanter'],
+  ['Pathfinder', 'Travel role tests: roll twice, choose.', null, 'Guide'],
+  ['Lasting illusions', 'Its UD-duration illusions +1 UD.', null, 'Illusionist'],
+  ['Lasting alterations', 'Its UD-duration alterations +1 UD.', null, 'Transmuter'],
+  ['Healer', 'Its benefaction healing +1 Stamina.', null, 'Priest'],
+  ['Lecture', 'Lore-book study shares its benefit with up to 2 other resting humans.', null, 'Sage'],
+  ['Disengage', 'Disengage (+1 Shift).', null, 'Thieves, Torchbearer, Sword Warriors'],
+  ['Sneaky', 'Hide, sneak, and pick lock unarmored: roll twice, choose.', null, 'Thieves'],
+  ['Slippery', 'Agility RRs: roll twice, choose.', null, 'Thief (P9)'],
+  ['Torch keeper', 'A torch it holds has max UD 2.', null, 'Torchbearer'],
+  ['Trapper', 'Others take a bane on RRs against its terrain effects.', null, 'Trapper'],
+  ['Spinning Shaft', 'Spinning Shaft: a T3 also deals 2 damage to another target in range.', null, 'Pike Warriors'],
+  ['Interposing Arm', 'Interposing Arm (reaction): a creature within 1 is hit while it wields a shield: the damage goes to its shield.', null, 'Sword Warriors'],
+  ['Slug tail and compound eyes', 'Lower body is a slug tail (speed -2); compound eyes: no darkness or dim light penalty.', null, 'Lisbeth (Dungeons book); the blood concoction'],
+  ['Cannot be surprised', 'Can\'t be surprised.', null, 'Ref\'s call']
+];
+/* Words an attack can carry after its damage (the combat tracker reads most of them: conditions by tier, grabs, crits, lacerate). */
+REF.HB_ATTACK_NOTES = ['2 targets', 'T3 prone', 'T3 weakened', 'T2 weakened; T3 vulnerable and weakened', 'T3 vs Medium or smaller: grabbed',
+  'T3 vs Medium or smaller: prone', 'T3 vs Medium or smaller: grabbed (up to 2)', 'Lacerate on T3', 'Lacerate on any hit', 'damage: weakened',
+  '+2 damage vs a creature it has grabbed', '+2 while it has anyone grabbed', 'ignores cover', 'crits on 18-20; crit = 16 damage',
+  'kill: victim explodes, 1d6 to all within 1', 'vertical slide 3 (T2) or 5 (T3)', 'each metal armor/sword/shield of a damaged creature -5 AD'];
+
+/* Equipment. Kinds the Workshop makes, with the inventory category (src/game-data.js cat) each becomes. */
+REF.HB_KINDS = [['weapon', 'Weapon'], ['armor', 'Armor (a suit)'], ['shield', 'Shield'], ['ammo', 'Ammunition'], ['gear', 'Gear'], ['alchemy', 'Alchemy item'],
+  ['magic', 'Magic item'], ['spell', 'Spellbook'], ['material', 'Crafting material'], ['treasure', 'Treasure (art or gem)'], ['vehicle', 'Vehicle']];
+REF.HB_GEAR_CATS = [['misc', 'General'], ['tool', 'Tool'], ['light', 'Light source'], ['bulky', 'Bulky (2+ slots)'], ['trap', 'Trap'], ['food', 'Food'], ['purse', 'Purse'], ['book', 'Lore book']];
+REF.HB_WEAPON_TYPES = ['Bashing', 'Chopping', 'Slashing', 'Stabbing', 'Bow', 'Unarmed'];
+/* [name, text, takes a number (Parry X)] */
+REF.HB_QUALITIES = [
+  ['Brutal', 'A crit deals double damage.'],
+  ['Cumbersome', 'Takes 1 slot on the belt or in the pack, but needs 2 hands to wield.'],
+  ['Disengage', 'Shift +1 square (stacks with a second such weapon).'],
+  ['Dismember', 'A crit removes a limb (d6: 1-2 arm, 3-4 leg, 5 attacker\'s choice, 6 head: dies). No discernible anatomy: double crit damage instead.'],
+  ['Light', 'A melee hit while wielding two light weapons adds the other weapon\'s T2 damage (without A or S).'],
+  ['Parry', 'While wielded it absorbs damage like a shield with AD X; at 0 AD the weapon deals -1 damage; Repair Armor repairs it.', true],
+  ['Pummeling', 'T3 against your size or smaller: push 1; a crit against your size or smaller: prone.'],
+  ['Reload', 'A maneuver to load 1 ammo before each attack.'],
+  ['Ignores cover', 'Attacks with it ignore cover.']
+];
+/* Metal upgrades (weapons and ammo; not bows or unarmed): [name, T2 bonus, T3 bonus, price, Blacksmithing uses, materials, goal]. */
+REF.HB_METAL = [['Steel', 1, 1, 500, 1, '3 treated iron bars', 30], ['Archmage Obsidian', 1, 2, 2500, 2, '3 archmage obsidian bars', 155],
+  ['Necromancer Silver', 1, 3, 5000, 3, '3 necromancer silver bars', 310], ['Star Diamond', 1, 4, 10000, 4, '3 star diamond bars', 625],
+  ['Elemental Essence', 2, 5, 15000, 4, '5 elemental parts', 935]];
+/* Wood upgrades (bows): [name, range bonus, price, uses, materials, goal]. */
+REF.HB_WOOD = [['Yew', 1, 375, 1, '1 yew log', 15], ['Archmage Willow', 2, 1875, 2, '1 archmage willow log', 95], ['Necromancer Deathtree', 3, 3750, 3, '1 necromancer deathtree log', 185],
+  ['Starwood', 4, 7500, 4, '1 starwood log', 375], ['Elemental Essence (Elemental Tree)', 5, 11250, 4, '5 elemental parts', 560]];
+/* Armor: base suits and their upgrades: { type: [base AD, slots, price, materials, goal, upgrades [name, AD bonus, price, uses, materials, goal]] }. */
+REF.HB_ARMOR = {
+  Light: [5, 2, 50, '20 animal parts', 10, [['Bloodhide', 4, 500, 1, '10 blood creature parts', 25], ['Undead Bone', 8, 2500, 2, '10 undead parts', 125], ['Demon Hide', 12, 5000, 3, '10 demon parts', 250],
+    ['Angel Hide', 16, 10000, 4, '10 angel parts', 500], ['Elemental Essence', 20, 15000, 4, '10 elemental parts', 750]]],
+  Medium: [10, 3, 150, '4 iron bars', 30, [['Steel', 4, 625, 1, '5 treated iron bars', 30], ['Archmage Obsidian', 8, 3125, 2, '5 archmage obsidian bars', 155], ['Necromancer Silver', 12, 6250, 3, '5 necromancer silver bars', 310],
+    ['Star Diamond', 16, 12500, 4, '5 star diamond bars', 625], ['Elemental Essence', 20, 18750, 4, '10 elemental parts', 935]]],
+  Heavy: [15, 4, 400, '9 iron bars', 80, [['Steel', 4, 750, 1, '10 treated iron bars', 35], ['Archmage Obsidian', 8, 3750, 2, '10 archmage obsidian bars', 185], ['Necromancer Silver', 12, 7500, 3, '10 necromancer silver bars', 375],
+    ['Star Diamond', 16, 15000, 4, '10 star diamond bars', 750], ['Elemental Essence', 20, 22500, 4, '10 elemental parts', 1125]]],
+  Shield: [5, 1, 15, '2 iron bars', 15, [['Steel', 2, 375, 1, '3 treated iron bars', 15], ['Archmage Obsidian', 4, 1875, 2, '3 archmage obsidian bars', 95], ['Necromancer Silver', 6, 3750, 3, '3 necromancer silver bars', 185],
+    ['Star Diamond', 8, 7500, 4, '3 star diamond bars', 375], ['Elemental Essence', 10, 11250, 4, '5 elemental parts', 560]]]
+};
+/* Armor enchantments: [name, price, Enchanting uses, 'Suit' | 'Shield' | 'Both', materials, goal, effect]. Total uses on one item: 4 at most. */
+REF.HB_ARMOR_ENCH = [
+  ['Banishing', 5000, 3, 'Both', '10 undead parts', 250, 'When hit by a melee attack, reaction: push the attacker 1d6; if the attacker crits against you, you fly up 1d6 x 10 ft, then fall (no reaction).'],
+  ['Climbing', 7500, 4, 'Suit', '20 plant parts', 375, 'Climb speed equal to speed; knocked prone while climbing: you fall, and it is off until the end of the DT.'],
+  ['Dancing', 5000, 3, 'Shield', '10 angel parts', 250, 'Maneuver: the shield floats and protects you (still wielded, hand free) until the end of the DT; an attacker\'s crit can grab it; once per rest.'],
+  ['Deep', 3000, 2, 'Suit', '10 blood creature parts', 150, 'Swim speed equal to speed; can\'t suffocate; falls deal +1d6.'],
+  ['Demon\'s Head', 1000, 1, 'Shield', '5 demon parts', 50, 'Your counters deal +A or S damage; you take +1 damage from counters.'],
+  ['Feather', 1000, 1, 'Suit', '5 plant parts', 50, 'Fall damage -3d6; forced moves on you +1 square.'],
+  ['Flying', 7500, 4, 'Shield', '20 angel parts', 375, 'Maneuver: place it and hover; a Medium or smaller rider gets a fly speed equal to speed until the end of the DT or 0 AD; attacks from below hit the shield first; once per rest.'],
+  ['Glow', 1000, 1, 'Both', '5 undead parts', 50, 'Maneuver: glows 5/5, 2 UD (recharge on rest), can\'t be turned off; a doom while it is available triggers it.'],
+  ['Heavy', 500, 1, 'Suit', '5 undead parts', 25, 'Forced moves on you -1; standing up from prone takes an action.'],
+  ['Luring', 1000, 1, 'Both', '5 angel parts', 50, 'When hit by a melee attack, reaction: slide the attacker 1; if the attacker crits, lose this until the end of the DT and they slide you 1.'],
+  ['Passthrough', 7500, 4, 'Suit', '20 blood creature parts', 375, 'Maneuver: move your speed through mundane walls; ending inside something solid shunts you back, 1d6 P per space; 1 UD (recharge on rest).'],
+  ['Revenge', 10000, 4, 'Suit', '20 demon parts', 500, 'Taking damage gives 1d6 charges; a melee hit spends them all as extra damage; 12+ charges: all spent as P damage to you; charges vanish at the end of the DT.'],
+  ['Silent', 1000, 1, 'Suit', '5 undead parts', 50, '+1 on hide and sneak; a T1 on hide or sneak makes you weakened.'],
+  ['Slick', 1000, 1, 'Suit', '5 blood creature parts', 50, 'Shift +1 square, +1 to Escape Grab; a doom on an Agility or Strength test knocks you prone.'],
+  ['Speedy', 5000, 3, 'Suit', '10 angel parts', 250, 'Speed +1; a crit against you sets your speed to 0 until the end of your next turn.'],
+  ['Spell-Storing', 1000, 1, 'Both', '5 plant parts', 50, 'Rest activity: touch a spellbook to store it; cast it once as if holding it; a doom on any test while carrying it casts it (the Ref picks targets).'],
+  ['Sustaining', 5000, 3, 'Suit', '10 plant parts', 250, 'No need to eat for starvation or rests; if you die in it, it consumes your hand and belt items.'],
+  ['Telepathic Node', 2000, 2, 'Suit', '5 angel parts', 100, 'Rest activity: link up to 5 willing resting humans; while worn they are telepathic with each other; a linked creature dying deals 1d10 P to the others (2d10 P if you die).'],
+  ['Victory', 5000, 3, 'Suit', '10 demon parts', 250, 'Killing a creature makes you blessed; while you have a wound you can\'t be blessed.'],
+  ['Waterwalking', 500, 1, 'Suit', '5 blood creature parts', 25, 'Walk on liquid; prone on liquid: off until the end of the DT and -2 on swim tests.']
+];
+/* Weapon enchantments: [name, price, Enchanting uses, materials, goal, effect, 'bow' | 'nobow' | '']. Total uses on one weapon: 4 at most. */
+REF.HB_WEAPON_ENCH = [
+  ['Absorbing', 500, 1, '5 plant parts', 25, 'A crit against a creature: this turn, make one of its stat-block attacks with its stats; a doom: can\'t attack with the weapon until the end of your next turn.', ''],
+  ['Dancing', 5000, 3, '10 angel parts', 250, 'Maneuver: it floats and fights for you (still wielded, hands free) until the end of the DT; stops if more than 1 square away or an attacker crits against you; once per rest.', ''],
+  ['Defending', 1000, 1, '10 undead parts', 50, 'Gains Parry 5 (or +5); at 0 AD it deals -2 damage.', ''],
+  ['Exploding', 2000, 2, '5 blood creature parts', 100, 'A kill makes the victim explode: 1d6 to each creature within 1; a doom: the Ref destroys a mundane item you carry.', ''],
+  ['Flaming', 5000, 3, '10 demon parts', 250, 'Maneuver: ignite (+2 damage, light 5/5); maneuver: put it out; a doom: you take 1d10 and the flame is out until the end of the DT.', ''],
+  ['Frosty', 4000, 2, '10 demon parts', 200, 'A T3 against a creature: its speed -1 (not below 2); a doom: your speed is 2 until the end of the DT.', ''],
+  ['Gashing', 10000, 4, '20 demon parts', 500, 'A T3 against a creature: a bleeding gash, 1d6 P at the start of its turns until magic healing or a gash roll of 6; a doom: you get a gash.', ''],
+  ['Hewing', 7500, 4, '20 angel parts', 375, 'Action: make a hole in a wall, floor, or ceiling, 1d10 ft around and 1d10 ft deep; 1 UD (recharge on rest); at 0 UD you are vulnerable.', 'nobow'],
+  ['Hungry', 5000, 3, '10 undead parts', 250, 'A kill: +3 AD until the end of the DT; wielding it through a combat without a kill: 1d6 P to you.', ''],
+  ['Impact', 1000, 1, '5 undead parts', 50, 'A T3 with no forced move: push 1 (a forced move already: +1 square); a doom: the Ref slides you 1d10.', ''],
+  ['Infinity', 5000, 3, '10 angel parts', 250, 'Unloaded, it makes phantom ammo (-1 damage).', 'bow'],
+  ['Lightning', 2000, 2, '5 angel parts', 100, 'On a hit, a second target within 3 of the first takes the same damage; 1 UD (recharge on rest); at 0 UD you are weakened.', ''],
+  ['Poisoning', 2000, 2, '5 blood creature parts', 100, 'Maneuver: drip poison (1 UD, recharge on rest): the next hit makes the target weakened; a miss makes you vulnerable.', ''],
+  ['Raging', 1000, 1, '5 demon parts', 50, 'A kill, reaction: rage until the end of the DT (+2 damage with it, +1 speed while wielding); when it ends you are weakened.', ''],
+  ['Returning', 7500, 4, '20 plant parts', 375, 'Ranged range +5; it returns to your hand after a ranged attack; a ranged doom: it deals its T3 damage to you.', 'nobow'],
+  ['Slaying', 1000, 1, '5 parts of the chosen type', 50, '+1 on attacks against the chosen creature type, -1 against others; one per weapon.', ''],
+  ['Sworn Foe', 2000, 2, '5 undead parts', 100, 'Maneuver: choose a creature within 10: +2 damage against it; if it counters you, you take +2.', ''],
+  ['Teleporting', 10000, 4, '20 angel parts', 500, 'Dealing damage gives 1d6 charges; maneuver: spend them all to teleport that many squares; 12+ charges: all spent as P damage to you.', ''],
+  ['Vicious', 500, 1, '5 undead parts', 25, 'A crit deals +1d10 damage; a doom: you take 1d10 P.', ''],
+  ['Weakening', 7500, 4, '20 plant parts', 375, 'Two T3 hits on the same creature before the end of your next turn make it weakened; a doom: you are weakened.', '']
+];
+REF.HB_MAGIC_SLOTS = ['', 'Head', 'Neck', 'Waist', 'Arms', 'Finger', 'Feet'];
+REF.HB_UD_TAGS = ['Useless', 'Refuel', 'Rest', 'Activate', 'DT'];
+REF.HB_DISCIPLINES = ['Alteration', 'Benefaction', 'Conjuration', 'Elemental', 'Illusion', 'Necromancy'];
+REF.HB_CAST_TIMES = [['Action', 'Action'], ['Maneuver', 'Maneuver'], ['Reaction', 'Reaction'], ['Out of combat', 'Out of combat (10 min)']];
+REF.HB_SPELL_PRICES = [250, 500, 1000, 2500, 5000, 10000];   // by rank (the playtest prices ranks 0-1; higher ranks are the Ref's call)
+REF.HB_CRAFT_EXP = ['', 'Alchemy', 'Blacksmithing', 'Enchanting'];
+REF.HB_TREASURE_SIZES = [['T', 'Tiny'], ['S', 'Small'], ['M', 'Medium'], ['L', 'Large']];
+
+/* ------------------------------------------------------------------ Environmental effects on the Tabletop (scene.env)
+ * [key, name, rules text, kind of animation]. Toggled on the map; "dark" and "dim" (and smoke) also count in the combat tracker's rolls.
+ */
+REF.ENV = [
+  ['dim', 'Dim light', 'Dim light or light concealment: bane on attacks and on tests to discern or search.', 'dim'],
+  ['dark', 'Darkness', 'Darkness, heavy concealment, or invisible: double bane; against a silently moving creature, guess its square (wrong: automatic miss).', 'dark'],
+  ['smoke', 'Smoke', 'Heavy concealment (as darkness: double bane), thinning to light concealment after 1d6 rounds and gone 1d6 rounds later.', 'smoke'],
+  ['miasma', 'Miasma haze', 'Outdoors only. Resting in the Miasma regains no expertise uses; after each rest in it, each human makes a Mind RR against it.', 'haze'],
+  ['strong', 'Strong Miasma', 'For 24 hours: bane on Miasma RRs; the haze becomes opaque fog; guides, scouts, and trackers take a bane on role tests; a lost group is moved 1d10 hexes.', 'fog'],
+  ['rain', 'Rain', '-1 hex today; whoever carries rations makes a Mind test: lose 1d6+1 rations to mold; lose 1; none.', 'rain'],
+  ['storm', 'Thunderstorm', '-2 hexes today; ration carriers Mind test: lose 2d6; 1d6; none. Guides, scouts, and trackers take a bane on role tests.', 'storm'],
+  ['blizzard', 'Blizzard', '-2 hexes; each hour outside without cold weather gear, a human makes a Strength RR: 4d6 P; 3d6 P; 2d6 P (cumulative -2 per earlier RR). Guides, scouts, and trackers: double bane on role tests.', 'snow'],
+  ['cold', 'Cold snap', 'Each hour outside without cold weather gear, Strength RR: 3d6 P; 2d6 P; 1d6 P (cumulative -2 per earlier RR).', 'frost'],
+  ['heat', 'Heat wave', 'A creature traveling more than 2 hexes today makes a Strength RR: 2d6 P; 1d6 P; none.', 'heat'],
+  ['sand', 'Sandstorm', '-2 hexes today; guides, scouts, and trackers take a double bane on role tests.', 'sand'],
+  ['water', 'Deep water', 'Swimming costs +1 square per square without a swim speed; submerged without a swim speed: bane on Agility and Strength tests. Holding breath: 3 + S rounds, then 1d6 damage each round.', 'water'],
+  ['blood', 'Blood-soaked', 'Blood ankle- to waist-deep (the Blood Library): waders are bloodstained, a bane on sneaking and hiding from blood creatures, and blood creatures are drawn to them.', 'blood'],
+  ['fire', 'Fire and embers', 'Burning oil or a blaze: 1d6 damage to a creature that enters or starts its turn in the flames; burns 1d6 rounds. Undead hate bonfire-size fire.', 'embers']
+];

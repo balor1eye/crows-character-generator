@@ -49,6 +49,7 @@
 .vtt-host { position: relative; width: 100%; height: clamp(360px, 68vh, 900px); background: #0c0b0d; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin: .5rem 0; }
 .vtt-host:fullscreen { height: 100vh; border: 0; border-radius: 0; margin: 0; }
 .vtt-canvas { display: block; outline: none; }
+.vtt-weather { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 0; }
 .field.inline { flex-direction: row; align-items: center; gap: .4rem; }
 body[data-tab="vtt"] #page-vtt { display: flex; }
 
@@ -388,6 +389,23 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
   .glass-sel { max-width: 150px; }
 }
 @media (prefers-reduced-motion: reduce) { .vtt-ui *, .vtt-ui *::before, .vtt-ui *::after { animation: none !important; transition: none !important; } .vtt-banner { animation: none !important; } }
+
+/* The Environment drawer's switches and the environment chips on the map (REF.ENV; the effects animate on .vtt-weather) */
+.env-list { gap: .4rem; }
+.env-tog { display: flex; gap: .6rem; align-items: flex-start; width: 100%; padding: .5rem .6rem; border-radius: 10px; border: 1px solid var(--gl-line, rgba(255,255,255,.12));
+  background: rgba(255,255,255,.04); color: inherit; font: inherit; text-align: left; cursor: pointer; pointer-events: auto; transition: background .15s, border-color .15s; }
+.env-tog:hover { background: rgba(255,255,255,.08); }
+.env-tog:focus-visible { outline: 2px solid var(--gl-hi, #d9a441); outline-offset: 2px; }
+.env-tog.on { border-color: var(--gl-hi, #d9a441); background: rgba(217,164,65,.14); }
+.env-sw { flex: none; position: relative; width: 30px; height: 17px; margin-top: 2px; border-radius: 9px; background: rgba(255,255,255,.2); transition: background .18s; }
+.env-sw::after { content: ''; position: absolute; left: 2px; top: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; transition: transform .18s; }
+.env-tog.on .env-sw { background: var(--gl-hi, #d9a441); }
+.env-tog.on .env-sw::after { transform: translateX(13px); }
+.env-t { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.env-t .fine { opacity: .75; font-size: .76rem; line-height: 1.3; }
+.hud-chip.env { background: rgba(120,165,215,.22); border-color: rgba(150,190,235,.35); cursor: help; }
+.hud-grp.env .ico-wrap { opacity: .8; }
+@media (prefers-reduced-motion: reduce) { .env-sw, .env-sw::after { transition: none; } }
 
 </style>
 <style>
@@ -842,6 +860,48 @@ body[data-tab="vtt"] .side-timer { display: none; }
 .popmenu .pm-head { font-weight: 700; padding: .3rem .6rem; opacity: .75; }
 .map-tile { -webkit-touch-callout: none; -webkit-user-select: none; user-select: none; }
 
+/* ------------------------------------------------------------------ Workshop tab (ref-homebrew.js) */
+.hb-items { display: flex; flex-direction: column; margin-top: .6rem; border-top: 1px solid var(--line); }
+.hb-row { border-bottom: 1px solid var(--line); padding: .35rem 0; }
+.hb-row.open { background: var(--slot); margin: 0 -.6rem; padding: .35rem .6rem .8rem; border-radius: 8px; }
+.hb-name { border: 0; background: none; color: inherit; font: inherit; text-align: left; cursor: pointer; padding: .25rem 0; min-height: 30px; }
+.hb-name:hover b { text-decoration: underline; }
+.hb-name:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; border-radius: 4px; }
+.hb-editor { margin-top: .5rem; }
+.hb-cols { display: grid; grid-template-columns: minmax(0, 1fr) minmax(260px, 340px); gap: 1rem; align-items: start; }
+.hb-form { display: flex; flex-direction: column; gap: .5rem; min-width: 0; }
+.hb-form h4 { margin: .6rem 0 0; font-size: .82rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.hb-preview { position: sticky; top: .75rem; display: flex; flex-direction: column; gap: .4rem; }
+.hb-preview h4 { margin: 0; font-size: .82rem; text-transform: uppercase; letter-spacing: .06em; color: var(--muted); }
+.hb-nums { align-items: flex-end; }
+.hb-num { display: inline-flex; flex-direction: column; gap: .2rem; font-size: .78rem; font-weight: 600; color: var(--muted); }
+.hb-atk .hb-num, .hb-chip .hb-num { flex-direction: row; align-items: center; }
+.hb-num input { color: var(--ink); }
+.hb-list { display: flex; flex-direction: column; gap: .35rem; }
+.hb-atk { padding: .3rem .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.hb-ab { display: flex; flex-direction: column; gap: .3rem; padding: .4rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.hb-ab textarea { width: 100%; min-height: 2.6rem; font-size: .86rem; }
+.hb-chips { display: flex; flex-wrap: wrap; gap: .35rem; align-items: center; }
+.hb-chip { display: inline-flex; align-items: center; gap: .3rem; padding: .1rem .2rem .1rem .55rem; border-radius: 999px; background: var(--soft); font-size: .85rem; font-weight: 600; }
+.hb-chip input.tiny { width: 3.2rem; }
+.hb-chips select { width: auto; max-width: 14rem; }
+.hb-checks { display: grid; grid-template-columns: repeat(auto-fill, minmax(190px, 1fr)); gap: .3rem .8rem; }
+.hb-checks.inline { display: flex; flex-wrap: wrap; gap: .3rem .8rem; }
+.hb-checks .check input.tiny { width: 3.2rem; }
+.hb-ench { align-items: flex-start; padding: .35rem .45rem; border: 1px solid var(--line); border-radius: 6px; background: var(--card); }
+.hb-ench.on { border-color: var(--accent); }
+.hb-ench input { margin-top: .2rem; }
+.hb-ench > span { display: flex; flex-direction: column; font-size: .82rem; }
+.hb-eff { margin-top: .15rem; }
+.hb-card { border: 1px solid var(--line); border-top: 3px solid var(--accent); border-radius: 6px; padding: .55rem .65rem; background: var(--slot); display: flex; flex-direction: column; gap: .3rem; }
+.hb-card-head { display: flex; gap: .4rem; align-items: center; justify-content: space-between; }
+.hb-card-txt { margin: 0; font-size: .86rem; line-height: 1.4; }
+.fine.warn { color: var(--warn); }
+@media (max-width: 900px) { .hb-cols { grid-template-columns: minmax(0, 1fr); } .hb-preview { position: static; } }
+.hb-atk input.in.mini { flex: 0 0 5.5rem; width: 5.5rem; }
+.hb-atk > input.in:first-child { flex: 1 1 8rem; }
+.hb-atk > input.in:nth-last-child(2) { flex: 3 1 14rem; }
+
 </style>
 <script>
 /*
@@ -956,6 +1016,10 @@ body[data-tab="vtt"] .side-timer { display: none; }
     <div class="page" id="page-prefs">
       <section class="card" id="sec-prefs-mode"></section>
       <section class="card" id="sec-prefs-feat"></section>
+    </div>
+    <div class="page" id="page-workshop">
+      <section class="card" id="sec-hb-creatures"></section>
+      <section class="card" id="sec-hb-items"></section>
     </div>
     <div class="page" id="page-bestiary">
       <section class="card" id="sec-bestiary"></section>
@@ -1470,6 +1534,190 @@ REF.QUICK = [
   ['XP', 'Recovered treasure outside a village: each crow gains total gc value / number of players. Applies after the next rest. Not for bought, crafted, stolen-from-innocents, or ally-owned items.']
 ];
 
+/* ------------------------------------------------------------------ Homebrew (the Workshop tab: ref-homebrew.js)
+ * What a custom creature or piece of equipment can be given: every special ability, attack rider, weapon quality, upgrade,
+ * and enchantment in the rules (creature stat blocks, the Dungeons book, the equipment cards).
+ */
+REF.HB_TYPES = ['Animal', 'Human', 'Blood Creature', 'Undead', 'Angel', 'Demon', 'Plant', 'Unique', 'Other'];
+REF.HB_SIZES = [['T', 'Tiny'], ['S', 'Small'], ['M', 'Medium'], ['L', 'Large'], ['H', 'Huge'], ['G', 'Holy Shit!']];
+/* [name, text (written into the stat block; numbers in it can be edited), uses: [n, 'Rest' | 'Day'] or null, where it comes from].
+   The combat tracker reads some of these words: "At N Stamina or less: +N damage", "Charge: ... +N damage", "edge to grab",
+   "bane to escape", "No dim light penalty", "No darkness or dim light penalty". */
+REF.HB_ABILITIES = [
+  ['No dim light penalty', 'No dim light penalty.', null, 'Bear, cats, deer, dogs, wolves'],
+  ['No darkness or dim light penalty', 'No darkness or dim light penalty.', null, 'Crocodile; every monster'],
+  ['Hurt and dangerous', 'At 15 Stamina or less: +2 damage.', null, 'Bear, Cave Bear'],
+  ['Last stand', 'At 0 Stamina: +2 damage.', null, 'Ape'],
+  ['Charge', 'Charge: moved 4+ squares first: +3 damage.', null, 'Big Cat, Wildcat, Deer'],
+  ['Mounted Charge', 'Mounted Charge: moved 4+ squares before the rider attacks: rider +2 damage.', null, 'War Horse'],
+  ['Pack Hunter', 'Pack Hunter: flanking with another of its kind gives +3 total.', null, 'Wolf, Dire Wolf'],
+  ['Lacerate', 'Lacerate: a T3 that damages Stamina or wounds leaves a laceration until the target regains Stamina; a target taking a maneuver and an action in a turn takes 1 piercing damage per laceration.', null, 'Monitor Lizard, Undead A and B'],
+  ['Grabber', 'Grabber: edge to grab, bane to escape it; maneuver: 2 piercing damage to the grabbed creature.', null, 'Constrictor Snake'],
+  ['Crushing grip', 'While grabbing it can\'t bite others; maneuver: 3 piercing damage to the grabbed creature.', null, 'Crocodile'],
+  ['Squeeze', 'Squeeze (maneuver): 2 piercing damage to each creature it has grabbed.', null, 'Undead C, Giant Scorpion'],
+  ['Drain the grabbed', 'Maneuver: 2 damage to the grabbed creature.', null, 'Blood Creature B'],
+  ['Aerial grabber', 'While flying: edge to grab; bane for others to escape its grab.', null, 'Giant Crow'],
+  ['Vibration Sense', 'Vibration Sense 2 squares (exact location, no penalties).', null, 'Spiders, Giant Scorpion'],
+  ['Heat Sense', 'Heat Sense 2 squares (humans, blood creatures, demons, birds, mammals).', null, 'Snakes'],
+  ['Web', 'Web (action): 3-square area within 1; web has 10 Stamina; Agility RR: grabbed; speed halved until end of next turn; none.', null, 'Giant Spider'],
+  ['Flier', 'Falls if still airborne when it stops flying.', null, 'Chicken'],
+  ['Draft animal', 'Draft: 10 open slots while hauling.', null, 'Draft Horse, Ox, Elephant'],
+  ['Hardy', 'Gets rest benefits without food or water for up to 3 days; starves only after 3 days.', null, 'Camel'],
+  ['Carrier', 'Carries 1 Tiny object (or 1 sheet of paper); a pet can return home on command.', null, 'Crow, Hawk'],
+  ['Drop Attack', 'Drop Attack: falls count as 10 squares shorter; after a fall with no damage, edge on attacks and damage until end of turn.', null, 'Blood Creature A'],
+  ['Formless', 'Fits through 1-inch gaps, never squeezes, can\'t be grabbed or knocked prone.', null, 'Blood Creature C'],
+  ['Leap', 'Leap (maneuver): jump its speed.', null, 'Undead A, B'],
+  ['Hard counters', 'Its counters deal 5 damage.', null, 'Undead B'],
+  ['Extra action', 'Extra action or maneuver each turn.', null, 'Ring Collector, Undead G, H'],
+  ['Ring sense', 'Senses magic rings within 20 squares.', null, 'Ring Collector'],
+  ['Vanish', 'Vanish: teleport 50 miles to a place it has visited.', [1, 'Rest'], 'Ring Collector'],
+  ['Fire Beam', 'Fire Beam (action): 10x2 line within 1, Agility RR: 10; 5; 0 damage.', [1, 'Day'], 'Undead D'],
+  ['Absorb', 'Absorb (maneuver): destroy a human corpse (died <24h) within 2 and its mundane gear; regain 10 Stamina.', null, 'Undead D'],
+  ['Bite Frenzy', 'Bite Frenzy (action): bite each enemy within 1.', [1, 'Day'], 'Undead E'],
+  ['Horrid Gnashing', 'Horrid Gnashing: non-undead with Mind 1 or less starting a turn within 1: bane on all tests until its next turn starts.', null, 'Undead E'],
+  ['Exploding Mote', 'Exploding Mote (action): 4 cube within 10, non-undead Strength RR: 15; 7; 0 damage.', [2, 'Day'], 'Undead F'],
+  ['Glorp Through', 'Glorp Through (maneuver): move its speed, no opportunity attacks, through occupied spaces; 1d6 damage to each occupant whose space it enters; ending in a space slides the occupant to the nearest free space.', [3, 'Day'], 'Undead F'],
+  ['Death burst', 'At 0 Stamina it explodes: 1d10 damage to all within 2.', null, 'Undead F'],
+  ['Insect Breath', 'Insect Breath (action, 1/turn): 5 cube within 1, enemies Agility RR: 20; 10; 0 damage.', [3, 'Day'], 'Undead G'],
+  ['Rise!', 'Rise!: humans it kills rise as undead A in 1d6 rounds.', null, 'Undead G'],
+  ['Whirlwind', 'Whirlwind (action, 1/turn): move its speed, no opportunity attacks; each enemy within 2 at the start, end, or during takes 1d10.', [3, 'Day'], 'Undead H'],
+  ['Damned Shriek', 'Damned Shriek (maneuver, 1/turn): enemies within 5 Mind RR: prone and vulnerable; prone; none.', [2, 'Day'], 'Undead H'],
+  ['Fire Bomb', 'Fire Bomb (action): throw 10 squares, 3 cube, Agility RR: 10; 5; 0 damage.', null, 'Alchemist'],
+  ['Split Shot', 'Split Shot: 2 arrows, 2 targets.', null, 'Archer (P10)'],
+  ['Pummeling', 'Pummeling: T3 pushes Medium or smaller 1; crit knocks prone.', null, 'Blacksmith'],
+  ['Jumper', 'Jumper: its teleports +1 square.', null, 'Conjurer'],
+  ['Elemental power', 'Its damaging elemental spells +1 damage.', null, 'Elementalist'],
+  ['Material Transfer', 'Material Transfer (rest activity): two weapons or armor craftable from the same materials but made of different ones swap materials.', null, 'Enchanter'],
+  ['Pathfinder', 'Travel role tests: roll twice, choose.', null, 'Guide'],
+  ['Lasting illusions', 'Its UD-duration illusions +1 UD.', null, 'Illusionist'],
+  ['Lasting alterations', 'Its UD-duration alterations +1 UD.', null, 'Transmuter'],
+  ['Healer', 'Its benefaction healing +1 Stamina.', null, 'Priest'],
+  ['Lecture', 'Lore-book study shares its benefit with up to 2 other resting humans.', null, 'Sage'],
+  ['Disengage', 'Disengage (+1 Shift).', null, 'Thieves, Torchbearer, Sword Warriors'],
+  ['Sneaky', 'Hide, sneak, and pick lock unarmored: roll twice, choose.', null, 'Thieves'],
+  ['Slippery', 'Agility RRs: roll twice, choose.', null, 'Thief (P9)'],
+  ['Torch keeper', 'A torch it holds has max UD 2.', null, 'Torchbearer'],
+  ['Trapper', 'Others take a bane on RRs against its terrain effects.', null, 'Trapper'],
+  ['Spinning Shaft', 'Spinning Shaft: a T3 also deals 2 damage to another target in range.', null, 'Pike Warriors'],
+  ['Interposing Arm', 'Interposing Arm (reaction): a creature within 1 is hit while it wields a shield: the damage goes to its shield.', null, 'Sword Warriors'],
+  ['Slug tail and compound eyes', 'Lower body is a slug tail (speed -2); compound eyes: no darkness or dim light penalty.', null, 'Lisbeth (Dungeons book); the blood concoction'],
+  ['Cannot be surprised', 'Can\'t be surprised.', null, 'Ref\'s call']
+];
+/* Words an attack can carry after its damage (the combat tracker reads most of them: conditions by tier, grabs, crits, lacerate). */
+REF.HB_ATTACK_NOTES = ['2 targets', 'T3 prone', 'T3 weakened', 'T2 weakened; T3 vulnerable and weakened', 'T3 vs Medium or smaller: grabbed',
+  'T3 vs Medium or smaller: prone', 'T3 vs Medium or smaller: grabbed (up to 2)', 'Lacerate on T3', 'Lacerate on any hit', 'damage: weakened',
+  '+2 damage vs a creature it has grabbed', '+2 while it has anyone grabbed', 'ignores cover', 'crits on 18-20; crit = 16 damage',
+  'kill: victim explodes, 1d6 to all within 1', 'vertical slide 3 (T2) or 5 (T3)', 'each metal armor/sword/shield of a damaged creature -5 AD'];
+
+/* Equipment. Kinds the Workshop makes, with the inventory category (src/game-data.js cat) each becomes. */
+REF.HB_KINDS = [['weapon', 'Weapon'], ['armor', 'Armor (a suit)'], ['shield', 'Shield'], ['ammo', 'Ammunition'], ['gear', 'Gear'], ['alchemy', 'Alchemy item'],
+  ['magic', 'Magic item'], ['spell', 'Spellbook'], ['material', 'Crafting material'], ['treasure', 'Treasure (art or gem)'], ['vehicle', 'Vehicle']];
+REF.HB_GEAR_CATS = [['misc', 'General'], ['tool', 'Tool'], ['light', 'Light source'], ['bulky', 'Bulky (2+ slots)'], ['trap', 'Trap'], ['food', 'Food'], ['purse', 'Purse'], ['book', 'Lore book']];
+REF.HB_WEAPON_TYPES = ['Bashing', 'Chopping', 'Slashing', 'Stabbing', 'Bow', 'Unarmed'];
+/* [name, text, takes a number (Parry X)] */
+REF.HB_QUALITIES = [
+  ['Brutal', 'A crit deals double damage.'],
+  ['Cumbersome', 'Takes 1 slot on the belt or in the pack, but needs 2 hands to wield.'],
+  ['Disengage', 'Shift +1 square (stacks with a second such weapon).'],
+  ['Dismember', 'A crit removes a limb (d6: 1-2 arm, 3-4 leg, 5 attacker\'s choice, 6 head: dies). No discernible anatomy: double crit damage instead.'],
+  ['Light', 'A melee hit while wielding two light weapons adds the other weapon\'s T2 damage (without A or S).'],
+  ['Parry', 'While wielded it absorbs damage like a shield with AD X; at 0 AD the weapon deals -1 damage; Repair Armor repairs it.', true],
+  ['Pummeling', 'T3 against your size or smaller: push 1; a crit against your size or smaller: prone.'],
+  ['Reload', 'A maneuver to load 1 ammo before each attack.'],
+  ['Ignores cover', 'Attacks with it ignore cover.']
+];
+/* Metal upgrades (weapons and ammo; not bows or unarmed): [name, T2 bonus, T3 bonus, price, Blacksmithing uses, materials, goal]. */
+REF.HB_METAL = [['Steel', 1, 1, 500, 1, '3 treated iron bars', 30], ['Archmage Obsidian', 1, 2, 2500, 2, '3 archmage obsidian bars', 155],
+  ['Necromancer Silver', 1, 3, 5000, 3, '3 necromancer silver bars', 310], ['Star Diamond', 1, 4, 10000, 4, '3 star diamond bars', 625],
+  ['Elemental Essence', 2, 5, 15000, 4, '5 elemental parts', 935]];
+/* Wood upgrades (bows): [name, range bonus, price, uses, materials, goal]. */
+REF.HB_WOOD = [['Yew', 1, 375, 1, '1 yew log', 15], ['Archmage Willow', 2, 1875, 2, '1 archmage willow log', 95], ['Necromancer Deathtree', 3, 3750, 3, '1 necromancer deathtree log', 185],
+  ['Starwood', 4, 7500, 4, '1 starwood log', 375], ['Elemental Essence (Elemental Tree)', 5, 11250, 4, '5 elemental parts', 560]];
+/* Armor: base suits and their upgrades: { type: [base AD, slots, price, materials, goal, upgrades [name, AD bonus, price, uses, materials, goal]] }. */
+REF.HB_ARMOR = {
+  Light: [5, 2, 50, '20 animal parts', 10, [['Bloodhide', 4, 500, 1, '10 blood creature parts', 25], ['Undead Bone', 8, 2500, 2, '10 undead parts', 125], ['Demon Hide', 12, 5000, 3, '10 demon parts', 250],
+    ['Angel Hide', 16, 10000, 4, '10 angel parts', 500], ['Elemental Essence', 20, 15000, 4, '10 elemental parts', 750]]],
+  Medium: [10, 3, 150, '4 iron bars', 30, [['Steel', 4, 625, 1, '5 treated iron bars', 30], ['Archmage Obsidian', 8, 3125, 2, '5 archmage obsidian bars', 155], ['Necromancer Silver', 12, 6250, 3, '5 necromancer silver bars', 310],
+    ['Star Diamond', 16, 12500, 4, '5 star diamond bars', 625], ['Elemental Essence', 20, 18750, 4, '10 elemental parts', 935]]],
+  Heavy: [15, 4, 400, '9 iron bars', 80, [['Steel', 4, 750, 1, '10 treated iron bars', 35], ['Archmage Obsidian', 8, 3750, 2, '10 archmage obsidian bars', 185], ['Necromancer Silver', 12, 7500, 3, '10 necromancer silver bars', 375],
+    ['Star Diamond', 16, 15000, 4, '10 star diamond bars', 750], ['Elemental Essence', 20, 22500, 4, '10 elemental parts', 1125]]],
+  Shield: [5, 1, 15, '2 iron bars', 15, [['Steel', 2, 375, 1, '3 treated iron bars', 15], ['Archmage Obsidian', 4, 1875, 2, '3 archmage obsidian bars', 95], ['Necromancer Silver', 6, 3750, 3, '3 necromancer silver bars', 185],
+    ['Star Diamond', 8, 7500, 4, '3 star diamond bars', 375], ['Elemental Essence', 10, 11250, 4, '5 elemental parts', 560]]]
+};
+/* Armor enchantments: [name, price, Enchanting uses, 'Suit' | 'Shield' | 'Both', materials, goal, effect]. Total uses on one item: 4 at most. */
+REF.HB_ARMOR_ENCH = [
+  ['Banishing', 5000, 3, 'Both', '10 undead parts', 250, 'When hit by a melee attack, reaction: push the attacker 1d6; if the attacker crits against you, you fly up 1d6 x 10 ft, then fall (no reaction).'],
+  ['Climbing', 7500, 4, 'Suit', '20 plant parts', 375, 'Climb speed equal to speed; knocked prone while climbing: you fall, and it is off until the end of the DT.'],
+  ['Dancing', 5000, 3, 'Shield', '10 angel parts', 250, 'Maneuver: the shield floats and protects you (still wielded, hand free) until the end of the DT; an attacker\'s crit can grab it; once per rest.'],
+  ['Deep', 3000, 2, 'Suit', '10 blood creature parts', 150, 'Swim speed equal to speed; can\'t suffocate; falls deal +1d6.'],
+  ['Demon\'s Head', 1000, 1, 'Shield', '5 demon parts', 50, 'Your counters deal +A or S damage; you take +1 damage from counters.'],
+  ['Feather', 1000, 1, 'Suit', '5 plant parts', 50, 'Fall damage -3d6; forced moves on you +1 square.'],
+  ['Flying', 7500, 4, 'Shield', '20 angel parts', 375, 'Maneuver: place it and hover; a Medium or smaller rider gets a fly speed equal to speed until the end of the DT or 0 AD; attacks from below hit the shield first; once per rest.'],
+  ['Glow', 1000, 1, 'Both', '5 undead parts', 50, 'Maneuver: glows 5/5, 2 UD (recharge on rest), can\'t be turned off; a doom while it is available triggers it.'],
+  ['Heavy', 500, 1, 'Suit', '5 undead parts', 25, 'Forced moves on you -1; standing up from prone takes an action.'],
+  ['Luring', 1000, 1, 'Both', '5 angel parts', 50, 'When hit by a melee attack, reaction: slide the attacker 1; if the attacker crits, lose this until the end of the DT and they slide you 1.'],
+  ['Passthrough', 7500, 4, 'Suit', '20 blood creature parts', 375, 'Maneuver: move your speed through mundane walls; ending inside something solid shunts you back, 1d6 P per space; 1 UD (recharge on rest).'],
+  ['Revenge', 10000, 4, 'Suit', '20 demon parts', 500, 'Taking damage gives 1d6 charges; a melee hit spends them all as extra damage; 12+ charges: all spent as P damage to you; charges vanish at the end of the DT.'],
+  ['Silent', 1000, 1, 'Suit', '5 undead parts', 50, '+1 on hide and sneak; a T1 on hide or sneak makes you weakened.'],
+  ['Slick', 1000, 1, 'Suit', '5 blood creature parts', 50, 'Shift +1 square, +1 to Escape Grab; a doom on an Agility or Strength test knocks you prone.'],
+  ['Speedy', 5000, 3, 'Suit', '10 angel parts', 250, 'Speed +1; a crit against you sets your speed to 0 until the end of your next turn.'],
+  ['Spell-Storing', 1000, 1, 'Both', '5 plant parts', 50, 'Rest activity: touch a spellbook to store it; cast it once as if holding it; a doom on any test while carrying it casts it (the Ref picks targets).'],
+  ['Sustaining', 5000, 3, 'Suit', '10 plant parts', 250, 'No need to eat for starvation or rests; if you die in it, it consumes your hand and belt items.'],
+  ['Telepathic Node', 2000, 2, 'Suit', '5 angel parts', 100, 'Rest activity: link up to 5 willing resting humans; while worn they are telepathic with each other; a linked creature dying deals 1d10 P to the others (2d10 P if you die).'],
+  ['Victory', 5000, 3, 'Suit', '10 demon parts', 250, 'Killing a creature makes you blessed; while you have a wound you can\'t be blessed.'],
+  ['Waterwalking', 500, 1, 'Suit', '5 blood creature parts', 25, 'Walk on liquid; prone on liquid: off until the end of the DT and -2 on swim tests.']
+];
+/* Weapon enchantments: [name, price, Enchanting uses, materials, goal, effect, 'bow' | 'nobow' | '']. Total uses on one weapon: 4 at most. */
+REF.HB_WEAPON_ENCH = [
+  ['Absorbing', 500, 1, '5 plant parts', 25, 'A crit against a creature: this turn, make one of its stat-block attacks with its stats; a doom: can\'t attack with the weapon until the end of your next turn.', ''],
+  ['Dancing', 5000, 3, '10 angel parts', 250, 'Maneuver: it floats and fights for you (still wielded, hands free) until the end of the DT; stops if more than 1 square away or an attacker crits against you; once per rest.', ''],
+  ['Defending', 1000, 1, '10 undead parts', 50, 'Gains Parry 5 (or +5); at 0 AD it deals -2 damage.', ''],
+  ['Exploding', 2000, 2, '5 blood creature parts', 100, 'A kill makes the victim explode: 1d6 to each creature within 1; a doom: the Ref destroys a mundane item you carry.', ''],
+  ['Flaming', 5000, 3, '10 demon parts', 250, 'Maneuver: ignite (+2 damage, light 5/5); maneuver: put it out; a doom: you take 1d10 and the flame is out until the end of the DT.', ''],
+  ['Frosty', 4000, 2, '10 demon parts', 200, 'A T3 against a creature: its speed -1 (not below 2); a doom: your speed is 2 until the end of the DT.', ''],
+  ['Gashing', 10000, 4, '20 demon parts', 500, 'A T3 against a creature: a bleeding gash, 1d6 P at the start of its turns until magic healing or a gash roll of 6; a doom: you get a gash.', ''],
+  ['Hewing', 7500, 4, '20 angel parts', 375, 'Action: make a hole in a wall, floor, or ceiling, 1d10 ft around and 1d10 ft deep; 1 UD (recharge on rest); at 0 UD you are vulnerable.', 'nobow'],
+  ['Hungry', 5000, 3, '10 undead parts', 250, 'A kill: +3 AD until the end of the DT; wielding it through a combat without a kill: 1d6 P to you.', ''],
+  ['Impact', 1000, 1, '5 undead parts', 50, 'A T3 with no forced move: push 1 (a forced move already: +1 square); a doom: the Ref slides you 1d10.', ''],
+  ['Infinity', 5000, 3, '10 angel parts', 250, 'Unloaded, it makes phantom ammo (-1 damage).', 'bow'],
+  ['Lightning', 2000, 2, '5 angel parts', 100, 'On a hit, a second target within 3 of the first takes the same damage; 1 UD (recharge on rest); at 0 UD you are weakened.', ''],
+  ['Poisoning', 2000, 2, '5 blood creature parts', 100, 'Maneuver: drip poison (1 UD, recharge on rest): the next hit makes the target weakened; a miss makes you vulnerable.', ''],
+  ['Raging', 1000, 1, '5 demon parts', 50, 'A kill, reaction: rage until the end of the DT (+2 damage with it, +1 speed while wielding); when it ends you are weakened.', ''],
+  ['Returning', 7500, 4, '20 plant parts', 375, 'Ranged range +5; it returns to your hand after a ranged attack; a ranged doom: it deals its T3 damage to you.', 'nobow'],
+  ['Slaying', 1000, 1, '5 parts of the chosen type', 50, '+1 on attacks against the chosen creature type, -1 against others; one per weapon.', ''],
+  ['Sworn Foe', 2000, 2, '5 undead parts', 100, 'Maneuver: choose a creature within 10: +2 damage against it; if it counters you, you take +2.', ''],
+  ['Teleporting', 10000, 4, '20 angel parts', 500, 'Dealing damage gives 1d6 charges; maneuver: spend them all to teleport that many squares; 12+ charges: all spent as P damage to you.', ''],
+  ['Vicious', 500, 1, '5 undead parts', 25, 'A crit deals +1d10 damage; a doom: you take 1d10 P.', ''],
+  ['Weakening', 7500, 4, '20 plant parts', 375, 'Two T3 hits on the same creature before the end of your next turn make it weakened; a doom: you are weakened.', '']
+];
+REF.HB_MAGIC_SLOTS = ['', 'Head', 'Neck', 'Waist', 'Arms', 'Finger', 'Feet'];
+REF.HB_UD_TAGS = ['Useless', 'Refuel', 'Rest', 'Activate', 'DT'];
+REF.HB_DISCIPLINES = ['Alteration', 'Benefaction', 'Conjuration', 'Elemental', 'Illusion', 'Necromancy'];
+REF.HB_CAST_TIMES = [['Action', 'Action'], ['Maneuver', 'Maneuver'], ['Reaction', 'Reaction'], ['Out of combat', 'Out of combat (10 min)']];
+REF.HB_SPELL_PRICES = [250, 500, 1000, 2500, 5000, 10000];   // by rank (the playtest prices ranks 0-1; higher ranks are the Ref's call)
+REF.HB_CRAFT_EXP = ['', 'Alchemy', 'Blacksmithing', 'Enchanting'];
+REF.HB_TREASURE_SIZES = [['T', 'Tiny'], ['S', 'Small'], ['M', 'Medium'], ['L', 'Large']];
+
+/* ------------------------------------------------------------------ Environmental effects on the Tabletop (scene.env)
+ * [key, name, rules text, kind of animation]. Toggled on the map; "dark" and "dim" (and smoke) also count in the combat tracker's rolls.
+ */
+REF.ENV = [
+  ['dim', 'Dim light', 'Dim light or light concealment: bane on attacks and on tests to discern or search.', 'dim'],
+  ['dark', 'Darkness', 'Darkness, heavy concealment, or invisible: double bane; against a silently moving creature, guess its square (wrong: automatic miss).', 'dark'],
+  ['smoke', 'Smoke', 'Heavy concealment (as darkness: double bane), thinning to light concealment after 1d6 rounds and gone 1d6 rounds later.', 'smoke'],
+  ['miasma', 'Miasma haze', 'Outdoors only. Resting in the Miasma regains no expertise uses; after each rest in it, each human makes a Mind RR against it.', 'haze'],
+  ['strong', 'Strong Miasma', 'For 24 hours: bane on Miasma RRs; the haze becomes opaque fog; guides, scouts, and trackers take a bane on role tests; a lost group is moved 1d10 hexes.', 'fog'],
+  ['rain', 'Rain', '-1 hex today; whoever carries rations makes a Mind test: lose 1d6+1 rations to mold; lose 1; none.', 'rain'],
+  ['storm', 'Thunderstorm', '-2 hexes today; ration carriers Mind test: lose 2d6; 1d6; none. Guides, scouts, and trackers take a bane on role tests.', 'storm'],
+  ['blizzard', 'Blizzard', '-2 hexes; each hour outside without cold weather gear, a human makes a Strength RR: 4d6 P; 3d6 P; 2d6 P (cumulative -2 per earlier RR). Guides, scouts, and trackers: double bane on role tests.', 'snow'],
+  ['cold', 'Cold snap', 'Each hour outside without cold weather gear, Strength RR: 3d6 P; 2d6 P; 1d6 P (cumulative -2 per earlier RR).', 'frost'],
+  ['heat', 'Heat wave', 'A creature traveling more than 2 hexes today makes a Strength RR: 2d6 P; 1d6 P; none.', 'heat'],
+  ['sand', 'Sandstorm', '-2 hexes today; guides, scouts, and trackers take a double bane on role tests.', 'sand'],
+  ['water', 'Deep water', 'Swimming costs +1 square per square without a swim speed; submerged without a swim speed: bane on Agility and Strength tests. Holding breath: 3 + S rounds, then 1d6 damage each round.', 'water'],
+  ['blood', 'Blood-soaked', 'Blood ankle- to waist-deep (the Blood Library): waders are bloodstained, a bane on sneaking and hiding from blood creatures, and blood creatures are drawn to them.', 'blood'],
+  ['fire', 'Fire and embers', 'Burning oil or a blaze: 1d6 damage to a creature that enters or starts its turn in the flames; burns 1d6 rounds. Undead hate bonfire-size fire.', 'embers']
+];
+
 </script>
 <script>
 /* Generated by ref/build/make_art.py - do not edit. Full-size files live in dist/art/. */
@@ -1950,7 +2198,7 @@ CROWS.NAME_IDEAS = {
   var SQ3 = Math.sqrt(3);
 
   // ------------------------------------------------------------------ scenes and grids
-  var SIZES = { T: 0.5, S: 1, M: 1, L: 2, H: 3 };
+  var SIZES = { T: 0.5, S: 1, M: 1, L: 2, H: 3, G: 4 };
   var KIND_COLOR = { pc: '#4fb6a6', foe: '#c4524a', ally: '#6aa84f', npc: '#d6a93b', obj: '#8a8a93' };
   // The markers around a token for its conditions: [color, letter]. Anything else gets a gray marker with its first letter.
   var COND_STYLE = { Blessed: ['#d9b23c', 'B'], Grabbed: ['#e0782f', 'G'], Prone: ['#8d6a4b', 'P'], Unconscious: ['#6c5fd0', 'U'], Vulnerable: ['#d2455c', 'V'],
@@ -2212,6 +2460,107 @@ CROWS.NAME_IDEAS = {
    * as it opens, walls draw themselves in, doors flash, pins drop, and the camera glides. The view diffs the scene each frame to find these.
    */
   var RM = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  // ------------------------------------------------------------------ the environment's look (REF.ENV keys)
+  /* Each effect draws into the view's weather canvas: (ctx, R: the map's rectangle on screen { x, y, w, h, W, H, g, t, dt }, its own
+     particles (kept between frames), the shared state). Particles live in viewport pixels and wrap around it. Subtle on purpose. */
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function tint(c, R, color) { c.fillStyle = color; c.fillRect(R.x, R.y, R.w, R.h); }
+  function vignette(c, R, color, inner) {
+    var cx = R.x + R.w / 2, cy = R.y + R.h / 2, r = Math.hypot(R.w, R.h) / 2, gr = c.createRadialGradient(cx, cy, r * (inner || .35), cx, cy, r);
+    gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, color); c.fillStyle = gr; c.fillRect(R.x, R.y, R.w, R.h);
+  }
+  function seed(P, n, make) { while (P.length < n) P.push(make(true)); if (P.length > n) P.length = n; }
+  function count(R, per, max) { return Math.min(max, Math.round(R.W * R.H / per)); }
+  function wrap(p, R, pad) {
+    if (p.x < -pad) p.x += R.W + 2 * pad; else if (p.x > R.W + pad) p.x -= R.W + 2 * pad;
+    if (p.y < -pad) p.y += R.H + 2 * pad; else if (p.y > R.H + pad) p.y -= R.H + 2 * pad;
+  }
+  /* Soft drifting blobs (haze, fog, smoke). */
+  function blobs(c, R, P, n, rgb, alpha, size, speed) {
+    seed(P, n, function () { return { x: rnd(0, R.W), y: rnd(0, R.H), r: rnd(.6, 1.2) * size, vx: rnd(.4, 1) * speed, vy: rnd(-.3, .3) * speed, ph: rnd(0, 6.3) }; });
+    P.forEach(function (p) {
+      p.x += p.vx * R.dt; p.y += p.vy * R.dt; wrap(p, R, p.r);
+      var a = alpha * (.75 + .25 * Math.sin(R.t * .4 + p.ph)), gr = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+      gr.addColorStop(0, 'rgba(' + rgb + ',' + a + ')'); gr.addColorStop(1, 'rgba(' + rgb + ',0)');
+      c.fillStyle = gr; c.fillRect(p.x - p.r, p.y - p.r, 2 * p.r, 2 * p.r);
+    });
+  }
+  /* Falling or blowing streaks (rain, sand). */
+  function streaks(c, R, P, n, color, vx, vy, len, width) {
+    seed(P, n, function () { return { x: rnd(0, R.W), y: rnd(0, R.H), s: rnd(.7, 1.3) }; });
+    var sp = Math.hypot(vx, vy), ux = vx / sp, uy = vy / sp;
+    c.strokeStyle = color; c.lineWidth = width; c.lineCap = 'round'; c.beginPath();
+    P.forEach(function (p) {
+      p.x += vx * p.s * R.dt; p.y += vy * p.s * R.dt; wrap(p, R, len);
+      c.moveTo(p.x, p.y); c.lineTo(p.x - ux * len * p.s, p.y - uy * len * p.s);
+    });
+    c.stroke();
+  }
+  /* Round particles (snow, embers). */
+  function flakes(c, R, P, n, make, color) {
+    seed(P, n, make);
+    P.forEach(function (p) {
+      p.x += (p.vx + Math.sin(R.t * p.f + p.ph) * p.sway) * R.dt; p.y += p.vy * R.dt; wrap(p, R, 10);
+      c.globalAlpha = p.a * (p.flick ? .55 + .45 * Math.sin(R.t * p.flick + p.ph) : 1); c.fillStyle = color;
+      c.beginPath(); c.arc(p.x, p.y, p.r, 0, 7); c.fill();
+    });
+    c.globalAlpha = 1;
+  }
+  /* Rings spreading on a surface (water, blood). */
+  function ripples(c, R, P, n, rgb) {
+    seed(P, n, function (first) { return { x: rnd(R.x, R.x + R.w), y: rnd(R.y, R.y + R.h), t0: R.t - (first ? rnd(0, 3) : 0), dur: rnd(2.2, 3.6), r: rnd(.5, 1.1) * Math.max(14, R.g) }; });
+    for (var i = 0; i < P.length; i++) {
+      var p = P[i], k = (R.t - p.t0) / p.dur;
+      if (k >= 1 || k < 0) { P[i] = { x: rnd(R.x, R.x + R.w), y: rnd(R.y, R.y + R.h), t0: R.t, dur: rnd(2.2, 3.6), r: rnd(.5, 1.1) * Math.max(14, R.g) }; continue; }
+      c.strokeStyle = 'rgba(' + rgb + ',' + (.28 * (1 - k)) + ')'; c.lineWidth = 1.5;
+      c.beginPath(); c.ellipse(p.x, p.y, p.r * k + 2, (p.r * k + 2) * .45, 0, 0, 7); c.stroke();
+    }
+  }
+  var ENV_FX = {
+    dim: function (c, R) { tint(c, R, 'rgba(12,14,34,.16)'); vignette(c, R, 'rgba(6,6,18,.35)'); },
+    dark: function (c, R) { tint(c, R, 'rgba(2,2,10,' + (.36 + .03 * Math.sin(R.t * .7)) + ')'); vignette(c, R, 'rgba(0,0,6,.6)', .2); },
+    smoke: function (c, R, P) { tint(c, R, 'rgba(70,70,72,.12)'); blobs(c, R, P, count(R, 60000, 26), '150,150,155', .22, Math.max(120, R.g * 3), 14); },
+    miasma: function (c, R, P) { tint(c, R, 'rgba(110,128,96,.07)'); blobs(c, R, P, count(R, 90000, 18), '140,160,120', .12, Math.max(160, R.g * 4), 9); },
+    strong: function (c, R, P) { tint(c, R, 'rgba(150,158,150,.2)'); blobs(c, R, P, count(R, 45000, 34), '185,190,182', .26, Math.max(170, R.g * 4), 12); },
+    rain: function (c, R, P) { tint(c, R, 'rgba(30,45,70,.08)'); streaks(c, R, P, count(R, 2600, 420), 'rgba(175,195,225,.32)', -90, 640, 16, 1); },
+    storm: function (c, R, P, S) {
+      tint(c, R, 'rgba(18,24,44,.16)'); streaks(c, R, P, count(R, 1500, 700), 'rgba(185,200,230,.38)', -220, 820, 20, 1.1);
+      if (R.dt && !S.next) S.next = R.t + rnd(5, 12);
+      if (R.dt && R.t >= S.next) { S.flash = R.t; S.next = R.t + rnd(6, 15); }
+      var k = R.t - S.flash;
+      if (k >= 0 && k < .6) { var a = k < .08 ? .3 : k < .16 ? .05 : k < .26 ? .22 : .22 * (1 - (k - .26) / .34); tint(c, R, 'rgba(230,236,255,' + Math.max(0, a) + ')'); }
+    },
+    blizzard: function (c, R, P) {
+      tint(c, R, 'rgba(225,232,240,.13)');
+      flakes(c, R, P, count(R, 2200, 520), function () { return { x: rnd(0, R.W), y: rnd(0, R.H), vx: rnd(260, 420), vy: rnd(60, 140), r: rnd(.8, 2.2), a: rnd(.5, .9), sway: 30, f: rnd(1, 3), ph: rnd(0, 6.3) }; }, '#f4f8ff');
+    },
+    cold: function (c, R, P) {
+      vignette(c, R, 'rgba(170,215,255,.32)', .45);
+      flakes(c, R, P, count(R, 9000, 140), function () { return { x: rnd(0, R.W), y: rnd(0, R.H), vx: rnd(-8, 12), vy: rnd(18, 40), r: rnd(.8, 1.8), a: rnd(.45, .8), sway: 14, f: rnd(.5, 1.5), ph: rnd(0, 6.3) }; }, '#eef6ff');
+    },
+    heat: function (c, R) {
+      tint(c, R, 'rgba(255,150,60,.07)'); vignette(c, R, 'rgba(255,120,30,.16)', .5);
+      var step = Math.max(34, R.h / 12); c.strokeStyle = 'rgba(255,235,200,.035)'; c.lineWidth = Math.max(2, step * .18);
+      for (var y = R.y + R.h - ((R.t * 22) % step); y > R.y - step; y -= step) {
+        c.beginPath();
+        for (var x = R.x; x <= R.x + R.w; x += 18) c.lineTo(x, y + Math.sin(x / 55 + R.t * 2 + y / 40) * 4);
+        c.stroke();
+      }
+    },
+    sand: function (c, R, P) {
+      tint(c, R, 'rgba(196,154,92,' + (.16 + .04 * Math.sin(R.t * .9)) + ')');
+      streaks(c, R, P, count(R, 2000, 520), 'rgba(222,188,130,.42)', 720, 70, 10, 1.4);
+    },
+    water: function (c, R, P) { tint(c, R, 'rgba(40,96,150,.12)'); ripples(c, R, P, count(R, 50000, 22), '200,230,255'); },
+    blood: function (c, R, P) { tint(c, R, 'rgba(110,8,12,.13)'); ripples(c, R, P, count(R, 60000, 16), '255,120,120'); },
+    fire: function (c, R, P) {
+      var gr = c.createLinearGradient(0, R.y + R.h, 0, R.y + R.h * .55); gr.addColorStop(0, 'rgba(255,110,30,' + (.16 + .04 * Math.sin(R.t * 3)) + ')'); gr.addColorStop(1, 'rgba(255,110,30,0)');
+      c.fillStyle = gr; c.fillRect(R.x, R.y, R.w, R.h);
+      flakes(c, R, P, count(R, 12000, 110), function () { return { x: rnd(0, R.W), y: rnd(0, R.H), vx: rnd(-10, 10), vy: rnd(-70, -30), r: rnd(.8, 2), a: rnd(.6, 1), sway: 22, f: rnd(1, 3), ph: rnd(0, 6.3), flick: rnd(6, 14) }; }, '#ffb35c');
+    }
+  };
+  T.ENV_FX = Object.keys(ENV_FX);
   function ease(k) { return k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; }
   function easeOut(k) { return 1 - Math.pow(1 - k, 3); }
   function backOut(k) { var c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); }
@@ -2229,6 +2578,7 @@ CROWS.NAME_IDEAS = {
       primed: false, intro: 0, wallSeen: {}, wallT: {}, pinSeen: {}, pinT: {}, selT0: 0, lastT: 0, busy: false };
     cv.className = 'vtt-canvas'; cv.tabIndex = 0; cv.style.touchAction = 'none';
     host.appendChild(cv);
+    var wx = document.createElement('canvas'), wctx = wx.getContext('2d'); wx.className = 'vtt-weather'; wx.setAttribute('aria-hidden', 'true'); host.appendChild(wx);
     var tip = document.createElement('div'); tip.className = 'vtt-ttip'; tip.setAttribute('role', 'tooltip'); tip.hidden = true; host.appendChild(tip);
 
     function sc() { return o.scene(); }
@@ -2239,6 +2589,7 @@ CROWS.NAME_IDEAS = {
       V.size = { w: Math.max(100, r.width), h: Math.max(100, r.height) }; V.dpr = dpr;
       if (V.fitPending && r.width >= 50) { V.fitPending = false; setTimeout(fit, 0); }
       cv.width = Math.round(V.size.w * dpr); cv.height = Math.round(V.size.h * dpr); cv.style.width = V.size.w + 'px'; cv.style.height = V.size.h + 'px';
+      wx.width = cv.width; wx.height = cv.height; wx.style.width = cv.style.width; wx.style.height = cv.style.height; Wx.parts = {};
       redraw();
     }
     /* Move the camera so world point (cx, cy) is in the middle at zoom z, gliding over ms (zoom eases in log space so it feels even). */
@@ -2532,6 +2883,33 @@ CROWS.NAME_IDEAS = {
       V.lastT = now;
       if (o.onFrame) o.onFrame();
       if (V.busy) redraw();
+      weather();
+    }
+    /*
+     * The scene's environment (scene.env: { rain: true, ... }, keys from REF.ENV) on a canvas over the map: tints, haze, and particles,
+     * drawn in screen space and clipped to the map. It animates on its own frames while anything is on, so the map itself isn't redrawn;
+     * with reduced motion it is only the still tints.
+     */
+    var Wx = { raf: 0, last: 0, parts: {}, flash: 0, next: 0, drawn: false };
+    function envKeys(s) { var e = s && s.env; return e ? Object.keys(e).filter(function (k) { return e[k] && ENV_FX[k]; }) : []; }
+    function weather() {
+      var s = sc(), keys = envKeys(s);
+      if (!keys.length) { if (Wx.drawn) { wctx.setTransform(1, 0, 0, 1, 0, 0); wctx.clearRect(0, 0, wx.width, wx.height); Wx.drawn = false; } return; }
+      if (!Wx.raf) Wx.raf = requestAnimationFrame(function () { Wx.raf = 0; drawWeather(); });
+    }
+    function drawWeather() {
+      var s = sc(), keys = envKeys(s), now = Date.now(), dt = Math.min(.1, Wx.last ? (now - Wx.last) / 1000 : 0);
+      Wx.last = now;
+      wctx.setTransform(V.dpr, 0, 0, V.dpr, 0, 0); wctx.clearRect(0, 0, V.size.w, V.size.h);
+      if (!keys.length || document.hidden) { Wx.drawn = false; Wx.last = 0; return; }
+      var x0 = Math.max(0, -cam.x * cam.z), y0 = Math.max(0, -cam.y * cam.z), x1 = Math.min(V.size.w, (s.w - cam.x) * cam.z), y1 = Math.min(V.size.h, (s.h - cam.y) * cam.z);
+      if (x1 <= x0 || y1 <= y0) return;
+      var R = { x: x0, y: y0, w: x1 - x0, h: y1 - y0, W: V.size.w, H: V.size.h, z: cam.z, g: s.g * cam.z, t: now / 1000, dt: RM ? 0 : dt };
+      wctx.save(); wctx.beginPath(); wctx.rect(R.x, R.y, R.w, R.h); wctx.clip();
+      keys.forEach(function (k) { ENV_FX[k](wctx, R, Wx.parts[k] || (Wx.parts[k] = []), Wx); });
+      wctx.restore();
+      Wx.drawn = true;
+      if (!RM) Wx.raf = requestAnimationFrame(function () { Wx.raf = 0; drawWeather(); });
     }
     function overlays(s, now) {
       var d = V.drag;
@@ -2827,6 +3205,7 @@ CROWS.NAME_IDEAS = {
     target: 'M12 12m-7 0a7 7 0 1 0 14 0a7 7 0 1 0-14 0 M12 2v4 M12 18v4 M2 12h4 M18 12h4', check: 'M5 12l5 5 9-10',
     map: 'M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z M9 4v14 M15 6v14', list: 'M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01',
     day: 'M4 5h16v16H4z M4 10h16 M9 3v4 M15 3v4', go: 'M5 12h14 M13 6l6 6-6 6', cond: 'M12 2l2.6 6.4L21 9l-5 4.4L17.5 20 12 16.6 6.5 20 8 13.4 3 9l6.4-.6z',
+    cloud: 'M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 9.6 4.2 4.2 0 0 0 7 18z M8 21l1-1.5 M12 21l1-1.5 M16 21l1-1.5', save: 'M5 3h11l3 3v15H5z M8 3v5h7V3 M8 21v-7h8v7',
     beast: 'M6 3l2 7 M12 2v8 M18 3l-2 7 M5 15c0 3.9 3.1 6 7 6s7-2.1 7-6-3.1-4-7-4-7 .1-7 4z', mine: 'M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0 M12 2v5 M12 17v5 M2 12h5 M17 12h5'
   };
   /* An icon as an inline SVG string (it takes the text color). */
@@ -3075,6 +3454,33 @@ CROWS.NAME_IDEAS = {
 
   function clone(v) { return JSON.parse(JSON.stringify(v)); }
   function item(key) { return CROWS.ITEMS[key] || { cat: 'misc', st: 1, sl: 1, gc: 0, txt: '' }; }
+  /*
+   * Equipment the Ref made in the Workshop (ref-homebrew.js): its card travels with the fight (combat `defs`) and is kept on the
+   * character that got one (character.hb: { name: card }), so the sheet knows its slots, stack, and text. A card is checked here, and
+   * can never replace a card from the rules.
+   */
+  var OFFICIAL = {}; Object.keys(CROWS.ITEMS).forEach(function (k) { OFFICIAL[k] = true; });
+  var ITEM_CATS = ['weapon', 'armor', 'shield', 'ammo', 'misc', 'tool', 'light', 'bulky', 'trap', 'food', 'purse', 'book', 'consumable', 'magic', 'spell'];
+  function isOfficial(key) { return !!OFFICIAL[key]; }
+  function cleanItem(d) {
+    if (!d || typeof d !== 'object') return null;
+    function n(v, lo, hi, dflt) { v = Math.round(+v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dflt; }
+    var o = { cat: ITEM_CATS.indexOf(d.cat) >= 0 ? d.cat : 'misc', st: n(d.st, 1, 99, 1), sl: n(d.sl, 1, 4, 1), gc: n(d.gc, 0, 1e7, 0), txt: String(d.txt || '').slice(0, 1500), custom: true };
+    if (d.hands === 2) o.hands = 2;
+    if (o.cat === 'armor' || o.cat === 'shield') o.ad = n(d.ad, 0, 99, 0);
+    if (typeof d.wt === 'string' && /^(Bashing|Bow|Chopping|Slashing|Stabbing|Unarmed)$/.test(d.wt)) o.wt = d.wt;
+    if (d.light) o.light = true;
+    if (d.atk) o.atk = true;
+    return o;
+  }
+  /* Add these cards ({ name: card }) to CROWS.ITEMS (never over a card from the rules). Returns the names added. */
+  function registerItems(map) {
+    var out = [];
+    if (!map || typeof map !== 'object') return out;
+    Object.keys(map).forEach(function (k) { if (isOfficial(k) || !k || k.length > 80) return; var c = cleanItem(map[k]); if (c) { CROWS.ITEMS[k] = c; out.push(k); } });
+    return out;
+  }
+  function unregisterItem(key) { if (!isOfficial(key)) delete CROWS.ITEMS[key]; }
   function bg(c) { return CROWS.BACKGROUNDS[c.bg]; }
 
   // ------------------------------------------------------------------ derived numbers
@@ -3440,7 +3846,7 @@ CROWS.NAME_IDEAS = {
     return msgs;
   }
 
-  window.CrowsSheet = { CONDITIONS: CONDITIONS, MAGIC_SLOTS: MAGIC_SLOTS, item: item, bg: bg, characteristics: characteristics,
+  window.CrowsSheet = { CONDITIONS: CONDITIONS, MAGIC_SLOTS: MAGIC_SLOTS, item: item, isOfficial: isOfficial, cleanItem: cleanItem, registerItems: registerItems, unregisterItem: unregisterItem, bg: bg, characteristics: characteristics,
     expertiseUses: expertiseUses, staminaMax: staminaMax, curStamina: curStamina, setStamina: setStamina, adMax: adMax, adNow: adNow,
     woundCount: woundCount, armorInfo: armorInfo, freshPlay: freshPlay, normalizePlay: normalizePlay, addLog: addLog,
     carried: carried, inHands: inHands, cardById: cardById, findCarried: findCarried, packOcc: packOcc, udInfo: udInfo, udNow: udNow,
@@ -4835,7 +5241,7 @@ CROWS.NAME_IDEAS = {
       releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderMaps = f('renderMaps'), renderEncounters = f('renderEncounters'),
       renderParty = f('renderParty'), renderPractice = f('renderPractice'), renderPrefs = f('renderPrefs'), renderVtt = f('renderVtt'), renderRules = f('renderRules'), renderSession = f('renderSession'),
       renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
-      renderWorld = f('renderWorld'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
+      renderWorld = f('renderWorld'), renderWorkshop = f('renderWorkshop'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
   var state = A.state; A.share('state', function (v) { state = v; });
   var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
@@ -4843,10 +5249,10 @@ CROWS.NAME_IDEAS = {
   var TAB_KEY = 'crows-pt2-ref-tab';
   // The tabs in their groups, shown with the group's name in the tab bar: [group, [[tab id, label], ...]].
   var TAB_GROUPS = [['Run', [['session', 'Session'], ['vtt', 'Tabletop'], ['encounters', 'Encounters'], ['travel', 'Travel']]],
-    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World'], ['prefs', 'Preferences']]],
+    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World'], ['workshop', 'Workshop'], ['prefs', 'Preferences']]],
     ['Reference', [['bestiary', 'Bestiary'], ['maps', 'Maps'], ['tables', 'Tables'], ['rules', 'Rules']]]];
   var TABS = TAB_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
-  var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge' };
+  var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge', G: 'Holy Shit' };
   var EB_LABELS = [[-2, 'DB'], [-1, 'Bane'], [0, '—'], [1, 'Edge'], [2, 'DE']];
   /*
    * Campaign preferences (state.prefs): Tabletop Mode, and the functions the Ref turned off (prefs.off[key] = true). Everything is on
@@ -4859,6 +5265,7 @@ CROWS.NAME_IDEAS = {
     ['travel', 'Travel tab', 'Overland days, pace, weather, travel encounters, and Miasma.', 'Tabs', { tab: 'travel' }],
     ['village', 'Village tab', 'The village, its institutions, and the crypt.', 'Tabs', { tab: 'village' }],
     ['world', 'World tab', 'Places, NPCs, notes, and session history.', 'Tabs', { tab: 'world' }],
+    ['workshop', 'Workshop tab', 'Your own creatures and equipment (they stay in the Bestiary and the item lists even with the tab off).', 'Tabs', { tab: 'workshop' }],
     ['bestiary', 'Bestiary tab', 'Creature stat blocks.', 'Tabs', { tab: 'bestiary' }],
     ['maps', 'Maps tab', 'The maps.', 'Tabs', { tab: 'maps' }],
     ['tables', 'Tables tab', 'The random tables.', 'Tabs', { tab: 'tables' }],
@@ -4929,6 +5336,8 @@ CROWS.NAME_IDEAS = {
       dice: { mod: 0, net: 0, expr: '3d6', ud: 1 },
       prefs: { tabletop: false, off: {}, playerView: 'map' },
       vtt: { scenes: [], cur: '', shown: false, clean: true },
+      // The Workshop (ref-homebrew.js): the Ref's own creatures and equipment.
+      homebrew: { creatures: [], items: [] },
       // Practice fights on the Tabletop (ref-practice.js): the Ref's choices, the fight under way (with the real one to put back), past results.
       practice: { opts: { n: 4, mix: 'balanced', crows: [], exp: 'new', armor: 'own', tactics: 'focus', foes: 'ref', surprise: 'none', autoApply: true,
         autoRound: true, fallAt: 'dead', pace: 'normal', sims: 20 }, run: null, history: [] }
@@ -5159,7 +5568,7 @@ CROWS.NAME_IDEAS = {
     renderTabbar();
     renderSide();
     if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
-    ({ session: renderSession, vtt: renderVtt, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
+    ({ session: renderSession, vtt: renderVtt, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, workshop: renderWorkshop, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
     applyPrefs();
     tick();
   }
@@ -5296,7 +5705,7 @@ CROWS.NAME_IDEAS = {
       nowStamp = f('nowStamp'), endPractice = f('endPractice'), practiceOn = f('practiceOn'), render = f('render'), renderCombat = f('renderCombat'), rollMerchant = f('rollMerchant'), rollMiasmaTouched = f('rollMiasmaTouched'),
       rollTravelEncounter = f('rollTravelEncounter'), rollTravelers = f('rollTravelers'), rollWildAnimal = f('rollWildAnimal'), S = f('S'),
       save = f('save'), sel = f('sel'), setTab = f('setTab'), test = f('test'), testLine = f('testLine'), today = f('today'),
-      travelResultBox = f('travelResultBox');
+      travelResultBox = f('travelResultBox'), feat = f('feat');
   var $ = A.$, clone = A.clone, d = A.d, el = A.el, plural = A.plural, rollDice = A.rollDice, signed = A.signed, SIZES = A.SIZES, toast = A.toast,
       ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -5490,7 +5899,7 @@ CROWS.NAME_IDEAS = {
 
   function beastSelect(value, onchange) {
     var groups = {};
-    REF.BESTIARY.forEach(function (b) { (groups[b.t] = groups[b.t] || []).push(b.n); });
+    REF.BESTIARY.forEach(function (b) { var g = b.custom ? 'Mine (Workshop)' : b.t; (groups[g] = groups[g] || []).push(b.n); });
     var n = el('select', { class: 'in', 'aria-label': 'Creature', onchange: function () { onchange(this.value); } },
       Object.keys(groups).map(function (g) { return el('optgroup', { label: g }, groups[g].map(function (b) { return el('option', { value: b, text: b }); })); }));
     if (value && !beast(value)) n.insertBefore(el('option', { value: value, text: value }), n.firstChild);
@@ -5628,6 +6037,7 @@ CROWS.NAME_IDEAS = {
         runningEnc() === e ? el('span', { class: 'chip warn', text: 'running' }) : null,
         due ? el('span', { class: 'chip accent', text: 'due this DT' }) : null,
         e.done ? el('span', { class: 'chip ok', text: 'resolved' + (e.outcome ? ': ' + e.outcome.toLowerCase() : '') }) : null,
+        e.layout ? el('span', { class: 'chip', text: 'map layout', title: 'Saved from the Tabletop: the map, where everyone stands, objects, items, and the environment' }) : null,
         el('span', { class: 'enc-sum', text: [encSummary(e), e.mapTitle ? 'map: ' + e.mapTitle : '', e.where, 'session ' + e.session + (e.dt ? ', DT ' + e.dt : '')].filter(Boolean).join(' · ') })]),
       runningEnc() === e ? el('div', { class: 'enc-body' }, [el('p', { class: 'fine' }, ['Running now: its notes and creatures are in the card at the top of this tab. ',
         el('a', { href: '#sec-enc-run', class: 'enc-link', onclick: function (ev) { ev.preventDefault(); $('sec-enc-run').scrollIntoView({ block: 'start' }); }, text: 'Go to the fight' })])]) :
@@ -5639,7 +6049,8 @@ CROWS.NAME_IDEAS = {
         creatures.length ? el('div', { class: 'enc-cre' }, creatures) : el('p', { class: 'fine', text: 'No creatures yet.' }),
         el('div', { class: 'row' }, [btn('Add creature', function () { e.creatures.push({ n: ui.addName || 'Blood Creature A', k: 1, side: 'foe' }); save(); render(); }, 'btn-small btn-ghost')]),
         field('Ref notes', area(e, 'notes', { rows: 2, placeholder: 'Tactics, loot, how it went…' })),
-        el('div', { class: 'row' }, [runEncBtn(e), encCombatBtn(e, 'btn-small btn-ghost'),
+        el('div', { class: 'row' }, [runEncBtn(e), e.layout && feat('vtt') ? btn('Run on the Tabletop', function () { A.runOnTabletop(e); }, 'btn-small', 'Build its saved map again and put everyone where they stood') : null, encCombatBtn(e, 'btn-small btn-ghost'),
+          e.layout ? btn('Forget the map layout', function () { if (!confirm('Forget the saved map layout of ' + (e.name || 'this encounter') + '? Its creatures stay.')) return; delete e.layout; save(); render(); }, 'btn-small btn-ghost') : null,
           due || e.done ? null : btn('Make it due this DT', function () {
             s.pending = { dt: s.dt, text: encSummary(e) || e.name, adds: e.creatures.map(function (c) { return [c.n, c.k, null]; }), encId: e.id };
             log('enc', 'Encounter due this DT: **' + (e.name || 'untitled') + '**.'); save(); render(); toast('Shown in the Dungeon Turn block.');
@@ -6156,7 +6567,7 @@ CROWS.NAME_IDEAS = {
   'use strict';
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var activePCs = f('activePCs'), beast = f('beast'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
+  var activePCs = f('activePCs'), beast = f('beast'), envFor = f('envFor'), beastSelect = f('beastSelect'), btn = f('btn'), card = f('card'), chk = f('chk'),
       clamp = f('clamp'), cloudOn = f('cloudOn'), feat = f('feat'), field = f('field'), greedBonus = f('greedBonus'), hitControls = f('hitControls'), inp = f('inp'),
       int = f('int'), lightbox = f('lightbox'), linkOn = f('linkOn'), log = f('log'), lookup = f('lookup'), more = f('more'), nid = f('nid'), render = f('render'), rich = f('rich'),
       rollInText = f('rollInText'), runningEnc = f('runningEnc'), S = f('S'), save = f('save'), setTab = f('setTab'), sheetOf = f('sheetOf'), sheetOp = f('sheetOp'),
@@ -6175,6 +6586,8 @@ CROWS.NAME_IDEAS = {
       var same = list.filter(function (c) { return c.cref === name; }).length;
       list.push({ id: nid(), kind: side === 'ally' ? 'ally' : 'foe', cref: name, name: name + ' ' + (same + 1), st: b ? b.st : 10, stMax: b ? b.st : 10,
         ad: b ? b.ad : 0, adMax: b ? b.ad : 0, wounds: 0, conds: {}, used: {}, dead: false, note: '', enc: encId });
+      // A Workshop creature carries its equipment (it can drop it, and does when it dies).
+      if (b && b.gear && b.gear.length) list[list.length - 1].items = b.gear.map(function (g) { return newItem(g[0], g[1] || 1, false); });
     }
     save();
   }
@@ -6203,7 +6616,7 @@ CROWS.NAME_IDEAS = {
   }
   function slotsOf(c) { var b = beast(c.cref); return c.kind === 'pc' ? 10 : b && (b.t === 'Human' || b.t === 'Animal') ? b.sl : 0; }
   function byId(id) { return id ? S().combat.list.filter(function (x) { return x.id === id; })[0] || null : null; }
-  var SIZE_ORDER = 'TSMLH';
+  var SIZE_ORDER = 'TSMLHG';
   function sizeOf(x) { var b = beast(x && x.cref); return !x || x.kind === 'pc' || !b ? 'M' : b.sz; }
   /* x is `than`'s size or smaller (than: a creature or a size letter). */
   function noBigger(x, than) { return SIZE_ORDER.indexOf(sizeOf(x)) <= SIZE_ORDER.indexOf(typeof than === 'string' ? than : sizeOf(than)); }
@@ -6324,6 +6737,10 @@ CROWS.NAME_IDEAS = {
     c.prompts = (c.prompts || []).filter(function (p) { return p.round >= c.round; });
     c.assists = (c.assists || []).filter(function (a) { return a.round >= c.round - 1; });
   }
+  /* No penalty in darkness (◐; every monster) or in dim light (⌂), from the stat block's symbols or words. */
+  function seesInDark(b) { return !!b && (/◐|No darkness/.test(b.x || '') || MONSTERS.indexOf(b.t) >= 0); }
+  var MONSTERS = ['Blood Creature', 'Undead', 'Unique', 'Angel', 'Demon', 'Plant'];   // all see in the dark (the Ref book)
+  function seesInDim(b) { return seesInDark(b) || !!b && /⌂|No dim light penalty/.test(b.x || ''); }
   /* Modifiers on a creature's roll against a target: its own conditions, the target's state, and the battlefield (ui.sit). */
   function rollMods(att, t, melee, a) {
     var dice = state.dice, sit = ui.sit || {}, b = beast(att.cref), x = (b && b.x) || '', note = (a && a[5]) || '';
@@ -6344,8 +6761,9 @@ CROWS.NAME_IDEAS = {
     if (sit.flank && melee) { m.e++; m.why.push('flanking'); }
     if (sit.high) { m.e++; m.why.push('high ground'); }
     if (sit.cover && !/ignores cover/.test(note)) { m.b++; m.why.push('cover'); }
-    if (sit.dark && !/◐/.test(x)) { m.b += 2; m.why.push('darkness'); }
-    else if (sit.dim && !/[⌂◐]/.test(x)) { m.b++; m.why.push('dim light'); }
+    var env = envFor(att) || {};   // the Tabletop scene's environment, when it is fighting there
+    if ((sit.dark || env.dark || env.smoke) && !seesInDark(b)) { m.b += 2; m.why.push(sit.dark || env.dark ? 'darkness' : 'smoke'); }
+    else if ((sit.dim || env.dim) && !seesInDim(b)) { m.b++; m.why.push('dim light'); }
     if (sit.adj && !melee) { m.b++; m.why.push('ranged vs adjacent'); }
     if (sit.far > 0 && !melee) { m.bonus -= 2 * sit.far; m.why.push('-' + (2 * sit.far) + ' beyond range'); }
     return m;
@@ -6458,8 +6876,8 @@ CROWS.NAME_IDEAS = {
     if (c.conds.Weakened) { m.b++; m.why.push('weakened'); }
     if (c.conds.Blessed) { m.e++; m.why.push('blessed'); }
     var ch = b ? (kind === 'escape' ? Math.max(b.c[0], b.c[2]) : b.c[2]) : 0;
-    if (kind === 'grab' && /E to grab/.test(x)) { m.e++; m.why.push('good grabber'); }
-    if (kind === 'escape' && /B (to escape|for others to escape)/.test(tx)) { m.b++; m.why.push(t.name + ' holds tight'); }
+    if (kind === 'grab' && /\b(E|edge) to grab/.test(x)) { m.e++; m.why.push('good grabber'); }
+    if (kind === 'escape' && /\b(B|bane) (to escape|for others to escape)/.test(tx)) { m.b++; m.why.push(t.name + ' holds tight'); }
     var r = test(ch + m.bonus, netEdges(m.e, m.b), 19), name = kind === 'grab' ? 'Grab' : kind === 'knockback' ? 'Knockback' : 'Escape Grab';
     var act = { who: c.name, label: name, items: [], applied: false }, res, counters = [];
     if (kind === 'escape') {
@@ -6798,6 +7216,10 @@ CROWS.NAME_IDEAS = {
       prompts: (c.prompts || []).filter(function (p) { return !p.done && p.round === c.round; }),
       assists: c.assists || [],
       feed: (c.feed || []).slice(-25) };
+    // Cards for the Workshop's equipment among them, so the players' sheets know what they pick up.
+    var defs = {};
+    out.items.concat(out.given || []).forEach(function (it) { var k = it.key, card = k && CROWS.ITEMS[k]; if (card && card.custom) defs[k] = card; });
+    if (Object.keys(defs).length) out.defs = defs;
     // Each player gets only their own crow's part (the server keeps the rest from them); a server too old to do that gets none.
     var ex = expertKnows();
     if (live.expertOk && Object.keys(ex).length) out.expert = ex;
@@ -8087,9 +8509,9 @@ CROWS.NAME_IDEAS = {
 
   // ------------------------------------------------------------------ Bestiary tab
   function renderBestiary() {
-    var q = ui.beastQ.toLowerCase(), types = ['Animal', 'Human', 'Blood Creature', 'Undead', 'Unique'];
+    var q = ui.beastQ.toLowerCase(), types = ['Animal', 'Human', 'Blood Creature', 'Undead', 'Unique'].concat(REF.BESTIARY.some(function (b) { return b.custom; }) ? ['Mine'] : []);
     var list = REF.BESTIARY.filter(function (b) {
-      return (!ui.beastType || b.t === ui.beastType) && (!q || (b.n + ' ' + b.x + ' ' + b.atk.map(function (a) { return a[0]; }).join(' ')).toLowerCase().indexOf(q) >= 0);
+      return (!ui.beastType || (ui.beastType === 'Mine' ? b.custom : b.t === ui.beastType)) && (!q || (b.n + ' ' + b.x + ' ' + b.atk.map(function (a) { return a[0]; }).join(' ')).toLowerCase().indexOf(q) >= 0);
     });
     var search = el('input', { type: 'search', class: 'in', placeholder: 'Search creatures…', value: ui.beastQ, 'aria-label': 'Search creatures', oninput: function () { ui.beastQ = this.value; var pos = this.selectionStart; renderBestiary(); var n = $('beast-q'); n.focus(); try { n.setSelectionRange(pos, pos); } catch (e) { /* ignore */ } } });
     search.id = 'beast-q';
@@ -8110,7 +8532,7 @@ CROWS.NAME_IDEAS = {
         lightbox(b.n, [{ label: '', file: art.file }], art.thumb, [{ label: art.custom ? 'Replace art' : 'Use my own art', fn: function () { addCreatureArt(b.n); } }]
           .concat(art.custom ? [{ label: 'Remove my art', fn: function () { removeArt('c:' + b.n); } }] : []));
       } }, [el('img', { src: art.thumb, alt: b.n, loading: 'lazy' })]) : null,
-      el('div', { class: 'b-head' }, [el('span', { class: 'b-name', text: b.n }), el('span', { class: 'chip', text: b.t + ' · P' + b.p })]),
+      el('div', { class: 'b-head' }, [el('span', { class: 'b-name', text: b.n }), b.custom ? el('span', { class: 'chip accent', text: 'Mine', title: 'Made in the Workshop' }) : null, el('span', { class: 'chip', text: b.t + ' · P' + b.p })]),
       el('div', { class: 'b-stats', text: SIZES[b.sz] + ' · Stamina ' + b.st + (b.ad ? ' · AD ' + b.ad : '') + ' · Speed ' + b.spd + (b.sl ? ' · ' + b.sl + ' slots' : '') + (b.rx > 1 ? ' · ' + b.rx + ' reactions' : '') }),
       el('div', { class: 'b-stats', text: 'A ' + signed(b.c[0]) + ' · M ' + signed(b.c[1]) + ' · S ' + signed(b.c[2]) }),
       el('ul', { class: 'b-atk' }, b.atk.map(function (a) { return el('li', null, [el('b', { text: a[0] + ' (' + signed(a[1]) + ') ' }), a[2] + ': ' + a[3] + ' / ' + a[4] + ' dam' + (a[5] ? '; ' + a[5] : '')]); })),
@@ -8118,7 +8540,8 @@ CROWS.NAME_IDEAS = {
       b.x ? el('div', { class: 'b-x', text: b.x }) : null,
       el('div', { class: 'row' }, [inp(n, 'k', { type: 'number', min: 1, max: 30, class: 'tiny', 'aria-label': 'How many' }, { dflt: 1 }),
         btn('Add to combat', function () { addCombatant(b.n, clamp(n.k, 1, 30), 'foe'); log('', 'Added ' + n.k + ' × ' + b.n + ' to combat.'); toast('Added ' + n.k + ' × ' + b.n + '.'); render(); }, 'btn-small'),
-        art ? null : btn('Add art', function () { addCreatureArt(b.n); }, 'btn-small btn-ghost'),
+        art && !(b.custom && !custom.creatures[b.n]) ? null : btn(art ? 'Own art' : 'Add art', function () { addCreatureArt(b.n); }, 'btn-small btn-ghost'),
+        btn(b.custom ? 'Edit' : 'Make a variant', function () { A.workshopOpen(b); }, 'btn-small btn-ghost', b.custom ? 'Change it in the Workshop' : 'Copy it into the Workshop and change anything'),
         b.t === 'Animal' ? el('span', { class: 'fine', text: 'Pet price ' + fmt(REF.PET_PRICES[Math.min(10, b.p)]) + ' gc' }) : null])
     ]);
   }
@@ -8189,9 +8612,12 @@ CROWS.NAME_IDEAS = {
       }).catch(function () { remote = false; local().then(function (all) { all.forEach(addLoaded); if (all.length) render(); }); });
     });
   }
-  function artFor(name) {
+  function artFor(name, deep) {
     var c = custom.creatures[name];
-    return c ? { thumb: c.thumb, file: blobUrl(c), custom: true } : REF.ART.creatures[name] || null;
+    if (c) return { thumb: c.thumb, file: blobUrl(c), custom: true };
+    if (REF.ART.creatures[name]) return REF.ART.creatures[name];
+    var b = !deep && A.beast(name);   // a Workshop creature that looks like another
+    return b && b.custom && b.art && b.art !== name ? artFor(b.art, true) : null;
   }
   /* Choose a picture, shrink it (long side `max` px, under about 1.3 MB, plus a small thumbnail) and hand back { blob, thumb, name }. */
   function pickImage(max, thumbW, done) {
@@ -8559,6 +8985,11 @@ CROWS.NAME_IDEAS = {
  * The Ref sees everything (fog is only a shade); "Player view" shows what the players see. Pressing Show to players publishes the scene with
  * the live fight (publicCombat in ref-combat.js): the fog as a mask, and only the tokens the party can see. Players move their own tokens
  * and ping with combat.act actions (vttAction).
+ * Environmental effects (scene.env, REF.ENV: darkness, rain, a blizzard, the Miasma...) are toggles on the map (the Environment drawer); the
+ * engine animates them, the players see them, and darkness, dim light, and smoke count in the combat tracker's rolls (envFor).
+ * "Save as encounter" keeps the map as a saved encounter: its creatures in e.creatures, and in e.layout the scene (map, grid, walls, pins,
+ * environment), where every token stood, what lay on the ground, and (if asked) the creatures' current vitals. Loading that encounter
+ * builds the scene again (layoutScene) and puts each creature back where it was (loadLayout).
  */
 (function () {
   'use strict';
@@ -8574,8 +9005,8 @@ CROWS.NAME_IDEAS = {
       setTab = f('setTab'), sizeOf = f('sizeOf'), startTimer = f('startTimer'), tabletop = f('tabletop'), travelCalc = f('travelCalc'),
       addPartyToCombat = f('addPartyToCombat'), combatRow = f('combatRow'), diceResult = f('diceResult'), doomOptions = f('doomOptions'), endCombat = f('endCombat'),
       endEncounter = f('endEncounter'), itemsPanel = f('itemsPanel'), livePanel = f('livePanel'), playerView = f('playerView'), setPlayerView = f('setPlayerView'),
-      practiceOn = f('practiceOn'), endPractice = f('endPractice'), rxLeft = f('rxLeft'), sitRow = f('sitRow'), targetOf = f('targetOf'), targetsFor = f('targetsFor'), twoTargets = f('twoTargets');
-  var $ = A.$, el = A.el, S = A.S, toast = A.toast, plural = A.plural, ui = A.ui, clamp = A.clamp, REFD = window.REF;
+      practiceOn = f('practiceOn'), newEncounter = f('newEncounter'), findEncounter = f('findEncounter'), openEncounter = f('openEncounter'), newItem = f('newItem'), onGround = f('onGround'), endPractice = f('endPractice'), rxLeft = f('rxLeft'), sitRow = f('sitRow'), targetOf = f('targetOf'), targetsFor = f('targetsFor'), twoTargets = f('twoTargets');
+  var $ = A.$, el = A.el, S = A.S, toast = A.toast, plural = A.plural, ui = A.ui, clamp = A.clamp, clone = A.clone, REFD = window.REF;
   var state = A.state; A.share('state', function (v) { state = v; });
   var Tbl = window.CrowsTable;
 
@@ -8933,6 +9364,7 @@ CROWS.NAME_IDEAS = {
      left, its creatures on the right (hidden from the players when "Tracker foes start hidden" is on). */
   function loadEncounter(sc, e) {
     if (!e) return;
+    if (e.layout) { loadLayout(e); return; }
     if (e.map) { var ms = sceneForMap(e.map, e.mapTitle); if (ms !== sc) { sc = ms; V().cur = ms.id; U.sig = ''; U.mask = null; } }
     if (runningEnc() !== e && !e.creatures.length) { toast('That encounter has no creatures yet: add them on the Encounters tab.'); return; }
     if (!runEncounter(e, true)) return;
@@ -9032,7 +9464,8 @@ CROWS.NAME_IDEAS = {
     return { id: sc.id, name: sc.name, kind: sc.kind, w: sc.w, h: sc.h, g: sc.g, grid: sc.grid, ox: sc.ox, oy: sc.oy, bg: sc.bg, showGrid: sc.showGrid !== false, unit: sc.unit,
       map: sc.map ? (sc.map.b ? { b: sc.map.b } : { k: sc.map.k }) : null, fog: sc.fog === 'off' ? null : Tbl.packMask(m), tokens: tokens, art: art,
       pins: sc.pins.filter(function (p) { return p.vis; }).map(function (p) { return { id: p.id, x: Math.round(p.x), y: Math.round(p.y), label: p.label, vis: true }; }),
-      pings: (sc.pings || []).slice(-5), move: sc.playerMove !== false, moved: sc.kind === 'travel' ? sc.moved || 0 : null };
+      pings: (sc.pings || []).slice(-5), move: sc.playerMove !== false, moved: sc.kind === 'travel' ? sc.moved || 0 : null,
+      env: envList(sc).length ? envObj(sc) : null, envInfo: envList(sc).map(function (k) { var e = envDef(k); return [e[1], e[2]]; }) };
   }
   /*
    * Is there a line of effect from a crow to a creature on the current scene? True or false when both have tokens there (walls, closed
@@ -9263,6 +9696,8 @@ CROWS.NAME_IDEAS = {
         }, 'sm', 'Institutions'),
         fab('go', 'Open the Village tab', function () { setTab('village'); }, 'sm ghost')]));
     }
+    var on = envList(sc);
+    if (on.length) kids.push(el('div', { class: 'hud-grp env' }, [ico('cloud')].concat(on.map(function (k) { var e = envDef(k); return chip(e[1], 'env', { title: e[1] + ': ' + e[2] }); }))));
     var fightBtn = fab('list', 'The fight: who has acted, the players’ actions, battlefield modifiers, items on the ground, the feed, and ending it', function () { toggleDrawer('fight'); }, 'sm' + (U.drawer === 'fight' ? ' on' : ''), 'Fight');
     if (c.round) {
       var foes = c.list.filter(function (x) { return x.kind === 'foe' && !x.dead; }), acted = foes.filter(function (x) { return x.acted === c.round; }).length,
@@ -9301,6 +9736,9 @@ CROWS.NAME_IDEAS = {
         'sm', playerView() === 'text' ? 'Players: lists' : 'Players: map') : null,
       fab('heart', v.vitals ? 'Hide the full vitals under each token' : 'Show every crow’s and creature’s full vitals under its token: Stamina, AD, and wounds (only you see them)',
         function () { v.vitals = !v.vitals; save(); U.view.redraw(); renderTopRight(cur()); }, 'sm' + (v.vitals ? ' on' : ''), 'Vitals', { 'aria-pressed': v.vitals ? 'true' : 'false' }),
+      fab('cloud', 'Environment: darkness, weather, the Miasma, water, fire (shown and animated on the map, for the players too)', function () { toggleDrawer('env'); },
+        'sm' + (U.drawer === 'env' ? ' on' : '') + (envList(sc).length ? ' live' : ''), envList(sc).length ? String(envList(sc).length) : null),
+      fab('save', 'Save this map as an encounter: its creatures, where everyone stands, objects, items on the ground, and the environment', function () { toggleDrawer('save'); }, 'sm' + (U.drawer === 'save' ? ' on' : '')),
       fab('gear', 'Scene settings: map, grid, fog, light', function () { toggleDrawer('scene'); }, 'sm' + (U.drawer === 'scene' ? ' on' : ''))]));
   }
 
@@ -9514,8 +9952,8 @@ CROWS.NAME_IDEAS = {
     var mode = sc ? U.drawer : null, t = sc && tok(sc, U.sel);
     box.classList.toggle('open', !!mode);
     if (!mode) return;
-    var title = { add: 'Add to the map', token: t ? t.name : 'Token', scene: 'Scene settings', act: t ? t.name : 'Act', fight: 'The fight' }[mode];
-    var body = mode === 'add' ? addPanel(sc) : mode === 'scene' ? sceneSettings(sc) : mode === 'fight' ? fightPanel(sc) : !t ? el('p', { class: 'fine', text: 'Select a token on the map or along the bottom.' }) :
+    var title = { add: 'Add to the map', token: t ? t.name : 'Token', scene: 'Scene settings', act: t ? t.name : 'Act', fight: 'The fight', env: 'Environment', save: 'Save as encounter' }[mode];
+    var body = mode === 'add' ? addPanel(sc) : mode === 'scene' ? sceneSettings(sc) : mode === 'env' ? envPanel(sc) : mode === 'save' ? savePanel(sc) : mode === 'fight' ? fightPanel(sc) : !t ? el('p', { class: 'fine', text: 'Select a token on the map or along the bottom.' }) :
       mode === 'act' ? actPanel(sc, t) : inspector(sc, t);
     var keep = box.querySelector('.dr-body'), top = keep && U.drawerWas === mode + (t ? t.id : '') ? keep.scrollTop : 0;   // a redraw keeps the drawer where it was scrolled
     U.drawerWas = mode + (t ? t.id : '');
@@ -9787,10 +10225,161 @@ CROWS.NAME_IDEAS = {
       sc.walls.length ? el('div', { class: 'row' }, [btn('Undo wall', function () { sc.walls.pop(); changed(); render(); }, 'btn-small btn-ghost'),
         btn('Clear walls', function () { if (confirm('Delete all ' + sc.walls.length + ' walls and doors on this scene?')) { sc.walls = []; changed(); render(); } }, 'btn-small btn-ghost')]) : null,
       el('h4', { text: 'Scene' }),
+      el('div', { class: 'row' }, [btn('Environment…', function () { openDrawer('env'); }, 'btn-small'), btn('Save as encounter…', function () { openDrawer('save'); }, 'btn-small')]),
       checkIn(V(), 'clean', 'Remove foes’ tokens when they leave the tracker'),
       el('div', { class: 'row' }, [btn('Duplicate scene', function () { var c2 = JSON.parse(JSON.stringify(sc)); c2.id = Tbl.uid('s'); c2.name += ' (copy)'; V().scenes.push(c2); V().cur = c2.id; changed(); render(); }, 'btn-small btn-ghost'),
         btn('Delete scene', function () { if (confirm('Delete the scene "' + sc.name + '"?')) { V().scenes = V().scenes.filter(function (k) { return k !== sc; }); V().cur = V().scenes[0] ? V().scenes[0].id : ''; U.sel = null; U.drawer = null; changed(); render(); } }, 'btn-small btn-ghost btn-danger')])
     ]);
+  }
+
+  // ------------------------------------------------------------------ the environment
+  function envDef(k) { return (REFD.ENV || []).filter(function (e) { return e[0] === k; })[0] || null; }
+  function envList(sc) { var e = sc && sc.env; return e ? (REFD.ENV || []).map(function (d) { return d[0]; }).filter(function (k) { return e[k]; }) : []; }
+  function envObj(sc) { var o = {}; envList(sc).forEach(function (k) { o[k] = true; }); return o; }
+  /* The environment where a creature or crow is fighting: the current scene's, when it has a token there (for the tracker's rolls). */
+  function envFor(x) { var sc = cur(); return sc && x && tokOf(sc, x) ? envObj(sc) : {}; }
+  function setEnv(sc, k, on) {
+    sc.env = sc.env || {};
+    if (on) sc.env[k] = true; else delete sc.env[k];
+    if (on && k === 'dark') delete sc.env.dim;
+    if (on && k === 'dim') delete sc.env.dark;   // one light level at a time
+    if (on && k === 'storm') delete sc.env.rain;
+    if (on && k === 'rain') delete sc.env.storm;
+    var e = envDef(k);
+    log('', on ? 'The environment: **' + e[1] + '**. ' + e[2] : e[1] + ' ends.');
+    if (on && V().shown) feed('**' + e[1] + '**: ' + e[2]);
+    changed(); render();
+  }
+  function envPanel(sc) {
+    var on = envObj(sc);
+    return el('div', { class: 'dr-stack env-list' }, [el('p', { class: 'fine', text: 'Conditions from the rules for this scene. They animate on the map (and on the players’ maps when it is shown), and each one’s rules are a tooltip on its chip at the top of the map. Darkness, dim light, and smoke count in the combat tracker’s rolls for creatures on this map.' })]
+      .concat((REFD.ENV || []).map(function (e) {
+        return el('button', { type: 'button', class: 'env-tog' + (on[e[0]] ? ' on' : ''), 'aria-pressed': on[e[0]] ? 'true' : 'false', onclick: function () { setEnv(sc, e[0], !on[e[0]]); } },
+          [el('span', { class: 'env-sw', 'aria-hidden': 'true' }), el('span', { class: 'env-t' }, [el('b', { text: e[1] }), el('span', { class: 'fine', text: e[2] })])]);
+      }), envList(sc).length ? [btn('Clear the environment', function () { sc.env = {}; log('', 'The environment clears.'); changed(); render(); }, 'btn-small btn-ghost')] : []));
+  }
+
+  // ------------------------------------------------------------------ the map as a saved encounter
+  function itemsOf(list) { return (list || []).map(function (it) { return { key: it.key, qty: it.qty, hidden: !!it.hidden }; }); }
+  /* A token as the layout keeps it (a creature's as `cr`, its bestiary name). */
+  function layoutTok(t, keepVitals) {
+    var o = { kind: t.kind, name: t.name, x: Math.round(t.x), y: Math.round(t.y) };
+    ['size', 'sizeSet', 'hidden', 'label', 'icon', 'speed', 'sight', 'sees', 'locked', 'noArt'].forEach(function (k) { if (t[k] != null && t[k] !== false) o[k] = t[k]; });
+    if (t.light) o.light = clone(t.light);
+    var x = combatant(t);
+    if (t.cref && (t.kind === 'foe' || t.kind === 'ally')) {
+      o.cr = x ? x.cref : t.cref;
+      if (x && x.hidden) o.hidden = true;
+      if (x && keepVitals) o.vit = { st: x.st, ad: x.ad, wounds: x.wounds || 0, conds: clone(x.conds || {}), used: clone(x.used || {}) };
+      if (x && x.items && x.items.length) o.items = itemsOf(x.items);
+    }
+    return o;
+  }
+  /* Everything on the scene that a saved encounter keeps (the crows only as where they start). */
+  function sceneLayout(sc, opts) {
+    syncTokens(sc);
+    var toks = sc.tokens.filter(function (t) { return !t.dead || t.kind === 'obj'; });
+    return {
+      v: 1, kind: sc.kind, name: sc.name, map: sc.map ? clone(sc.map) : null, w: sc.w, h: sc.h, g: sc.g, grid: sc.grid, ox: sc.ox || 0, oy: sc.oy || 0, bg: sc.bg,
+      showGrid: sc.showGrid !== false, unit: sc.unit, fog: sc.fog, ambient: sc.ambient, playerMove: sc.playerMove, env: envObj(sc),
+      walls: (sc.walls || []).map(function (w) { return { a: w.a.slice(), b: w.b.slice(), t: w.t, open: !!w.open }; }),
+      pins: (sc.pins || []).map(function (p) { return { x: Math.round(p.x), y: Math.round(p.y), label: p.label, vis: !!p.vis }; }),
+      tokens: toks.filter(function (t) { return t.kind !== 'pc'; }).map(function (t) { return layoutTok(t, opts.vitals); }),
+      crows: opts.crows ? toks.filter(function (t) { return t.kind === 'pc' && !t.marker; }).map(function (t) { return { x: Math.round(t.x), y: Math.round(t.y) }; }) : [],
+      ground: opts.ground ? itemsOf(onGround()) : []
+    };
+  }
+  function sideOf(t) { return t.kind === 'ally' ? 'ally' : 'foe'; }
+  /* The creatures on the map as an encounter lists them ([{ n, k, side }]); the layout's tokens are put in the same order, so the n-th
+     creature of a kind the encounter adds gets the n-th token of that kind. */
+  function layoutCreatures(L) {
+    var out = [];
+    L.tokens.forEach(function (t) {
+      if (!t.cr) return;
+      var hit = out.filter(function (c) { return c.n === t.cr && c.side === sideOf(t); })[0];
+      if (hit) hit.k++; else out.push({ n: t.cr, k: 1, side: sideOf(t) });
+    });
+    function rank(t) { if (!t.cr) return 1e9; for (var i = 0; i < out.length; i++) if (out[i].n === t.cr && out[i].side === sideOf(t)) return i; return 1e9; }
+    L.tokens = L.tokens.map(function (t, i) { return [t, i]; }).sort(function (a, b) { return rank(a[0]) - rank(b[0]) || a[1] - b[1]; }).map(function (p) { return p[0]; });
+    return out;
+  }
+  function saveLayout(sc, opts, into) {
+    var L = sceneLayout(sc, opts), creatures = layoutCreatures(L), e = into;
+    if (!e) e = newEncounter({ name: opts.name || sc.name, src: 'Tabletop', where: opts.where || '' });
+    else { if (opts.name) e.name = opts.name; e.where = opts.where || e.where; }
+    e.creatures = creatures; e.layout = L; e.map = L.map; e.mapTitle = sc.name;
+    sc.fromEnc = e.id;
+    var objs = L.tokens.filter(function (t) { return !t.cr; }).length, env = Object.keys(L.env || {});
+    log('enc', 'Saved the tabletop as an encounter: **' + (e.name || 'untitled') + '** (' + [creatures.length ? encSummary(e) : 'no creatures', objs ? plural(objs, 'object') : '',
+      env.length ? env.map(function (k) { return envDef(k)[1].toLowerCase(); }).join(', ') : ''].filter(Boolean).join('; ') + ').');
+    changed(); render();
+    toast((into ? 'Updated' : 'Saved') + ' "' + (e.name || 'the encounter') + '". Load it from the Add drawer, or run it from the Encounters tab.');
+    return e;
+  }
+  function savePanel(sc) {
+    var into = sc.fromEnc ? findEncounter(sc.fromEnc) : null, o = U.saveOpts || (U.saveOpts = { vitals: false, crows: true, ground: true });
+    var name = el('input', { type: 'text', class: 'in', maxlength: 80, value: into ? into.name : sc.name, 'aria-label': 'Encounter name' });
+    var where = el('input', { type: 'text', class: 'in', maxlength: 80, value: into ? into.where || '' : '', placeholder: 'Place, hex, room', 'aria-label': 'Where' });
+    var creatures = sc.tokens.filter(function (t) { return t.cref && (t.kind === 'foe' || t.kind === 'ally') && !t.dead; }).length,
+      objs = sc.tokens.filter(function (t) { return t.kind === 'obj' || t.kind === 'npc'; }).length, env = envList(sc);
+    function box(k, label, title) { return el('label', { class: 'check', title: title }, [el('input', { type: 'checkbox', checked: !!o[k], onchange: function () { o[k] = this.checked; } }), ' ' + label]); }
+    function go(update) { saveLayout(sc, { name: name.value.trim().slice(0, 80) || sc.name, where: where.value.trim().slice(0, 80), vitals: o.vitals, crows: o.crows, ground: o.ground }, update ? into : null); }
+    return el('div', { class: 'dr-stack' }, [
+      el('p', { class: 'fine', text: 'Keeps this map as a saved encounter: ' + [plural(creatures, 'creature'), plural(objs, 'other token'),
+        plural(sc.walls.length, 'wall'), plural(sc.pins.length, 'pin'), env.length ? 'the environment (' + env.map(function (k) { return envDef(k)[1]; }).join(', ') + ')' : 'no environment'].join(', ') +
+        ', the map and its grid, and where every token stands. Loading it later builds this scene again and puts each creature back in its place.' }),
+      el('label', { class: 'field' }, ['Name', name]), el('label', { class: 'field' }, ['Where', where]),
+      el('div', { class: 'checks' }, [box('crows', 'Where the crows start', 'Put the crows back on the squares they stand on now'),
+        box('ground', 'Items on the ground' + (onGround().length ? ' (' + onGround().length + ')' : ''), 'What lies unattended in the fight now'),
+        box('vitals', 'Creatures as they are now', 'Their Stamina, AD, wounds, conditions, and spent uses now, for a fight to pick up later. Off: they start fresh.')]),
+      el('div', { class: 'row' }, [btn('Save as a new encounter', function () { go(false); }, 'btn-small btn-primary'),
+        into && !into.done ? btn('Update "' + (into.name || 'its encounter') + '"', function () { go(true); }, 'btn-small', 'This map was saved as (or loaded from) that encounter: save over it') : null]),
+      into ? el('p', { class: 'fine' }, ['From the encounter ', el('a', { href: '#enc-' + into.id, class: 'enc-link', text: into.name || 'untitled', onclick: function (ev) { ev.preventDefault(); openEncounter(into.id); } }), '.']) : null
+    ]);
+  }
+  /* The scene for a saved layout: the one made from this encounter before (set back to the layout), or a new one. */
+  function layoutScene(e) {
+    var L = e.layout, v = V(), sc = v.scenes.filter(function (s) { return s.fromEnc === e.id; })[0];
+    if (!sc) { sc = makeScene(L.kind === 'dungeon' ? 'dungeon' : 'open', (e.name || L.name || 'Encounter').slice(0, 60)); v.scenes.push(sc); }
+    ['w', 'h', 'g', 'grid', 'ox', 'oy', 'bg', 'showGrid', 'unit', 'fog', 'ambient', 'playerMove'].forEach(function (k) { if (L[k] !== undefined) sc[k] = L[k]; });
+    sc.map = L.map ? clone(L.map) : null;
+    if (sc.map) sc.autoGrid = sc.map.b || sc.map.k;
+    sc.env = clone(L.env || {});
+    sc.walls = (L.walls || []).map(function (w) { return { id: Tbl.uid('w'), a: w.a.slice(), b: w.b.slice(), t: w.t, open: !!w.open }; });
+    sc.pins = (L.pins || []).map(function (p) { return { id: Tbl.uid('p'), x: p.x, y: p.y, label: p.label, vis: !!p.vis }; });
+    sc.tokens = sc.tokens.filter(function (t) { return t.kind === 'pc' || t.cid && byId(t.cid); });   // the layout's objects come back fresh
+    sc.fromEnc = e.id; sc.seen = ''; sc.seenDims = '';
+    v.cur = sc.id; U.sel = null; U.sig = ''; U.mask = null;
+    return sc;
+  }
+  /* Run a saved layout: its creatures (and the crows) go into the tracker, and each goes back where it stood. */
+  function loadLayout(e) {
+    var L = e.layout, started = S().combat.list.some(function (x) { return x.enc === e.id; });
+    if (runningEnc() !== e && !runEncounter(e, true)) return;
+    var sc = layoutScene(e), spots = L.tokens.filter(function (t) { return t.cr; }).map(function (t) { return Object.assign({ used: false }, t); }), objs = 0;
+    U.spawn = 0;
+    S().combat.list.forEach(function (x) {
+      if (x.kind === 'pc' || x.enc !== e.id || x.dead) return;
+      var side = x.kind === 'ally' ? 'ally' : 'foe', spot = spots.filter(function (t) { return !t.used && t.cr === x.cref && sideOf(t) === side; })[0];
+      var t = sc.tokens.filter(function (k) { return k.cid === x.id; })[0] || addToken(sc, { name: x.name, kind: side, cid: x.id, cref: x.cref, hidden: side === 'foe' && !!U.hideNew }, 1);
+      if (!spot) return;
+      spot.used = true;
+      ['x', 'y', 'size', 'sizeSet', 'speed', 'sight', 'noArt'].forEach(function (k) { if (spot[k] != null) t[k] = spot[k]; });
+      if (spot.light) t.light = clone(spot.light);
+      t.hidden = !!spot.hidden;
+      if (started) return;   // already fighting: leave it as it is
+      if (spot.vit) { x.st = spot.vit.st; x.ad = spot.vit.ad; x.wounds = spot.vit.wounds || 0; x.conds = clone(spot.vit.conds || {}); x.used = clone(spot.vit.used || {}); }
+      if (spot.items) x.items = spot.items.map(function (it) { return newItem(it.key, it.qty, it.hidden); });
+    });
+    L.tokens.forEach(function (t) { if (t.cr) return; var o = clone(t); delete o.vit; delete o.items; addToken(sc, o); objs++; });
+    var pcs = placeCrows(sc, -1), crowToks = sc.tokens.filter(function (t) { return t.kind === 'pc' && !t.marker; });
+    (L.crows || []).forEach(function (p, i) { if (crowToks[i]) { crowToks[i].x = p.x; crowToks[i].y = p.y; } });
+    if (!started) (L.ground || []).forEach(function (it) { onGround().push(newItem(it.key, it.qty, it.hidden)); });
+    U.sel = null;
+    var env = envList(sc), n = S().combat.list.filter(function (x) { return x.enc === e.id && !x.dead; }).length;
+    log('', 'Set up **' + (e.name || 'the encounter') + '** on the tabletop' + (env.length ? ' (' + env.map(function (k) { return envDef(k)[1].toLowerCase(); }).join(', ') + ')' : '') + '.');
+    toast('"' + (e.name || 'The encounter') + '" is on the map: ' + [plural(n, 'creature'), objs ? plural(objs, 'object') : '', pcs ? plural(pcs, 'crow') : ''].filter(Boolean).join(', ') + '.');
+    changed(); render();
   }
 
   // Redraw when the tracker, party, or clock change: render() calls renderVtt for the open tab; the clock chip is kept current here.
@@ -9802,7 +10391,9 @@ CROWS.NAME_IDEAS = {
   /* For practice fights (ref-practice.js): the current scene, tokens, and moves. */
   var vtt = { cur: cur, tokOf: tokOf, addToken: addToken, moveToken: moveToken, nextSpot: nextSpot, changed: changed,
     resetSpawn: function () { U.spawn = 0; }, view: function () { return U.view; }, deselect: function () { U.sel = null; } };
-  A.add({ vtt: vtt, renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
+  /* From the Encounters tab: run a saved encounter's map layout on the Tabletop. */
+  function runOnTabletop(e) { setTab('vtt'); loadLayout(e); }
+  A.add({ envFor: envFor, saveLayout: saveLayout, runOnTabletop: runOnTabletop, vtt: vtt, renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
 })();
 
 </script>
@@ -10361,6 +10952,583 @@ CROWS.NAME_IDEAS = {
 
   A.add({ practiceOn: practiceOn, startPractice: startPractice, restartPractice: restartPractice, endPractice: endPractice, simulate: simulate, renderPractice: renderPractice,
     practiceStep: step, makeCrow: makeCrow });
+})();
+
+</script>
+<script>
+/*
+ * Ref Screen: the Workshop tab. The Ref's own creatures and equipment, kept with the campaign in state.homebrew { creatures, items }.
+ *
+ * - Creatures: every stat a stat block has (type, size, power, Stamina, speeds, slots, A/M/S, AD, reactions, attacks), special abilities
+ *   picked from every creature in the rules (REF.HB_ABILITIES; their text can be edited, and limited uses count in the tracker),
+ *   expertises, likes and hates, and equipment from the rules or the Workshop. They join REF.BESTIARY (sync), so the Bestiary,
+ *   encounters, the combat tracker, and the Tabletop use them like any other creature; one in a fight holds its equipment.
+ * - Equipment: any kind on the cards (weapons, armor, shields, ammunition, gear, alchemy, magic items, spellbooks, materials, treasure,
+ *   vehicles) with the stats the rules allow, weapon qualities, metal and wood upgrades, enchantments (at most 4 Enchanting uses), usage
+ *   dice, and crafting. Each becomes an inventory card in CROWS.ITEMS (CrowsSheet.registerItems), written the way the rules' cards are,
+ *   so crows' sheets can carry and use it (the fight hands players its card: publicCombat `defs`).
+ * A creature or item keeps its name as its key: renaming one renames it in encounters, the tracker, and on the Tabletop (rename*).
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsRefApp, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var addCombatant = f('addCombatant'), area = f('area'), beastCard = f('beastCard'), btn = f('btn'), card = f('card'), chk = f('chk'), field = f('field'),
+      inp = f('inp'), log = f('log'), more = f('more'), nid = f('nid'), render = f('render'), save = f('save'), sel = f('sel'), setTab = f('setTab');
+  var $ = A.$, clamp = A.clamp, clone = A.clone, el = A.el, fmt = A.fmt, plural = A.plural, signed = A.signed, toast = A.toast, ui = A.ui;
+  var Sheet = window.CrowsSheet;
+  var state = A.state; A.share('state', function (v) { state = v; sync(); });
+
+  var OFFICIAL_BEASTS = REF.BESTIARY.slice(), OFFICIAL_TRAITS = clone(REF.MONSTER_TRAITS);
+  var itemKeys = [];   // the names this file put in CROWS.ITEMS
+  var H = ui.hb = ui.hb || { cr: null, it: null, crQ: '', itQ: '', abPick: '', gearPick: '', gearQty: 1, expPick: '', from: '', itFrom: '', kind: 'weapon' };
+
+  function hb() { var h = state.homebrew; if (!h || typeof h !== 'object') h = state.homebrew = {}; if (!Array.isArray(h.creatures)) h.creatures = []; if (!Array.isArray(h.items)) h.items = []; return h; }
+  function sentence(t) { t = String(t || '').trim(); return !t ? '' : /[.!?)]$/.test(t) ? t : t + '.'; }
+  function num(v, lo, hi, dflt) { v = Math.round(+v); return isFinite(v) ? clamp(v, lo, hi) : dflt; }
+  function isMonsterType(t) { return t !== 'Human' && t !== 'Animal'; }
+
+  // ------------------------------------------------------------------ creatures
+  function newCreature(o) {
+    return Object.assign({ id: nid(), n: '', t: 'Other', sz: 'M', p: 1, st: 10, ad: 0, rx: 1, sl: 0, c: [0, 0, 0], spd: { walk: 5, climb: 0, climbU: false, swim: 0, fly: 0, burrow: 0 },
+      atk: [['Claws', 1, 'M1', 2, 4]], ab: [], exp: [], gear: [], likes: '', hates: '', notes: '', art: '', made: A.today() }, o || {});
+  }
+  function speedText(s) {
+    var out = [String(s.walk || 0)];
+    if (s.climb) out.push('climb ' + s.climb + (s.climbU ? ' (U)' : ''));
+    if (s.swim) out.push('swim ' + s.swim);
+    if (s.fly) out.push('fly ' + s.fly);
+    if (s.burrow) out.push('burrow ' + s.burrow);
+    return out.join(', ');
+  }
+  function parseSpeed(t) {
+    var g = function (re) { var m = re.exec(t || ''); return m ? +m[1] : 0; };
+    return { walk: g(/^(\d+)/), climb: g(/climb (\d+)/), climbU: /climb \d+ \(U\)/.test(t || ''), swim: g(/swim (\d+)/), fly: g(/fly (\d+)/), burrow: g(/burrow (\d+)/) };
+  }
+  /* The stat block the rest of the Ref Screen reads (the shape of REF.BESTIARY's entries). */
+  function toBeast(r) {
+    var x = [sentence(r.notes)].concat(r.ab.map(function (a) { return sentence(a.x); }));
+    if (r.exp.length) x.push('Expertises: ' + r.exp.map(function (e) { return e[0] + (e[1] > 1 ? ' ' + e[1] : ''); }).join(', ') + '.');
+    if (r.gear.length) x.push('Gear: ' + r.gear.map(function (g) { return (g[1] > 1 ? g[1] + ' × ' : '') + g[0]; }).join(', ') + '.');
+    if (r.likes) x.push('LIKES: ' + sentence(r.likes));
+    if (r.hates) x.push('HATES: ' + sentence(r.hates));
+    return { t: r.t, n: r.n, sz: r.sz, p: r.p, st: r.st, spd: speedText(r.spd), sl: r.sl, c: r.c.slice(), ad: r.ad,
+      atk: r.atk.filter(function (a) { return a[0]; }).map(function (a) { return a[5] ? a.slice(0, 6) : a.slice(0, 5); }), x: x.filter(Boolean).join(' '),
+      uses: r.ab.filter(function (a) { return a.u > 0; }).map(function (a) { return [a.n, a.u, a.per || 'Rest']; }), rx: r.rx, custom: true, hb: r.id, gear: r.gear.slice(), art: r.art || '' };
+  }
+  function fromBeast(b) {
+    return newCreature({ n: uniqueName(b.n + ' (variant)', null), t: REF.HB_TYPES.indexOf(b.t) >= 0 ? b.t : 'Other', sz: b.sz, p: b.p, st: b.st, ad: b.ad || 0, rx: b.rx || 1, sl: b.sl || 0, c: b.c.slice(),
+      spd: parseSpeed(b.spd), atk: b.atk.map(function (a) { return a.slice(); }), notes: b.x || '', art: b.custom ? b.art : b.n,
+      ab: (b.uses || []).map(function (u) { return { n: u[0], x: '', u: u[1], per: u[2] }; }), gear: (b.gear || []).map(function (g) { return g.slice(); }) });
+  }
+  function beastNames() { var o = {}; REF.BESTIARY.forEach(function (b) { o[b.n] = true; }); return o; }
+  function uniqueName(want, self) {
+    var taken = {}; OFFICIAL_BEASTS.forEach(function (b) { taken[b.n] = true; }); hb().creatures.forEach(function (c) { if (c !== self) taken[c.n] = true; });
+    var n = (want || 'New creature').trim().slice(0, 60) || 'New creature', k = n, i = 2;
+    while (taken[k]) k = n + ' ' + i++;
+    return k;
+  }
+
+  // ------------------------------------------------------------------ equipment
+  function newItem(kind, o) {
+    var base = { id: nid(), n: '', kind: kind, gc: 10, sl: 1, st: 1, txt: '', craft: { exp: '', uses: 1, mat: '', goal: 10 }, made: A.today() };
+    var k = {
+      weapon: { wt: 'Slashing', hands: 1, reach: 1, range: 0, ch: 'S', t2: 3, t3: 6, q: {}, metal: '', wood: '', ench: [] },
+      armor: { base: 'Light', ad: 5, up: '', ench: [], sl: 2, gc: 50 },
+      shield: { ad: 5, up: '', ench: [], gc: 15 },
+      ammo: { for: 'Bows (arrows)', count: 20, metal: '', gc: 5 },
+      gear: { gcat: 'misc', ud: 0, udt: {}, refuel: '', lb: 0, ld: 0, quality: '', qb: 1, act: '', fx: '' },
+      alchemy: { st: 5, act: 'Maneuver', rr: '', t1: '', t2: '', t3: '', fx: '', ud: 0, udt: {}, gc: 100, craft: { exp: 'Alchemy', uses: 1, mat: '1 monster part', goal: 20 } },
+      magic: { slot: '', ud: 1, udt: { Rest: true, Activate: true }, act: 'Action', rr: '', t1: '', t2: '', t3: '', fx: '', gc: 500, craft: { exp: 'Enchanting', uses: 2, mat: 'a gem worth 100 gc', goal: 100 } },
+      spell: { rank: 0, disc: 'Elemental', time: 'Action', dmg: false, t2n: 2, t3n: 4, rng: 'Ranged 10', tgt: '1 creature', dur: 'Instant', t1: '', t2: '', t3: '', gc: 250 },
+      material: { msize: 'S', gc: 100 },
+      treasure: { tsize: 'T', gc: 100 },
+      vehicle: { vst: 25, vsize: 'Large', animals: 1, cargo: 250, gc: 1000 }
+    }[kind] || {};
+    return Object.assign(base, clone(k), o || {});
+  }
+  function metalOf(r) { return REF.HB_METAL.filter(function (m) { return m[0] === r.metal; })[0] || null; }
+  function woodOf(r) { return REF.HB_WOOD.filter(function (m) { return m[0] === r.wood; })[0] || null; }
+  function armorUp(r) { var t = r.kind === 'shield' ? 'Shield' : r.base, ups = (REF.HB_ARMOR[t] || [0, 0, 0, '', 0, []])[5]; return ups.filter(function (u) { return u[0] === r.up; })[0] || null; }
+  function enchList(r) { return r.kind === 'weapon' ? REF.HB_WEAPON_ENCH : REF.HB_ARMOR_ENCH; }
+  function enchOf(r) { return (r.ench || []).map(function (n) { return enchList(r).filter(function (e) { return e[0] === n; })[0]; }).filter(Boolean); }
+  function enchUses(r) { return enchOf(r).reduce(function (a, e) { return a + e[2]; }, 0); }
+  /* Which enchantments this item can take (a bow or not; a suit or a shield). */
+  function enchFits(r, e) {
+    if (r.kind === 'weapon') return r.wt !== 'Unarmed' && (!e[6] || (e[6] === 'bow') === (r.wt === 'Bow'));
+    return e[3] === 'Both' || e[3] === (r.kind === 'shield' ? 'Shield' : 'Suit');
+  }
+  function udText(r) {
+    if (!(r.ud > 0)) return '';
+    var tags = REF.HB_UD_TAGS.filter(function (t) { return r.udt && r.udt[t]; }).map(function (t) { return t === 'Refuel' && r.refuel ? 'Refuel with ' + r.refuel : t; });
+    return 'UD: ' + r.ud + ' (' + (tags.join('; ') || 'Activate') + ').';
+  }
+  function tiers(r) { return r.t1 || r.t2 || r.t3 ? '<=11: ' + (r.t1 || 'no effect') + '; 12-16: ' + (r.t2 || 'as 17+ at a cost') + '; 17+: ' + (r.t3 || 'full effect') + '.' : ''; }
+  function craftText(r) {
+    var c = r.craft || {};
+    return c.exp ? 'Craft: ' + c.exp + ' ' + (c.uses || 1) + (c.mat ? ', ' + c.mat : '') + ', goal ' + (c.goal || 0) + '.' : '';
+  }
+  /* What the item is worth by the rules: the base and each upgrade and enchantment (the Ref sets the price). */
+  function suggestedPrice(r) {
+    var p = 0;
+    if (r.kind === 'weapon') { p = r.sl > 1 || r.hands === 2 && !r.q.Cumbersome ? 15 : 12; var m = metalOf(r), w = woodOf(r); if (m) p += m[3]; if (w) p += w[2]; }
+    else if (r.kind === 'armor' || r.kind === 'shield') { var b = REF.HB_ARMOR[r.kind === 'shield' ? 'Shield' : r.base]; p = b ? b[2] : 0; var u = armorUp(r); if (u) p += u[2]; }
+    else if (r.kind === 'ammo') { p = 5; var am = metalOf(r); if (am) p += Math.round(am[3] / 5); }
+    else if (r.kind === 'spell') p = REF.HB_SPELL_PRICES[r.rank] || 250;
+    else return null;
+    enchOf(r).forEach(function (e) { p += e[1]; });
+    return p;
+  }
+  /* The card's text, written the way the rules' cards are (the crows' sheets read weapons, usage dice, parry, and spell damage from it). */
+  function cardText(r) {
+    var out = [];
+    if (r.kind === 'weapon') {
+      var m = metalOf(r), w = woodOf(r), ret = (r.ench || []).indexOf('Returning') >= 0 ? 5 : 0, rng = r.range ? r.range + (w ? w[1] : 0) + ret : 0;
+      var t2 = r.t2 + (m ? m[1] : 0), t3 = r.t3 + (m ? m[2] : 0), ch = r.ch;
+      out.push((r.reach ? 'Melee ' + r.reach + (rng ? '/Ranged ' + rng : '') : 'Ranged ' + (rng || 5)) + '.');
+      out.push('Attack 2d10 + ' + ch + '. 12-16: ' + t2 + ' + ' + ch + '; 17+: ' + t3 + ' + ' + ch + '.');
+      var qs = [r.wt].concat(REF.HB_QUALITIES.filter(function (q) { return r.q[q[0]]; }).map(function (q) { return q[2] ? q[0] + ' ' + (+r.q[q[0]] || 1) : q[0]; }));
+      out.push(qs.join(', ') + (r.q.Cumbersome ? ' (1 slot, but needs 2 hands to wield)' : '') + '.');
+      if (r.sl > 1) out.push('Occupies ' + r.sl + ' slots.');
+      if (r.wt === 'Bow') out.push(/rossbow|Reload/.test(r.n + JSON.stringify(r.q)) ? 'Uses bolts.' : 'Uses arrows.');
+      if (m) out.push(m[0] + ' (+' + m[1] + '/+' + m[2] + ' damage, included).');
+      if (w) out.push(w[0] + ' (+' + w[1] + ' range, included).');
+    } else if (r.kind === 'armor' || r.kind === 'shield') {
+      var u = armorUp(r);
+      out.push('Armor, AD ' + adOf(r) + (u ? ' (' + u[0] + ' +' + u[1] + ')' : '') + '.');
+      out.push(r.kind === 'shield' ? 'Only protects while wielded in a hand slot.' : (r.sl > 1 ? 'Occupies ' + r.sl + ' slots. ' : '') + 'Worn from the backpack (one suit at a time; don only outside combat rounds).');
+    } else if (r.kind === 'ammo') {
+      var am = metalOf(r);
+      out.push('Ammunition for ' + r.for + (r.count ? ' (' + r.count + ')' : '') + '. Ammo used in a ranged attack is destroyed.');
+      if (am) out.push(am[0] + ': +' + am[1] + '/+' + am[2] + ' damage.');
+    } else if (r.kind === 'gear') {
+      if (udText(r)) out.push(udText(r));
+      if (r.gcat === 'light' && (r.lb || r.ld)) out.push((r.act || 'Maneuver') + ': Light ' + (r.lb || 0) + '/' + (r.ld || 0) + '.');
+      else if (r.act && r.fx) out.push(r.act + ': ' + sentence(r.fx));
+      if (!r.act && r.fx) out.push(sentence(r.fx));
+      if (r.quality) out.push(r.quality + ': +' + (r.qb || 1) + ' on tests using it.');
+      if (r.sl > 1) out.push('Occupies ' + r.sl + ' slots.');
+    } else if (r.kind === 'alchemy' || r.kind === 'magic') {
+      if (r.slot) out.push('Slot: ' + r.slot + '.');
+      if (udText(r)) out.push(udText(r).replace(/^UD: /, 'UD '));
+      if (r.fx || r.rr) out.push((r.act ? r.act + ': ' : '') + sentence((r.fx || '') + (r.rr ? (r.fx ? ' ' : '') + r.rr + ' RR' : '')).replace(/\.$/, '.'));
+      if (tiers(r)) out.push(tiers(r));
+    } else if (r.kind === 'spell') {
+      var head = 'R' + r.rank + ' ' + r.disc + (r.dmg ? ' Attack' + (r.time !== 'Action' ? ', ' + r.time : '') : ', ' + r.time) + '.';
+      out.push(head, 'UD 1 (Rest; Activate).', [r.rng, r.tgt, r.dur && r.dur !== 'Instant' ? 'Dur ' + r.dur : ''].filter(Boolean).join(', ') + '.');
+      if (r.dmg) out.push('12-16: ' + r.t2n + '+M' + (r.t2 ? ' ' + r.t2 : '') + '; 17+: ' + r.t3n + '+M' + (r.t3 ? ' ' + r.t3 : '') + '.' + (r.t1 ? ' <=11: ' + r.t1 + '.' : ''));
+      else if (tiers(r)) out.push(tiers(r));
+    } else if (r.kind === 'material') out.push('Crafting material (' + ({ S: 'Small', M: 'Medium' }[r.msize] || r.msize) + ').');
+    else if (r.kind === 'treasure') out.push('Treasure (' + ({ T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large' }[r.tsize] || '') + '), worth ' + fmt(r.gc) + ' gc. Counts toward XP when recovered outside a village.');
+    else if (r.kind === 'vehicle') out.push('Vehicle: Stamina ' + r.vst + '; needs ' + plural(r.animals, r.vsize + ' animal') + '; ' + r.cargo + ' slots of cargo. Destroyed at 0 Stamina; a wheelwright repairs it.');
+    enchOf(r).forEach(function (e) { out.push(e[0] + ': ' + sentence(e[r.kind === 'weapon' ? 5 : 6])); });
+    if (r.txt) out.push(sentence(r.txt));
+    if (craftText(r)) out.push(craftText(r));
+    return out.filter(Boolean).join(' ');
+  }
+  function adOf(r) { return r.ad; }
+  var KIND_CAT = { weapon: 'weapon', armor: 'armor', shield: 'shield', ammo: 'ammo', alchemy: 'consumable', magic: 'magic', spell: 'spell', material: 'misc', treasure: 'misc', vehicle: 'bulky' };
+  /* The inventory card (src/game-data.js shape). */
+  function toCard(r) {
+    var o = { cat: r.kind === 'gear' ? r.gcat : KIND_CAT[r.kind] || 'misc', st: r.st, sl: r.sl, gc: r.gc, txt: cardText(r), custom: true };
+    if (r.kind === 'weapon') { o.wt = r.wt; if (r.hands === 2 || r.q.Cumbersome) o.hands = 2; if (r.q.Light) o.light = true; }
+    if (r.kind === 'armor' || r.kind === 'shield') o.ad = adOf(r);
+    if (r.kind === 'spell' && r.dmg) o.atk = true;
+    return o;
+  }
+  function itemTaken(want, self) {
+    var taken = {}; Object.keys(CROWS.ITEMS).forEach(function (k) { if (Sheet.isOfficial(k)) taken[k] = true; }); hb().items.forEach(function (c) { if (c !== self) taken[c.n] = true; });
+    var n = (want || 'New item').trim().slice(0, 60) || 'New item', k = n, i = 2;
+    while (taken[k]) k = n + ' ' + i++;
+    return k;
+  }
+  /* An item from the rules as a starting point: its card text, price, slots, and (for weapons and armor) its numbers. */
+  function fromCard(key) {
+    var c = CROWS.ITEMS[key]; if (!c) return newItem('gear');
+    var kind = { weapon: 'weapon', armor: 'armor', shield: 'shield', ammo: 'ammo', consumable: 'alchemy', magic: 'magic', spell: 'spell' }[c.cat] || 'gear';
+    var r = newItem(kind, { n: itemTaken(key + ' (variant)', null), gc: c.gc, sl: c.sl, st: c.st });
+    var t = c.txt || '';
+    if (kind === 'weapon') {
+      var mel = /Melee (\d+)/.exec(t), rng = /Ranged (\d+)/.exec(t), ch = /Attack 2d10 \+ (A or S|A|S|M)/.exec(t), t2 = /12-16: (\d+)/.exec(t), t3 = /17\+: (\d+)/.exec(t);
+      Object.assign(r, { wt: c.wt || 'Slashing', hands: c.hands || 1, reach: mel ? +mel[1] : 0, range: rng ? +rng[1] : 0, ch: ch ? ch[1] : 'S', t2: t2 ? +t2[1] : 2, t3: t3 ? +t3[1] : 4, q: {} });
+      REF.HB_QUALITIES.forEach(function (q) { var m = new RegExp('\\b' + q[0] + '(?: (\\d+))?').exec(t); if (m) r.q[q[0]] = q[2] ? +m[1] || 1 : true; });
+    } else if (kind === 'armor') { r.ad = c.ad || 0; r.base = c.sl >= 4 ? 'Heavy' : c.sl === 3 ? 'Medium' : 'Light'; }
+    else if (kind === 'shield') r.ad = c.ad || 0;
+    else if (kind === 'gear') {
+      r.gcat = c.cat; var ud = /UD:?\s*(\d+)\s*\(([^)]*)\)/.exec(t), lt = /Light (\d+)\/(\d+)/.exec(t);
+      if (ud) { r.ud = +ud[1]; REF.HB_UD_TAGS.forEach(function (g) { if (ud[2].indexOf(g) >= 0) r.udt[g] = true; }); r.refuel = (/Refuel with ([\w ]+)/.exec(ud[2]) || [])[1] || ''; }
+      if (lt) { r.lb = +lt[1]; r.ld = +lt[2]; r.act = 'Maneuver'; }
+      r.fx = t.replace(/UD:?\s*\d+\s*\([^)]*\)\.?\s*/, '').replace(/Maneuver: Light \d+\/\d+\.?/, '').trim();
+    } else { r.fx = t; }
+    return r;
+  }
+
+  // ------------------------------------------------------------------ keeping the bestiary and the item cards in step
+  function sync() {
+    if (!state) return;
+    var h = hb();
+    REF.BESTIARY.length = 0;
+    OFFICIAL_BEASTS.forEach(function (b) { REF.BESTIARY.push(b); });
+    Object.keys(REF.MONSTER_TRAITS).forEach(function (k) { if (!OFFICIAL_TRAITS[k]) delete REF.MONSTER_TRAITS[k]; });
+    h.creatures.forEach(function (r) {
+      if (!r.n) return;
+      REF.BESTIARY.push(toBeast(r));
+      if (isMonsterType(r.t) && r.ab.length) REF.MONSTER_TRAITS[r.n] = r.ab.map(function (a) { return a.n; });   // what Monster Expert tells a player
+    });
+    itemKeys.forEach(function (k) { Sheet.unregisterItem(k); });
+    var map = {};
+    h.items.forEach(function (r) { if (r.n && r.kind !== 'vehicle') map[r.n] = toCard(r); });
+    itemKeys = Sheet.registerItems(map);
+  }
+  function changed() { sync(); save(); }
+
+  /* A new name for a creature or item: encounters, the tracker, and the Tabletop follow it. */
+  function renameCreature(r, to) {
+    var from = r.n; r.n = to; if (!from || from === to) return;
+    state.encounters.forEach(function (e) {
+      e.creatures.forEach(function (c) { if (c.n === from) c.n = to; });
+      if (e.layout) e.layout.tokens.forEach(function (t) { if (t.cr === from) t.cr = to; });
+    });
+    A.S().combat.list.forEach(function (x) { if (x.cref === from) x.cref = to; });
+    state.vtt.scenes.forEach(function (sc) { sc.tokens.forEach(function (t) { if (t.cref === from) t.cref = to; }); });
+    hb().creatures.forEach(function (c) { if (c.art === from) c.art = to; });
+  }
+  function renameItem(r, to) {
+    var from = r.n; r.n = to; if (!from || from === to) return;
+    hb().creatures.forEach(function (c) { c.gear.forEach(function (g) { if (g[0] === from) g[0] = to; }); });
+    var c = A.S().combat;
+    (c.items || []).concat.apply(c.items || [], c.list.map(function (x) { return x.items || []; })).forEach(function (it) { if (it.key === from) it.key = to; });
+    state.encounters.forEach(function (e) {
+      if (!e.layout) return;
+      (e.layout.ground || []).concat.apply(e.layout.ground || [], e.layout.tokens.map(function (t) { return t.items || []; })).forEach(function (it) { if (it.key === from) it.key = to; });
+    });
+  }
+
+  // ------------------------------------------------------------------ small form pieces
+  function numIn(obj, key, min, max, label, onchg) {
+    return el('label', { class: 'hb-num' }, [el('span', { text: label }), inp(obj, key, { type: 'number', min: min, max: max, class: 'tiny', 'aria-label': label }, { dflt: min > 0 ? min : 0, on: function () { changed(); if (onchg) onchg(); render(); } })]);
+  }
+  function txtIn(obj, key, label, attrs, re) {
+    return field(label, inp(obj, key, Object.assign({ 'aria-label': label }, attrs || {}), { on: function () { changed(); }, re: !!re }), 'grow');
+  }
+  function selIn(obj, key, options, label, num) {
+    return field(label, sel(obj, key, options, { label: label, num: !!num, on: function () { changed(); } }));
+  }
+  function nameIn(r, which) {
+    var n = el('input', { type: 'text', class: 'in', value: r.n, maxlength: 60, 'aria-label': 'Name', placeholder: which === 'c' ? 'Creature name' : 'Item name' });
+    n.addEventListener('change', function () {
+      var want = this.value.trim(), to = which === 'c' ? uniqueName(want, r) : itemTaken(want, r);
+      if (to !== want && want) toast('"' + want + '" is taken: named it "' + to + '".');
+      if (which === 'c') renameCreature(r, to); else renameItem(r, to);
+      changed(); render();
+    });
+    return field('Name', n, 'grow');
+  }
+  function itemOptions(filter) {
+    var groups = {};
+    Object.keys(CROWS.ITEMS).sort().forEach(function (k) {
+      var c = CROWS.ITEMS[k]; if (filter && !filter(c)) return;
+      var g = c.custom ? 'Workshop' : { weapon: 'Weapons', armor: 'Armor', shield: 'Armor', ammo: 'Weapons', consumable: 'Alchemy', magic: 'Magic items', spell: 'Spellbooks' }[c.cat] || 'Gear';
+      (groups[g] = groups[g] || []).push(k);
+    });
+    return ['Workshop', 'Weapons', 'Armor', 'Gear', 'Alchemy', 'Magic items', 'Spellbooks'].filter(function (g) { return groups[g]; })
+      .map(function (g) { return el('optgroup', { label: g }, groups[g].map(function (k) { return el('option', { value: k, text: k }); })); });
+  }
+  /* A bound text box that also does `on` after each change (area() saves the value first). */
+  function areaIn(obj, key, attrs, on) { var n = area(obj, key, attrs); n.addEventListener('input', on); return n; }
+  function removeBtn(label, fn) { return el('button', { type: 'button', class: 'x', text: '×', 'aria-label': label, title: label, onclick: fn }); }
+
+  // ------------------------------------------------------------------ the creature editor
+  /* What its equipment gives: the best suit, shield, and parry weapon's AD (as the rules' humans count it). */
+  function gearAD(r) {
+    var suit = 0, shield = 0, parry = 0;
+    r.gear.forEach(function (g) {
+      var c = CROWS.ITEMS[g[0]]; if (!c) return;
+      if (c.cat === 'armor') suit = Math.max(suit, c.ad || 0);
+      if (c.cat === 'shield') shield = Math.max(shield, c.ad || 0);
+      var p = /Parry (\d+)/.exec(c.txt || ''); if (p && c.cat === 'weapon') parry = Math.max(parry, +p[1]);
+    });
+    return { suit: suit, shield: shield, parry: parry, total: suit + shield + parry };
+  }
+  /* Attacks for the weapons it carries: attack bonus = the characteristic, damage = the card's + that characteristic. */
+  function weaponAttacks(r) {
+    var added = 0;
+    r.gear.forEach(function (g) {
+      var c = CROWS.ITEMS[g[0]]; if (!c || c.cat !== 'weapon' || r.atk.some(function (a) { return a[0] === g[0]; })) return;
+      var t = c.txt || '', mel = /Melee (\d+)/.exec(t), rng = /Ranged (\d+)/.exec(t), ch = /Attack 2d10 \+ (A or S|A|S)/.exec(t), t2 = /12-16: (\d+)/.exec(t), t3 = /17\+: (\d+)/.exec(t);
+      if (!t2 || !t3) return;
+      var A_ = r.c[0], S_ = r.c[2], v = !ch ? S_ : ch[1] === 'A' ? A_ : ch[1] === 'S' ? S_ : Math.max(A_, S_);
+      var notes = [/ignores cover/i.test(t) ? 'ignores cover' : '', /Brutal/.test(t) ? 'crit: double damage' : ''].filter(Boolean).join('; ');
+      var row = [g[0], v, (mel ? 'M' + mel[1] : '') + (mel && rng ? '/' : '') + (rng ? 'R' + rng[1] : ''), +t2[1] + v, +t3[1] + v];
+      if (notes) row.push(notes);
+      r.atk.push(row); added++;
+    });
+    return added;
+  }
+  function creatureEditor(r) {
+    var spd = r.spd;
+    var atkRows = r.atk.map(function (a, i) {
+      var o = { n: a[0], b: a[1], r: a[2], t2: a[3], t3: a[4], x: a[5] || '' };
+      function put() { r.atk[i] = [o.n, num(o.b, -5, 15, 0), String(o.r || 'M1').toUpperCase().replace(/\s+/g, ''), num(o.t2, 0, 99, 0), num(o.t3, 0, 99, 0)].concat(o.x ? [o.x] : []); changed(); }
+      return el('div', { class: 'li-row hb-atk' }, [
+        inp(o, 'n', { placeholder: 'Attack', 'aria-label': 'Attack name', maxlength: 40 }, { on: put }),
+        el('label', { class: 'hb-num' }, ['+', inp(o, 'b', { type: 'number', min: -5, max: 15, class: 'tiny', 'aria-label': 'Attack bonus' }, { on: put })]),
+        inp(o, 'r', { placeholder: 'M1', 'aria-label': 'Reach or range (M1, R10, M1/R5)', list: 'hb-ranges', class: 'in mini', maxlength: 9 }, { on: put }),
+        el('label', { class: 'hb-num' }, ['T2', inp(o, 't2', { type: 'number', min: 0, max: 99, class: 'tiny', 'aria-label': 'Tier 2 damage' }, { on: put })]),
+        el('label', { class: 'hb-num' }, ['T3', inp(o, 't3', { type: 'number', min: 0, max: 99, class: 'tiny', 'aria-label': 'Tier 3 damage' }, { on: put })]),
+        inp(o, 'x', { placeholder: 'What else it does (T3 prone, 2 targets…)', 'aria-label': 'Attack notes', list: 'hb-atk-notes', maxlength: 160 }, { on: put }),
+        removeBtn('Remove ' + (a[0] || 'attack'), function () { r.atk.splice(i, 1); changed(); render(); })]);
+    });
+    var abPick = el('select', { class: 'in', 'aria-label': 'Special ability' }, [el('option', { value: '', text: 'Pick a special ability…' })].concat(REF.HB_ABILITIES.map(function (a, i) {
+      return el('option', { value: String(i), text: a[0] + ' — ' + a[3], title: a[1] });
+    })));
+    var abRows = r.ab.map(function (a, i) {
+      var per = { per: a.per || 'Rest', u: a.u || 0 };
+      return el('div', { class: 'hb-ab' }, [
+        el('div', { class: 'li-row' }, [inp(a, 'n', { placeholder: 'Name', 'aria-label': 'Ability name', maxlength: 50 }, { on: changed }),
+          el('label', { class: 'hb-num', title: 'Uses between rests or per day (0: no limit). The tracker counts them; a crit regains one.' }, ['Uses', inp(per, 'u', { type: 'number', min: 0, max: 9, class: 'tiny', 'aria-label': 'Uses' }, { on: function (v) { a.u = v; changed(); } })]),
+          sel(per, 'per', [['Rest', 'per rest'], ['Day', 'per day']], { class: 'in mini', label: 'Uses per', re: false, on: function (v) { a.per = v; changed(); } }),
+          removeBtn('Remove ' + (a.n || 'ability'), function () { r.ab.splice(i, 1); changed(); render(); })]),
+        areaIn(a, 'x', { rows: 2, 'aria-label': (a.n || 'Ability') + ' text', placeholder: 'What it does (written into the stat block)' }, function () { changed(); })]);
+    });
+    var expAll = [].concat(CROWS.EXPERTISES.General, CROWS.EXPERTISES.Spellcasting, CROWS.EXPERTISES.Weapon).map(function (e) { return e[0]; });
+    var expPick = el('select', { class: 'in', 'aria-label': 'Expertise' }, [el('option', { value: '', text: 'Add an expertise…' })].concat(expAll.filter(function (n) { return !r.exp.some(function (e) { return e[0] === n; }); }).map(function (n) { return el('option', { value: n, text: n }); })));
+    expPick.addEventListener('change', function () { if (this.value) { r.exp.push([this.value, 1]); changed(); render(); } });
+    var gearPick = el('select', { class: 'in', 'aria-label': 'Equipment' }, itemOptions());
+    if (H.gearPick && CROWS.ITEMS[H.gearPick]) gearPick.value = H.gearPick;
+    gearPick.addEventListener('change', function () { H.gearPick = this.value; });
+    var gq = { q: H.gearQty || 1 };
+    var ad = gearAD(r), arts = Object.keys(REF.ART.creatures || {}).sort();
+    var types = REF.HB_TYPES.map(function (t) { return [t, t]; });
+    return el('div', { class: 'hb-editor' }, [
+      el('div', { class: 'hb-cols' }, [
+        el('div', { class: 'hb-form' }, [
+          el('h4', { text: 'Stat line' }),
+          el('div', { class: 'row' }, [nameIn(r, 'c'), selIn(r, 't', types, 'Type'), selIn(r, 'sz', REF.HB_SIZES, 'Size')]),
+          el('div', { class: 'row hb-nums' }, [numIn(r, 'p', 0, 50, 'Power'), numIn(r, 'st', 1, 999, 'Stamina'), numIn(r, 'ad', 0, 99, 'AD'), numIn(r, 'sl', 0, 50, 'Slots'), numIn(r, 'rx', 1, 9, 'Reactions')]),
+          el('p', { class: 'fine', text: isMonsterType(r.t) ? 'Monsters have no slots: they die at 0 Stamina, and see in the dark. Power 0-50 is the threat (starting crows can’t beat power 11+ head-on).'
+            : 'Humans and animals have slots (backpack slots) that take wounds; at 0 Stamina they flee.' }),
+          el('div', { class: 'row hb-nums' }, [numIn(r.c, 0, -5, 6, 'Agility'), numIn(r.c, 1, -5, 6, 'Mind'), numIn(r.c, 2, -5, 6, 'Strength')]),
+          el('div', { class: 'row hb-nums' }, [numIn(spd, 'walk', 0, 30, 'Speed'), numIn(spd, 'climb', 0, 30, 'Climb'), chk(spd, 'climbU', 'upside down (U)', { on: changed, title: 'Climbs ceilings too' }),
+            numIn(spd, 'swim', 0, 30, 'Swim'), numIn(spd, 'fly', 0, 30, 'Fly'), numIn(spd, 'burrow', 0, 30, 'Burrow')]),
+          el('h4', { text: 'Attacks' }),
+          el('p', { class: 'fine', text: 'Bonus is added to 2d10. Reach or range: M1 (melee 1), R10 (ranged 10), M1/R5 (thrown). The tracker reads the notes: “T3 prone”, “T2 weakened”, “T3 vs Medium or smaller: grabbed”, “Lacerate on T3”, “2 targets”, “crits on 18-20; crit = 16 damage”.' }),
+          atkRows.length ? el('div', { class: 'hb-list' }, atkRows) : el('p', { class: 'fine', text: 'No attacks.' }),
+          el('div', { class: 'row' }, [btn('Add attack', function () { r.atk.push(['Attack', Math.max(r.c[0], r.c[2]), 'M1', 2, 4]); changed(); render(); }, 'btn-small btn-ghost'),
+            r.gear.some(function (g) { var c = CROWS.ITEMS[g[0]]; return c && c.cat === 'weapon'; }) ? btn('Attacks from its weapons', function () { var n = weaponAttacks(r); changed(); render(); toast(n ? 'Added ' + plural(n, 'attack') + '.' : 'Its weapons already have attacks.'); }, 'btn-small btn-ghost', 'An attack for each weapon it carries: bonus = its characteristic, damage = the weapon’s + that characteristic') : null]),
+          el('h4', { text: 'Special abilities' }),
+          abRows.length ? el('div', { class: 'hb-list' }, abRows) : el('p', { class: 'fine', text: 'None yet. Pick any creature’s ability from the rules (then change its numbers), or write your own.' }),
+          el('div', { class: 'row' }, [el('div', { class: 'grow' }, [abPick]),
+            btn('Add', function () { var a = REF.HB_ABILITIES[+abPick.value]; if (!a) return; r.ab.push({ n: a[0], x: a[1], u: a[2] ? a[2][0] : 0, per: a[2] ? a[2][1] : 'Rest' }); changed(); render(); }, 'btn-small'),
+            btn('Write one', function () { r.ab.push({ n: 'New ability', x: '', u: 0, per: 'Rest' }); changed(); render(); }, 'btn-small btn-ghost')]),
+          el('h4', { text: 'Expertises' }),
+          el('div', { class: 'hb-chips' }, r.exp.map(function (e, i) {
+            var o = { u: e[1] };
+            return el('span', { class: 'hb-chip' }, [e[0], inp(o, 'u', { type: 'number', min: 1, max: 5, class: 'tiny', 'aria-label': e[0] + ' uses' }, { on: function (v) { e[1] = v; changed(); } }),
+              removeBtn('Remove ' + e[0], function () { r.exp.splice(i, 1); changed(); render(); })]);
+          }).concat([expPick])),
+          el('h4', { text: 'Equipment' }),
+          el('p', { class: 'fine', text: 'In a fight it holds these (it can drop them, and does when it dies); the crows can take them. Items from the rules or your own.' }),
+          r.gear.length ? el('div', { class: 'hb-list' }, r.gear.map(function (g, i) {
+            var o = { q: g[1] || 1 }, c = CROWS.ITEMS[g[0]];
+            return el('div', { class: 'li-row' }, [el('b', { class: 'grow', text: g[0], title: c ? c.txt : 'Not a known item' }),
+              el('label', { class: 'hb-num' }, ['×', inp(o, 'q', { type: 'number', min: 1, max: 99, class: 'tiny', 'aria-label': g[0] + ' count' }, { on: function (v) { g[1] = v; changed(); } })]),
+              c ? el('span', { class: 'fine', text: c.cat + (c.ad ? ', AD ' + c.ad : '') }) : el('span', { class: 'fine warn', text: 'unknown item' }),
+              removeBtn('Remove ' + g[0], function () { r.gear.splice(i, 1); changed(); render(); })]);
+          })) : null,
+          el('div', { class: 'row' }, [el('div', { class: 'grow' }, [gearPick]), inp(gq, 'q', { type: 'number', min: 1, max: 99, class: 'tiny', 'aria-label': 'How many' }, { on: function (v) { H.gearQty = v; } }),
+            btn('Give', function () { var k = gearPick.value; if (!k) return; var have = r.gear.filter(function (g) { return g[0] === k; })[0]; if (have) have[1] += gq.q; else r.gear.push([k, gq.q]); changed(); render(); }, 'btn-small')]),
+          ad.total ? el('div', { class: 'row center' }, [el('span', { class: 'fine', text: 'Its equipment gives AD ' + ad.total + ' (' + [ad.suit ? 'armor ' + ad.suit : '', ad.shield ? 'shield ' + ad.shield : '', ad.parry ? 'parry ' + ad.parry : ''].filter(Boolean).join(', ') + ').' }),
+            r.ad !== ad.total ? btn('Use AD ' + ad.total, function () { r.ad = ad.total; changed(); render(); }, 'btn-small btn-ghost') : null]) : null,
+          el('h4', { text: 'Behavior' }),
+          el('div', { class: 'row' }, [txtIn(r, 'likes', 'Likes', { placeholder: 'What draws it (monsters investigate)' }), txtIn(r, 'hates', 'Hates', { placeholder: 'What it hunts down and destroys' })]),
+          field('Notes', areaIn(r, 'notes', { rows: 3, placeholder: 'Description, nicknames, tactics, anything else for the stat block' }, function () { changed(); })),
+          field('Looks like (art for its token and the Bestiary)', sel(r, 'art', [['', 'No picture (add your own in the Bestiary)']].concat(arts.map(function (n) { return [n, n]; })), { on: changed }))
+        ]),
+        el('div', { class: 'hb-preview' }, [el('h4', { text: 'In the Bestiary' }), REF.BESTIARY.filter(function (b) { return b.hb === r.id; })[0] ? beastCard(REF.BESTIARY.filter(function (b) { return b.hb === r.id; })[0]) : el('p', { class: 'fine', text: 'Give it a name.' })])
+      ])
+    ]);
+  }
+
+  // ------------------------------------------------------------------ the equipment editor
+  function enchPicker(r) {
+    var used = enchUses(r);
+    return el('div', null, [
+      el('div', { class: 'row center' }, [el('b', { text: 'Enchantments' }), el('span', { class: 'chip' + (used > 4 ? ' warn' : ''), text: used + ' / 4 Enchanting uses', title: 'An item can carry several enchantments, up to 4 Enchanting uses in all' })]),
+      el('div', { class: 'hb-checks' }, enchList(r).filter(function (e) { return enchFits(r, e); }).map(function (e) {
+        var on = (r.ench || []).indexOf(e[0]) >= 0, eff = e[r.kind === 'weapon' ? 5 : 6], mat = e[r.kind === 'weapon' ? 3 : 4], goal = e[r.kind === 'weapon' ? 4 : 5];
+        return el('label', { class: 'check hb-ench' + (on ? ' on' : ''), title: eff }, [el('input', { type: 'checkbox', checked: on, onchange: function () {
+          r.ench = (r.ench || []).filter(function (n) { return n !== e[0]; }); if (this.checked) r.ench.push(e[0]);
+          if (enchUses(r) > 4) toast('That is more than 4 Enchanting uses: the rules allow 4 on one item.');
+          changed(); render();
+        } }), el('span', null, [el('b', { text: e[0] }), el('span', { class: 'fine', text: fmt(e[1]) + ' gc · ' + plural(e[2], 'Enchanting use') + ' · ' + mat + ', goal ' + goal }), el('span', { class: 'hb-eff', text: eff })])]);
+      }))]);
+  }
+  function udPicker(r) {
+    return el('div', { class: 'row center hb-nums' }, [numIn(r, 'ud', 0, 6, 'Usage dice'),
+      el('div', { class: 'hb-checks inline' }, REF.HB_UD_TAGS.map(function (t) {
+        return el('label', { class: 'check' }, [el('input', { type: 'checkbox', checked: !!(r.udt && r.udt[t]), onchange: function () { r.udt = r.udt || {}; if (this.checked) r.udt[t] = true; else delete r.udt[t]; changed(); render(); } }), ' ' + t]);
+      })), r.udt && r.udt.Refuel ? txtIn(r, 'refuel', 'Refuel with', { placeholder: 'oil', maxlength: 30 }) : null]);
+  }
+  function tiersIn(r, label) {
+    return el('div', null, [el('b', { text: label || 'Outcomes by tier' }),
+      el('div', { class: 'row' }, [txtIn(r, 't1', '11 or less', { maxlength: 120 }), txtIn(r, 't2', '12-16', { maxlength: 120 }), txtIn(r, 't3', '17+', { maxlength: 120 })])]);
+  }
+  function itemEditor(r) {
+    var kids = [el('div', { class: 'row' }, [nameIn(r, 'i'), selIn(r, 'kind', REF.HB_KINDS, 'Kind')])], sp = suggestedPrice(r);
+    var common = el('div', { class: 'row hb-nums' }, [numIn(r, 'gc', 0, 1e7, 'Price (gc)'), numIn(r, 'sl', 1, 4, 'Slots'), numIn(r, 'st', 1, 99, 'Stack'),
+      sp != null && sp !== r.gc ? btn('Rules price ' + fmt(sp) + ' gc', function () { r.gc = sp; changed(); render(); }, 'btn-small btn-ghost', 'The base item plus its upgrades and enchantments') : null]);
+    if (r.kind === 'weapon') {
+      var bow = r.wt === 'Bow';
+      kids.push(el('h4', { text: 'Weapon' }),
+        el('div', { class: 'row' }, [selIn(r, 'wt', REF.HB_WEAPON_TYPES, 'Type (its expertise)'), selIn(r, 'ch', [['S', 'Strength'], ['A', 'Agility'], ['A or S', 'Agility or Strength']], 'Attack with'),
+          selIn(r, 'hands', [[1, 'One hand'], [2, 'Two hands']], 'Wield in', true)]),
+        el('div', { class: 'row hb-nums' }, [numIn(r, 'reach', 0, 3, 'Melee reach'), numIn(r, 'range', 0, 40, bow ? 'Range' : 'Thrown range'), numIn(r, 't2', 0, 30, '12-16 damage'), numIn(r, 't3', 0, 40, '17+ damage')]),
+        el('p', { class: 'fine', text: 'Damage adds the characteristic it attacks with (as on the cards). Reach 0 makes it ranged only. The rules’ ranges: 1-handed 3/6, 2-handed 3/6 or 4/8-9 with reach 1-2; light weapons 2/4-5 and thrown 5.' }),
+        el('b', { text: 'Qualities' }),
+        el('div', { class: 'hb-checks' }, REF.HB_QUALITIES.map(function (q) {
+          var on = !!r.q[q[0]];
+          return el('label', { class: 'check', title: q[1] }, [el('input', { type: 'checkbox', checked: on, onchange: function () { if (this.checked) r.q[q[0]] = q[2] ? 2 : true; else delete r.q[q[0]]; changed(); render(); } }),
+            ' ' + q[0], q[2] && on ? inp(r.q, q[0], { type: 'number', min: 1, max: 10, class: 'tiny', 'aria-label': q[0] + ' value' }, { on: changed }) : null]);
+        })),
+        el('div', { class: 'row' }, [bow || r.wt === 'Unarmed' ? null : selIn(r, 'metal', [['', 'Iron (no upgrade)']].concat(REF.HB_METAL.map(function (m) { return [m[0], m[0] + ' (+' + m[1] + '/+' + m[2] + ' damage, ' + fmt(m[3]) + ' gc; Blacksmithing ' + m[4] + ', ' + m[5] + ', goal ' + m[6] + ')']; })), 'Metal upgrade'),
+          bow ? selIn(r, 'wood', [['', 'Hickory (no upgrade)']].concat(REF.HB_WOOD.map(function (w) { return [w[0], w[0] + ' (+' + w[1] + ' range, ' + fmt(w[2]) + ' gc; Blacksmithing ' + w[3] + ', ' + w[4] + ', goal ' + w[5] + ')']; })), 'Wood upgrade') : null]),
+        r.wt === 'Unarmed' ? el('p', { class: 'fine', text: 'Unarmed weapons can’t be enchanted.' }) : enchPicker(r));
+    } else if (r.kind === 'armor' || r.kind === 'shield') {
+      var t = r.kind === 'shield' ? 'Shield' : r.base, base = REF.HB_ARMOR[t];
+      kids.push(el('h4', { text: r.kind === 'shield' ? 'Shield' : 'Armor' }),
+        el('div', { class: 'row' }, [r.kind === 'armor' ? field('Type', sel(r, 'base', [['Light', 'Light (cloth, hide, leather)'], ['Medium', 'Medium (chain, scale)'], ['Heavy', 'Heavy (plate, ring, splint)']], {
+          label: 'Armor type', on: function (v) { var b = REF.HB_ARMOR[v]; r.ad = b[0]; r.sl = b[1]; r.gc = b[2]; r.up = ''; changed(); } })) : null,
+          selIn(r, 'up', [['', 'No upgrade']].concat(base[5].map(function (u) { return [u[0], u[0] + ' (+' + u[1] + ' AD, ' + fmt(u[2]) + ' gc; ' + u[3] + ' use' + (u[3] > 1 ? 's' : '') + ', ' + u[4] + ', goal ' + u[5] + ')']; })), 'Upgrade'),
+          numIn(r, 'ad', 0, 60, 'AD')]),
+        el('div', { class: 'row center' }, [el('span', { class: 'fine', text: 'The rules: ' + t + ' AD ' + base[0] + ', ' + plural(base[1], 'slot') + (armorUp(r) ? ', +' + armorUp(r)[1] + ' from ' + armorUp(r)[0] : '') + '.' }),
+          r.ad !== base[0] + (armorUp(r) ? armorUp(r)[1] : 0) ? btn('Use AD ' + (base[0] + (armorUp(r) ? armorUp(r)[1] : 0)), function () { r.ad = base[0] + (armorUp(r) ? armorUp(r)[1] : 0); changed(); render(); }, 'btn-small btn-ghost') : null]),
+        enchPicker(r));
+    } else if (r.kind === 'ammo') {
+      kids.push(el('h4', { text: 'Ammunition' }), el('div', { class: 'row' }, [txtIn(r, 'for', 'For', { list: 'hb-ammo-for', maxlength: 40 }), numIn(r, 'count', 1, 100, 'Shots'),
+        selIn(r, 'metal', [['', 'Iron']].concat(REF.HB_METAL.map(function (m) { return [m[0], m[0] + ' (+' + m[1] + '/+' + m[2] + ')']; })), 'Metal')]));
+    } else if (r.kind === 'gear') {
+      kids.push(el('h4', { text: 'Gear' }), el('div', { class: 'row' }, [selIn(r, 'gcat', REF.HB_GEAR_CATS, 'Sort'), selIn(r, 'act', [['', 'Always on / passive'], ['Maneuver', 'Maneuver'], ['Action', 'Action']], 'Using it'),
+        selIn(r, 'quality', [['', 'Standard'], ['Fine', 'Fine'], ['Masterwork', 'Masterwork']], 'Quality'), r.quality ? numIn(r, 'qb', 1, 3, 'Bonus') : null]),
+        r.gcat === 'light' ? el('div', { class: 'row hb-nums' }, [numIn(r, 'lb', 0, 30, 'Bright (squares)'), numIn(r, 'ld', 0, 30, 'Dim (squares)')]) : null,
+        udPicker(r), field('What it does', areaIn(r, 'fx', { rows: 2, placeholder: 'Climb without a test; +1 to guide tests while carried…' }, function () { changed(); })));
+    } else if (r.kind === 'alchemy' || r.kind === 'magic') {
+      kids.push(el('h4', { text: r.kind === 'magic' ? 'Magic item' : 'Alchemy item' }),
+        el('div', { class: 'row' }, [r.kind === 'magic' ? selIn(r, 'slot', REF.HB_MAGIC_SLOTS.map(function (s) { return [s, s || 'Held (no slot)']; }), 'Worn in') : null,
+          selIn(r, 'act', [['', 'Passive (while carried or worn)'], ['Maneuver', 'Maneuver'], ['Action', 'Action'], ['Reaction', 'Reaction']], 'Using it'),
+          selIn(r, 'rr', [['', 'No resistance roll'], ['Agility', 'Agility RR'], ['Mind', 'Mind RR'], ['Strength', 'Strength RR']], 'Target resists')]),
+        udPicker(r), field('What it does', areaIn(r, 'fx', { rows: 2, placeholder: 'Drink: regain 1d6 Stamina… / throw up to 10 squares, 3 cube…' }, function () { changed(); })), tiersIn(r));
+    } else if (r.kind === 'spell') {
+      kids.push(el('h4', { text: 'Spellbook' }),
+        el('div', { class: 'row' }, [numIn(r, 'rank', 0, 5, 'Rank', function () { r.gc = REF.HB_SPELL_PRICES[r.rank] || r.gc; }), selIn(r, 'disc', REF.HB_DISCIPLINES, 'Discipline'), selIn(r, 'time', REF.HB_CAST_TIMES, 'Casting time')]),
+        el('div', { class: 'row' }, [txtIn(r, 'rng', 'Range', { list: 'hb-spell-range', maxlength: 40 }), txtIn(r, 'tgt', 'Targets or area', { maxlength: 60, placeholder: '1 creature; Cube 3; All allies' }), txtIn(r, 'dur', 'Duration', { list: 'hb-spell-dur', maxlength: 30 })]),
+        chk(r, 'dmg', 'It is an attack (deals damage + Mind)', { on: changed }),
+        r.dmg ? el('div', { class: 'row hb-nums' }, [numIn(r, 't2n', 0, 30, '12-16 damage + M'), numIn(r, 't3n', 0, 40, '17+ damage + M'), txtIn(r, 't3', 'Also on 17+', { maxlength: 60, placeholder: 'and prone' })]) : tiersIn(r, 'What each tier does'),
+        el('p', { class: 'fine', text: 'Spellbooks have UD 1 (Rest; Activate), and are cast with 2d10 + Mind while wielded. A T1 that isn’t a doom risks backlash (1d6: 1).' }));
+    } else if (r.kind === 'material') kids.push(el('div', { class: 'row' }, [selIn(r, 'msize', [['S', 'Small (a bar)'], ['M', 'Medium (a log)']], 'Size')]));
+    else if (r.kind === 'treasure') kids.push(el('div', { class: 'row' }, [selIn(r, 'tsize', REF.HB_TREASURE_SIZES, 'Size')]));
+    else if (r.kind === 'vehicle') kids.push(el('div', { class: 'row hb-nums' }, [numIn(r, 'vst', 1, 500, 'Stamina'), selIn(r, 'vsize', [['Large', 'Large animals'], ['Huge', 'Huge animals'], ['Holy Shit', 'Holy Shit! animals']], 'Pulled by'), numIn(r, 'animals', 1, 16, 'Animals'), numIn(r, 'cargo', 1, 5000, 'Cargo slots')]),
+      el('p', { class: 'fine', text: 'Vehicles aren’t carried, so they don’t become inventory cards.' }));
+    kids.push(common);
+    kids.push(more('Crafting (optional)', [el('div', { class: 'row' }, [selIn(r.craft, 'exp', REF.HB_CRAFT_EXP.map(function (e) { return [e, e || 'Not craftable']; }), 'Expertise'),
+      numIn(r.craft, 'uses', 1, 4, 'Uses'), txtIn(r.craft, 'mat', 'Materials', { maxlength: 60 }), numIn(r.craft, 'goal', 0, 5000, 'Goal')])], !!(r.craft && r.craft.exp)));
+    kids.push(field('More card text', areaIn(r, 'txt', { rows: 2, placeholder: 'Anything else the card says' }, function () { changed(); renderPreview(r); })));
+    return el('div', { class: 'hb-editor' }, [el('div', { class: 'hb-cols' }, [el('div', { class: 'hb-form' }, kids), el('div', { class: 'hb-preview', id: 'hb-item-preview' }, [itemPreview(r)])])]);
+  }
+  function itemPreview(r) {
+    var c = toCard(r);
+    return el('div', { class: 'hb-card' }, [el('div', { class: 'hb-card-head' }, [el('b', { text: r.n || 'Unnamed item' }), el('span', { class: 'chip', text: (REF.HB_KINDS.filter(function (k) { return k[0] === r.kind; })[0] || ['', r.kind])[1] })]),
+      el('div', { class: 'fine', text: [fmt(r.gc) + ' gc', plural(r.sl, 'slot'), r.st > 1 ? 'stack ' + r.st : '', c.ad ? 'AD ' + c.ad : '', c.hands === 2 ? '2 hands' : ''].filter(Boolean).join(' · ') }),
+      el('p', { class: 'hb-card-txt', text: c.txt || '—' })]);
+  }
+  function renderPreview(r) { var b = $('hb-item-preview'); if (b) { b.innerHTML = ''; b.appendChild(itemPreview(r)); } }
+
+  // ------------------------------------------------------------------ the tab
+  function lists() {
+    return [el('datalist', { id: 'hb-ranges' }, ['M1', 'M2', 'M3', 'R5', 'R10', 'R15', 'R20', 'M1/R5', 'M2/R5', 'M1/R10'].map(function (v) { return el('option', { value: v }); })),
+      el('datalist', { id: 'hb-atk-notes' }, REF.HB_ATTACK_NOTES.map(function (v) { return el('option', { value: v }); })),
+      el('datalist', { id: 'hb-ammo-for' }, ['Bows (arrows)', 'Crossbows (bolts)', 'Slings (stones)'].map(function (v) { return el('option', { value: v }); })),
+      el('datalist', { id: 'hb-spell-range' }, ['Self', 'Melee 1', 'Ranged 3', 'Ranged 5', 'Ranged 10', 'Ranged 15', 'Aura 2', 'Cube 3 within 10', 'Line 5 x 1 within 1'].map(function (v) { return el('option', { value: v }); })),
+      el('datalist', { id: 'hb-spell-dur' }, ['Instant', 'DT', '1 UD', '2 UD', 'End of DT'].map(function (v) { return el('option', { value: v }); }))];
+  }
+  function renderWorkshop() {
+    var h = hb();
+    // creatures
+    var q = H.crQ.toLowerCase(), crs = h.creatures.filter(function (r) { return !q || (r.n + ' ' + r.t).toLowerCase().indexOf(q) >= 0; });
+    var from = el('select', { class: 'in', 'aria-label': 'Start from a creature' }, [el('option', { value: '', text: 'A blank creature' })].concat((function () {
+      var g = {}; OFFICIAL_BEASTS.concat(REF.BESTIARY.filter(function (b) { return b.custom; })).forEach(function (b) { (g[b.custom ? 'Mine' : b.t] = g[b.custom ? 'Mine' : b.t] || []).push(b.n); });
+      return Object.keys(g).map(function (t) { return el('optgroup', { label: t }, g[t].map(function (n) { return el('option', { value: n, text: n }); })); });
+    })()));
+    from.value = H.from && beastNames()[H.from] ? H.from : '';
+    from.addEventListener('change', function () { H.from = this.value; });
+    var crSearch = el('input', { type: 'search', class: 'in', placeholder: 'Search your creatures…', value: H.crQ, 'aria-label': 'Search your creatures', id: 'hb-cr-q', oninput: function () { H.crQ = this.value; var p = this.selectionStart; renderWorkshop(); var n = $('hb-cr-q'); n.focus(); try { n.setSelectionRange(p, p); } catch (e) { /* ignore */ } } });
+    card('sec-hb-creatures', el('h2', null, ['Custom Creatures', el('small', { text: plural(h.creatures.length, 'creature') })]), lists().concat([
+      el('p', { class: 'hint', text: 'Your own creatures join the Bestiary, encounters, the combat tracker, and the Tabletop. Start from a blank stat block or copy any creature, then change anything.' }),
+      el('div', { class: 'row' }, [field('Start from', from, 'grow'), btn('New creature', function () {
+        var b = H.from && REF.BESTIARY.filter(function (x) { return x.n === H.from; })[0], r = b ? fromBeast(b) : newCreature({ n: uniqueName('New creature', null) });
+        h.creatures.unshift(r); H.cr = r.id; log('', 'Workshop: new creature **' + r.n + '**.'); changed(); render();
+      }, 'btn-primary')]),
+      h.creatures.length > 6 ? crSearch : null,
+      el('div', { class: 'hb-items' }, crs.map(function (r) {
+        var open = H.cr === r.id;
+        return el('div', { class: 'hb-row' + (open ? ' open' : '') }, [
+          el('div', { class: 'li-row' }, [el('button', { type: 'button', class: 'hb-name', 'aria-expanded': open ? 'true' : 'false', onclick: function () { H.cr = open ? null : r.id; render(); } }, [el('b', { text: r.n || 'Unnamed' }),
+            el('span', { class: 'fine', text: ' ' + r.t + ' · ' + (A.SIZES[r.sz] || r.sz) + ' · P' + r.p + ' · Stamina ' + r.st + (r.ad ? ' · AD ' + r.ad : '') + (r.ab.length ? ' · ' + plural(r.ab.length, 'ability', 'abilities') : '') })]),
+            el('span', { class: 'spacer' }),
+            btn(open ? 'Done' : 'Edit', function () { H.cr = open ? null : r.id; render(); }, 'btn-small' + (open ? ' btn-primary' : '')),
+            btn('Add to combat', function () { addCombatant(r.n, 1, 'foe'); log('', 'Added 1 × ' + r.n + ' to combat.'); toast('Added ' + r.n + ' to the combat tracker.'); render(); }, 'btn-small btn-ghost'),
+            btn('Duplicate', function () { var c = clone(r); c.id = nid(); c.n = uniqueName(r.n + ' (copy)', null); h.creatures.splice(h.creatures.indexOf(r) + 1, 0, c); H.cr = c.id; changed(); render(); }, 'btn-small btn-ghost'),
+            btn('Delete', function () {
+              var used = state.encounters.filter(function (e) { return e.creatures.some(function (c) { return c.n === r.n; }); }).length;
+              if (!confirm('Delete ' + (r.n || 'this creature') + '?' + (used ? ' ' + plural(used, 'saved encounter') + ' use' + (used === 1 ? 's' : '') + ' it, and will keep its name without its stats.' : ''))) return;
+              h.creatures = h.creatures.filter(function (x) { return x !== r; }); if (H.cr === r.id) H.cr = null; changed(); render();
+            }, 'btn-small btn-ghost btn-danger')]),
+          open ? creatureEditor(r) : null]);
+      })),
+      !h.creatures.length ? el('p', { class: 'fine', text: 'No custom creatures yet.' }) : null
+    ]));
+
+    // equipment
+    var iq = H.itQ.toLowerCase(), its = h.items.filter(function (r) { return !iq || (r.n + ' ' + r.kind).toLowerCase().indexOf(iq) >= 0; });
+    var ifrom = el('select', { class: 'in', 'aria-label': 'Start from an item' }, [el('option', { value: '', text: 'A blank item of this kind' })].concat(itemOptions(function (c) { return !c.custom; })));
+    ifrom.value = H.itFrom && CROWS.ITEMS[H.itFrom] ? H.itFrom : '';
+    ifrom.addEventListener('change', function () { H.itFrom = this.value; });
+    var kind = el('select', { class: 'in', 'aria-label': 'Kind' }, REF.HB_KINDS.map(function (k) { return el('option', { value: k[0], text: k[1] }); }));
+    kind.value = H.kind; kind.addEventListener('change', function () { H.kind = this.value; });
+    var itSearch = el('input', { type: 'search', class: 'in', placeholder: 'Search your equipment…', value: H.itQ, 'aria-label': 'Search your equipment', id: 'hb-it-q', oninput: function () { H.itQ = this.value; var p = this.selectionStart; renderWorkshop(); var n = $('hb-it-q'); n.focus(); try { n.setSelectionRange(p, p); } catch (e) { /* ignore */ } } });
+    card('sec-hb-items', el('h2', null, ['Custom Equipment', el('small', { text: plural(h.items.length, 'item') })]), [
+      el('p', { class: 'hint', text: 'Any kind of equipment on the cards, with the stats, qualities, upgrades, and enchantments the rules allow. Your items can be given to creatures, put on the ground in a fight, and picked up by the crows (their sheets get the card).' }),
+      el('div', { class: 'row' }, [field('Kind', kind), field('Or start from', ifrom, 'grow'), btn('New item', function () {
+        var r = H.itFrom ? fromCard(H.itFrom) : newItem(H.kind, {}); if (!H.itFrom) r.n = itemTaken('New ' + (REF.HB_KINDS.filter(function (k) { return k[0] === H.kind; })[0] || ['', 'item'])[1].toLowerCase().replace(/ \(.*$/, ''), null);
+        h.items.unshift(r); H.it = r.id; log('', 'Workshop: new item **' + r.n + '**.'); changed(); render();
+      }, 'btn-primary')]),
+      h.items.length > 6 ? itSearch : null,
+      el('div', { class: 'hb-items' }, its.map(function (r) {
+        var open = H.it === r.id;
+        return el('div', { class: 'hb-row' + (open ? ' open' : '') }, [
+          el('div', { class: 'li-row' }, [el('button', { type: 'button', class: 'hb-name', 'aria-expanded': open ? 'true' : 'false', onclick: function () { H.it = open ? null : r.id; render(); } }, [el('b', { text: r.n || 'Unnamed' }),
+            el('span', { class: 'fine', text: ' ' + (REF.HB_KINDS.filter(function (k) { return k[0] === r.kind; })[0] || ['', r.kind])[1] + ' · ' + fmt(r.gc) + ' gc' + ((r.ench || []).length ? ' · ' + r.ench.join(', ') : '') })]),
+            el('span', { class: 'spacer' }),
+            btn(open ? 'Done' : 'Edit', function () { H.it = open ? null : r.id; render(); }, 'btn-small' + (open ? ' btn-primary' : '')),
+            btn('Duplicate', function () { var c = clone(r); c.id = nid(); c.n = itemTaken(r.n + ' (copy)', null); h.items.splice(h.items.indexOf(r) + 1, 0, c); H.it = c.id; changed(); render(); }, 'btn-small btn-ghost'),
+            btn('Delete', function () {
+              if (!confirm('Delete ' + (r.n || 'this item') + '? Crows that already have one keep its card.')) return;
+              h.items = h.items.filter(function (x) { return x !== r; }); if (H.it === r.id) H.it = null; changed(); render();
+            }, 'btn-small btn-ghost btn-danger')]),
+          open ? itemEditor(r) : null]);
+      })),
+      !h.items.length ? el('p', { class: 'fine', text: 'No custom equipment yet.' }) : null
+    ]);
+  }
+
+  /* From the Bestiary: edit a Workshop creature, or copy one from the rules into the Workshop. */
+  function workshopOpen(b) {
+    var r = b.custom ? hb().creatures.filter(function (c) { return c.id === b.hb; })[0] : null;
+    if (!r) { r = fromBeast(b); hb().creatures.unshift(r); log('', 'Workshop: new creature **' + r.n + '**, from ' + b.n + '.'); changed(); }
+    H.cr = r.id; setTab('workshop');
+  }
+
+  A.add({ workshopOpen: workshopOpen, renderWorkshop: renderWorkshop, syncHomebrew: sync, hbToBeast: toBeast, hbToCard: toCard, hbCardText: cardText });
 })();
 
 </script>

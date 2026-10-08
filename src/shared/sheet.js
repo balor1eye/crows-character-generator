@@ -13,6 +13,33 @@
 
   function clone(v) { return JSON.parse(JSON.stringify(v)); }
   function item(key) { return CROWS.ITEMS[key] || { cat: 'misc', st: 1, sl: 1, gc: 0, txt: '' }; }
+  /*
+   * Equipment the Ref made in the Workshop (ref-homebrew.js): its card travels with the fight (combat `defs`) and is kept on the
+   * character that got one (character.hb: { name: card }), so the sheet knows its slots, stack, and text. A card is checked here, and
+   * can never replace a card from the rules.
+   */
+  var OFFICIAL = {}; Object.keys(CROWS.ITEMS).forEach(function (k) { OFFICIAL[k] = true; });
+  var ITEM_CATS = ['weapon', 'armor', 'shield', 'ammo', 'misc', 'tool', 'light', 'bulky', 'trap', 'food', 'purse', 'book', 'consumable', 'magic', 'spell'];
+  function isOfficial(key) { return !!OFFICIAL[key]; }
+  function cleanItem(d) {
+    if (!d || typeof d !== 'object') return null;
+    function n(v, lo, hi, dflt) { v = Math.round(+v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dflt; }
+    var o = { cat: ITEM_CATS.indexOf(d.cat) >= 0 ? d.cat : 'misc', st: n(d.st, 1, 99, 1), sl: n(d.sl, 1, 4, 1), gc: n(d.gc, 0, 1e7, 0), txt: String(d.txt || '').slice(0, 1500), custom: true };
+    if (d.hands === 2) o.hands = 2;
+    if (o.cat === 'armor' || o.cat === 'shield') o.ad = n(d.ad, 0, 99, 0);
+    if (typeof d.wt === 'string' && /^(Bashing|Bow|Chopping|Slashing|Stabbing|Unarmed)$/.test(d.wt)) o.wt = d.wt;
+    if (d.light) o.light = true;
+    if (d.atk) o.atk = true;
+    return o;
+  }
+  /* Add these cards ({ name: card }) to CROWS.ITEMS (never over a card from the rules). Returns the names added. */
+  function registerItems(map) {
+    var out = [];
+    if (!map || typeof map !== 'object') return out;
+    Object.keys(map).forEach(function (k) { if (isOfficial(k) || !k || k.length > 80) return; var c = cleanItem(map[k]); if (c) { CROWS.ITEMS[k] = c; out.push(k); } });
+    return out;
+  }
+  function unregisterItem(key) { if (!isOfficial(key)) delete CROWS.ITEMS[key]; }
   function bg(c) { return CROWS.BACKGROUNDS[c.bg]; }
 
   // ------------------------------------------------------------------ derived numbers
@@ -378,7 +405,7 @@
     return msgs;
   }
 
-  window.CrowsSheet = { CONDITIONS: CONDITIONS, MAGIC_SLOTS: MAGIC_SLOTS, item: item, bg: bg, characteristics: characteristics,
+  window.CrowsSheet = { CONDITIONS: CONDITIONS, MAGIC_SLOTS: MAGIC_SLOTS, item: item, isOfficial: isOfficial, cleanItem: cleanItem, registerItems: registerItems, unregisterItem: unregisterItem, bg: bg, characteristics: characteristics,
     expertiseUses: expertiseUses, staminaMax: staminaMax, curStamina: curStamina, setStamina: setStamina, adMax: adMax, adNow: adNow,
     woundCount: woundCount, armorInfo: armorInfo, freshPlay: freshPlay, normalizePlay: normalizePlay, addLog: addLog,
     carried: carried, inHands: inHands, cardById: cardById, findCarried: findCarried, packOcc: packOcc, udInfo: udInfo, udNow: udNow,

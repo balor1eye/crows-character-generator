@@ -49,6 +49,7 @@
 .vtt-host { position: relative; width: 100%; height: clamp(360px, 68vh, 900px); background: #0c0b0d; border: 1px solid var(--line); border-radius: var(--radius); overflow: hidden; margin: .5rem 0; }
 .vtt-host:fullscreen { height: 100vh; border: 0; border-radius: 0; margin: 0; }
 .vtt-canvas { display: block; outline: none; }
+.vtt-weather { position: absolute; left: 0; top: 0; pointer-events: none; z-index: 0; }
 .field.inline { flex-direction: row; align-items: center; gap: .4rem; }
 body[data-tab="vtt"] #page-vtt { display: flex; }
 
@@ -388,6 +389,23 @@ body[data-tab="vtt"] #page-vtt { display: flex; }
   .glass-sel { max-width: 150px; }
 }
 @media (prefers-reduced-motion: reduce) { .vtt-ui *, .vtt-ui *::before, .vtt-ui *::after { animation: none !important; transition: none !important; } .vtt-banner { animation: none !important; } }
+
+/* The Environment drawer's switches and the environment chips on the map (REF.ENV; the effects animate on .vtt-weather) */
+.env-list { gap: .4rem; }
+.env-tog { display: flex; gap: .6rem; align-items: flex-start; width: 100%; padding: .5rem .6rem; border-radius: 10px; border: 1px solid var(--gl-line, rgba(255,255,255,.12));
+  background: rgba(255,255,255,.04); color: inherit; font: inherit; text-align: left; cursor: pointer; pointer-events: auto; transition: background .15s, border-color .15s; }
+.env-tog:hover { background: rgba(255,255,255,.08); }
+.env-tog:focus-visible { outline: 2px solid var(--gl-hi, #d9a441); outline-offset: 2px; }
+.env-tog.on { border-color: var(--gl-hi, #d9a441); background: rgba(217,164,65,.14); }
+.env-sw { flex: none; position: relative; width: 30px; height: 17px; margin-top: 2px; border-radius: 9px; background: rgba(255,255,255,.2); transition: background .18s; }
+.env-sw::after { content: ''; position: absolute; left: 2px; top: 2px; width: 13px; height: 13px; border-radius: 50%; background: #fff; transition: transform .18s; }
+.env-tog.on .env-sw { background: var(--gl-hi, #d9a441); }
+.env-tog.on .env-sw::after { transform: translateX(13px); }
+.env-t { display: flex; flex-direction: column; gap: .15rem; min-width: 0; }
+.env-t .fine { opacity: .75; font-size: .76rem; line-height: 1.3; }
+.hud-chip.env { background: rgba(120,165,215,.22); border-color: rgba(150,190,235,.35); cursor: help; }
+.hud-grp.env .ico-wrap { opacity: .8; }
+@media (prefers-reduced-motion: reduce) { .env-sw, .env-sw::after { transition: none; } }
 
 </style>
 <style>
@@ -1617,7 +1635,7 @@ CROWS.NAME_IDEAS = {
   var SQ3 = Math.sqrt(3);
 
   // ------------------------------------------------------------------ scenes and grids
-  var SIZES = { T: 0.5, S: 1, M: 1, L: 2, H: 3 };
+  var SIZES = { T: 0.5, S: 1, M: 1, L: 2, H: 3, G: 4 };
   var KIND_COLOR = { pc: '#4fb6a6', foe: '#c4524a', ally: '#6aa84f', npc: '#d6a93b', obj: '#8a8a93' };
   // The markers around a token for its conditions: [color, letter]. Anything else gets a gray marker with its first letter.
   var COND_STYLE = { Blessed: ['#d9b23c', 'B'], Grabbed: ['#e0782f', 'G'], Prone: ['#8d6a4b', 'P'], Unconscious: ['#6c5fd0', 'U'], Vulnerable: ['#d2455c', 'V'],
@@ -1879,6 +1897,107 @@ CROWS.NAME_IDEAS = {
    * as it opens, walls draw themselves in, doors flash, pins drop, and the camera glides. The view diffs the scene each frame to find these.
    */
   var RM = !!(window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches);
+
+  // ------------------------------------------------------------------ the environment's look (REF.ENV keys)
+  /* Each effect draws into the view's weather canvas: (ctx, R: the map's rectangle on screen { x, y, w, h, W, H, g, t, dt }, its own
+     particles (kept between frames), the shared state). Particles live in viewport pixels and wrap around it. Subtle on purpose. */
+  function rnd(a, b) { return a + Math.random() * (b - a); }
+  function tint(c, R, color) { c.fillStyle = color; c.fillRect(R.x, R.y, R.w, R.h); }
+  function vignette(c, R, color, inner) {
+    var cx = R.x + R.w / 2, cy = R.y + R.h / 2, r = Math.hypot(R.w, R.h) / 2, gr = c.createRadialGradient(cx, cy, r * (inner || .35), cx, cy, r);
+    gr.addColorStop(0, 'rgba(0,0,0,0)'); gr.addColorStop(1, color); c.fillStyle = gr; c.fillRect(R.x, R.y, R.w, R.h);
+  }
+  function seed(P, n, make) { while (P.length < n) P.push(make(true)); if (P.length > n) P.length = n; }
+  function count(R, per, max) { return Math.min(max, Math.round(R.W * R.H / per)); }
+  function wrap(p, R, pad) {
+    if (p.x < -pad) p.x += R.W + 2 * pad; else if (p.x > R.W + pad) p.x -= R.W + 2 * pad;
+    if (p.y < -pad) p.y += R.H + 2 * pad; else if (p.y > R.H + pad) p.y -= R.H + 2 * pad;
+  }
+  /* Soft drifting blobs (haze, fog, smoke). */
+  function blobs(c, R, P, n, rgb, alpha, size, speed) {
+    seed(P, n, function () { return { x: rnd(0, R.W), y: rnd(0, R.H), r: rnd(.6, 1.2) * size, vx: rnd(.4, 1) * speed, vy: rnd(-.3, .3) * speed, ph: rnd(0, 6.3) }; });
+    P.forEach(function (p) {
+      p.x += p.vx * R.dt; p.y += p.vy * R.dt; wrap(p, R, p.r);
+      var a = alpha * (.75 + .25 * Math.sin(R.t * .4 + p.ph)), gr = c.createRadialGradient(p.x, p.y, 0, p.x, p.y, p.r);
+      gr.addColorStop(0, 'rgba(' + rgb + ',' + a + ')'); gr.addColorStop(1, 'rgba(' + rgb + ',0)');
+      c.fillStyle = gr; c.fillRect(p.x - p.r, p.y - p.r, 2 * p.r, 2 * p.r);
+    });
+  }
+  /* Falling or blowing streaks (rain, sand). */
+  function streaks(c, R, P, n, color, vx, vy, len, width) {
+    seed(P, n, function () { return { x: rnd(0, R.W), y: rnd(0, R.H), s: rnd(.7, 1.3) }; });
+    var sp = Math.hypot(vx, vy), ux = vx / sp, uy = vy / sp;
+    c.strokeStyle = color; c.lineWidth = width; c.lineCap = 'round'; c.beginPath();
+    P.forEach(function (p) {
+      p.x += vx * p.s * R.dt; p.y += vy * p.s * R.dt; wrap(p, R, len);
+      c.moveTo(p.x, p.y); c.lineTo(p.x - ux * len * p.s, p.y - uy * len * p.s);
+    });
+    c.stroke();
+  }
+  /* Round particles (snow, embers). */
+  function flakes(c, R, P, n, make, color) {
+    seed(P, n, make);
+    P.forEach(function (p) {
+      p.x += (p.vx + Math.sin(R.t * p.f + p.ph) * p.sway) * R.dt; p.y += p.vy * R.dt; wrap(p, R, 10);
+      c.globalAlpha = p.a * (p.flick ? .55 + .45 * Math.sin(R.t * p.flick + p.ph) : 1); c.fillStyle = color;
+      c.beginPath(); c.arc(p.x, p.y, p.r, 0, 7); c.fill();
+    });
+    c.globalAlpha = 1;
+  }
+  /* Rings spreading on a surface (water, blood). */
+  function ripples(c, R, P, n, rgb) {
+    seed(P, n, function (first) { return { x: rnd(R.x, R.x + R.w), y: rnd(R.y, R.y + R.h), t0: R.t - (first ? rnd(0, 3) : 0), dur: rnd(2.2, 3.6), r: rnd(.5, 1.1) * Math.max(14, R.g) }; });
+    for (var i = 0; i < P.length; i++) {
+      var p = P[i], k = (R.t - p.t0) / p.dur;
+      if (k >= 1 || k < 0) { P[i] = { x: rnd(R.x, R.x + R.w), y: rnd(R.y, R.y + R.h), t0: R.t, dur: rnd(2.2, 3.6), r: rnd(.5, 1.1) * Math.max(14, R.g) }; continue; }
+      c.strokeStyle = 'rgba(' + rgb + ',' + (.28 * (1 - k)) + ')'; c.lineWidth = 1.5;
+      c.beginPath(); c.ellipse(p.x, p.y, p.r * k + 2, (p.r * k + 2) * .45, 0, 0, 7); c.stroke();
+    }
+  }
+  var ENV_FX = {
+    dim: function (c, R) { tint(c, R, 'rgba(12,14,34,.16)'); vignette(c, R, 'rgba(6,6,18,.35)'); },
+    dark: function (c, R) { tint(c, R, 'rgba(2,2,10,' + (.36 + .03 * Math.sin(R.t * .7)) + ')'); vignette(c, R, 'rgba(0,0,6,.6)', .2); },
+    smoke: function (c, R, P) { tint(c, R, 'rgba(70,70,72,.12)'); blobs(c, R, P, count(R, 60000, 26), '150,150,155', .22, Math.max(120, R.g * 3), 14); },
+    miasma: function (c, R, P) { tint(c, R, 'rgba(110,128,96,.07)'); blobs(c, R, P, count(R, 90000, 18), '140,160,120', .12, Math.max(160, R.g * 4), 9); },
+    strong: function (c, R, P) { tint(c, R, 'rgba(150,158,150,.2)'); blobs(c, R, P, count(R, 45000, 34), '185,190,182', .26, Math.max(170, R.g * 4), 12); },
+    rain: function (c, R, P) { tint(c, R, 'rgba(30,45,70,.08)'); streaks(c, R, P, count(R, 2600, 420), 'rgba(175,195,225,.32)', -90, 640, 16, 1); },
+    storm: function (c, R, P, S) {
+      tint(c, R, 'rgba(18,24,44,.16)'); streaks(c, R, P, count(R, 1500, 700), 'rgba(185,200,230,.38)', -220, 820, 20, 1.1);
+      if (R.dt && !S.next) S.next = R.t + rnd(5, 12);
+      if (R.dt && R.t >= S.next) { S.flash = R.t; S.next = R.t + rnd(6, 15); }
+      var k = R.t - S.flash;
+      if (k >= 0 && k < .6) { var a = k < .08 ? .3 : k < .16 ? .05 : k < .26 ? .22 : .22 * (1 - (k - .26) / .34); tint(c, R, 'rgba(230,236,255,' + Math.max(0, a) + ')'); }
+    },
+    blizzard: function (c, R, P) {
+      tint(c, R, 'rgba(225,232,240,.13)');
+      flakes(c, R, P, count(R, 2200, 520), function () { return { x: rnd(0, R.W), y: rnd(0, R.H), vx: rnd(260, 420), vy: rnd(60, 140), r: rnd(.8, 2.2), a: rnd(.5, .9), sway: 30, f: rnd(1, 3), ph: rnd(0, 6.3) }; }, '#f4f8ff');
+    },
+    cold: function (c, R, P) {
+      vignette(c, R, 'rgba(170,215,255,.32)', .45);
+      flakes(c, R, P, count(R, 9000, 140), function () { return { x: rnd(0, R.W), y: rnd(0, R.H), vx: rnd(-8, 12), vy: rnd(18, 40), r: rnd(.8, 1.8), a: rnd(.45, .8), sway: 14, f: rnd(.5, 1.5), ph: rnd(0, 6.3) }; }, '#eef6ff');
+    },
+    heat: function (c, R) {
+      tint(c, R, 'rgba(255,150,60,.07)'); vignette(c, R, 'rgba(255,120,30,.16)', .5);
+      var step = Math.max(34, R.h / 12); c.strokeStyle = 'rgba(255,235,200,.035)'; c.lineWidth = Math.max(2, step * .18);
+      for (var y = R.y + R.h - ((R.t * 22) % step); y > R.y - step; y -= step) {
+        c.beginPath();
+        for (var x = R.x; x <= R.x + R.w; x += 18) c.lineTo(x, y + Math.sin(x / 55 + R.t * 2 + y / 40) * 4);
+        c.stroke();
+      }
+    },
+    sand: function (c, R, P) {
+      tint(c, R, 'rgba(196,154,92,' + (.16 + .04 * Math.sin(R.t * .9)) + ')');
+      streaks(c, R, P, count(R, 2000, 520), 'rgba(222,188,130,.42)', 720, 70, 10, 1.4);
+    },
+    water: function (c, R, P) { tint(c, R, 'rgba(40,96,150,.12)'); ripples(c, R, P, count(R, 50000, 22), '200,230,255'); },
+    blood: function (c, R, P) { tint(c, R, 'rgba(110,8,12,.13)'); ripples(c, R, P, count(R, 60000, 16), '255,120,120'); },
+    fire: function (c, R, P) {
+      var gr = c.createLinearGradient(0, R.y + R.h, 0, R.y + R.h * .55); gr.addColorStop(0, 'rgba(255,110,30,' + (.16 + .04 * Math.sin(R.t * 3)) + ')'); gr.addColorStop(1, 'rgba(255,110,30,0)');
+      c.fillStyle = gr; c.fillRect(R.x, R.y, R.w, R.h);
+      flakes(c, R, P, count(R, 12000, 110), function () { return { x: rnd(0, R.W), y: rnd(0, R.H), vx: rnd(-10, 10), vy: rnd(-70, -30), r: rnd(.8, 2), a: rnd(.6, 1), sway: 22, f: rnd(1, 3), ph: rnd(0, 6.3), flick: rnd(6, 14) }; }, '#ffb35c');
+    }
+  };
+  T.ENV_FX = Object.keys(ENV_FX);
   function ease(k) { return k < .5 ? 4 * k * k * k : 1 - Math.pow(-2 * k + 2, 3) / 2; }
   function easeOut(k) { return 1 - Math.pow(1 - k, 3); }
   function backOut(k) { var c = 1.9; return 1 + (c + 1) * Math.pow(k - 1, 3) + c * Math.pow(k - 1, 2); }
@@ -1896,6 +2015,7 @@ CROWS.NAME_IDEAS = {
       primed: false, intro: 0, wallSeen: {}, wallT: {}, pinSeen: {}, pinT: {}, selT0: 0, lastT: 0, busy: false };
     cv.className = 'vtt-canvas'; cv.tabIndex = 0; cv.style.touchAction = 'none';
     host.appendChild(cv);
+    var wx = document.createElement('canvas'), wctx = wx.getContext('2d'); wx.className = 'vtt-weather'; wx.setAttribute('aria-hidden', 'true'); host.appendChild(wx);
     var tip = document.createElement('div'); tip.className = 'vtt-ttip'; tip.setAttribute('role', 'tooltip'); tip.hidden = true; host.appendChild(tip);
 
     function sc() { return o.scene(); }
@@ -1906,6 +2026,7 @@ CROWS.NAME_IDEAS = {
       V.size = { w: Math.max(100, r.width), h: Math.max(100, r.height) }; V.dpr = dpr;
       if (V.fitPending && r.width >= 50) { V.fitPending = false; setTimeout(fit, 0); }
       cv.width = Math.round(V.size.w * dpr); cv.height = Math.round(V.size.h * dpr); cv.style.width = V.size.w + 'px'; cv.style.height = V.size.h + 'px';
+      wx.width = cv.width; wx.height = cv.height; wx.style.width = cv.style.width; wx.style.height = cv.style.height; Wx.parts = {};
       redraw();
     }
     /* Move the camera so world point (cx, cy) is in the middle at zoom z, gliding over ms (zoom eases in log space so it feels even). */
@@ -2199,6 +2320,33 @@ CROWS.NAME_IDEAS = {
       V.lastT = now;
       if (o.onFrame) o.onFrame();
       if (V.busy) redraw();
+      weather();
+    }
+    /*
+     * The scene's environment (scene.env: { rain: true, ... }, keys from REF.ENV) on a canvas over the map: tints, haze, and particles,
+     * drawn in screen space and clipped to the map. It animates on its own frames while anything is on, so the map itself isn't redrawn;
+     * with reduced motion it is only the still tints.
+     */
+    var Wx = { raf: 0, last: 0, parts: {}, flash: 0, next: 0, drawn: false };
+    function envKeys(s) { var e = s && s.env; return e ? Object.keys(e).filter(function (k) { return e[k] && ENV_FX[k]; }) : []; }
+    function weather() {
+      var s = sc(), keys = envKeys(s);
+      if (!keys.length) { if (Wx.drawn) { wctx.setTransform(1, 0, 0, 1, 0, 0); wctx.clearRect(0, 0, wx.width, wx.height); Wx.drawn = false; } return; }
+      if (!Wx.raf) Wx.raf = requestAnimationFrame(function () { Wx.raf = 0; drawWeather(); });
+    }
+    function drawWeather() {
+      var s = sc(), keys = envKeys(s), now = Date.now(), dt = Math.min(.1, Wx.last ? (now - Wx.last) / 1000 : 0);
+      Wx.last = now;
+      wctx.setTransform(V.dpr, 0, 0, V.dpr, 0, 0); wctx.clearRect(0, 0, V.size.w, V.size.h);
+      if (!keys.length || document.hidden) { Wx.drawn = false; Wx.last = 0; return; }
+      var x0 = Math.max(0, -cam.x * cam.z), y0 = Math.max(0, -cam.y * cam.z), x1 = Math.min(V.size.w, (s.w - cam.x) * cam.z), y1 = Math.min(V.size.h, (s.h - cam.y) * cam.z);
+      if (x1 <= x0 || y1 <= y0) return;
+      var R = { x: x0, y: y0, w: x1 - x0, h: y1 - y0, W: V.size.w, H: V.size.h, z: cam.z, g: s.g * cam.z, t: now / 1000, dt: RM ? 0 : dt };
+      wctx.save(); wctx.beginPath(); wctx.rect(R.x, R.y, R.w, R.h); wctx.clip();
+      keys.forEach(function (k) { ENV_FX[k](wctx, R, Wx.parts[k] || (Wx.parts[k] = []), Wx); });
+      wctx.restore();
+      Wx.drawn = true;
+      if (!RM) Wx.raf = requestAnimationFrame(function () { Wx.raf = 0; drawWeather(); });
     }
     function overlays(s, now) {
       var d = V.drag;
@@ -2494,6 +2642,7 @@ CROWS.NAME_IDEAS = {
     target: 'M12 12m-7 0a7 7 0 1 0 14 0a7 7 0 1 0-14 0 M12 2v4 M12 18v4 M2 12h4 M18 12h4', check: 'M5 12l5 5 9-10',
     map: 'M9 4L3 6v14l6-2 6 2 6-2V4l-6 2z M9 4v14 M15 6v14', list: 'M8 6h13 M8 12h13 M8 18h13 M3 6h.01 M3 12h.01 M3 18h.01',
     day: 'M4 5h16v16H4z M4 10h16 M9 3v4 M15 3v4', go: 'M5 12h14 M13 6l6 6-6 6', cond: 'M12 2l2.6 6.4L21 9l-5 4.4L17.5 20 12 16.6 6.5 20 8 13.4 3 9l6.4-.6z',
+    cloud: 'M7 18h10a4 4 0 0 0 .6-7.95A6 6 0 0 0 6.1 9.6 4.2 4.2 0 0 0 7 18z M8 21l1-1.5 M12 21l1-1.5 M16 21l1-1.5', save: 'M5 3h11l3 3v15H5z M8 3v5h7V3 M8 21v-7h8v7',
     beast: 'M6 3l2 7 M12 2v8 M18 3l-2 7 M5 15c0 3.9 3.1 6 7 6s7-2.1 7-6-3.1-4-7-4-7 .1-7 4z', mine: 'M12 12m-3 0a3 3 0 1 0 6 0a3 3 0 1 0-6 0 M12 2v5 M12 17v5 M2 12h5 M17 12h5'
   };
   /* An icon as an inline SVG string (it takes the text color). */
@@ -2742,6 +2891,33 @@ CROWS.NAME_IDEAS = {
 
   function clone(v) { return JSON.parse(JSON.stringify(v)); }
   function item(key) { return CROWS.ITEMS[key] || { cat: 'misc', st: 1, sl: 1, gc: 0, txt: '' }; }
+  /*
+   * Equipment the Ref made in the Workshop (ref-homebrew.js): its card travels with the fight (combat `defs`) and is kept on the
+   * character that got one (character.hb: { name: card }), so the sheet knows its slots, stack, and text. A card is checked here, and
+   * can never replace a card from the rules.
+   */
+  var OFFICIAL = {}; Object.keys(CROWS.ITEMS).forEach(function (k) { OFFICIAL[k] = true; });
+  var ITEM_CATS = ['weapon', 'armor', 'shield', 'ammo', 'misc', 'tool', 'light', 'bulky', 'trap', 'food', 'purse', 'book', 'consumable', 'magic', 'spell'];
+  function isOfficial(key) { return !!OFFICIAL[key]; }
+  function cleanItem(d) {
+    if (!d || typeof d !== 'object') return null;
+    function n(v, lo, hi, dflt) { v = Math.round(+v); return isFinite(v) ? Math.max(lo, Math.min(hi, v)) : dflt; }
+    var o = { cat: ITEM_CATS.indexOf(d.cat) >= 0 ? d.cat : 'misc', st: n(d.st, 1, 99, 1), sl: n(d.sl, 1, 4, 1), gc: n(d.gc, 0, 1e7, 0), txt: String(d.txt || '').slice(0, 1500), custom: true };
+    if (d.hands === 2) o.hands = 2;
+    if (o.cat === 'armor' || o.cat === 'shield') o.ad = n(d.ad, 0, 99, 0);
+    if (typeof d.wt === 'string' && /^(Bashing|Bow|Chopping|Slashing|Stabbing|Unarmed)$/.test(d.wt)) o.wt = d.wt;
+    if (d.light) o.light = true;
+    if (d.atk) o.atk = true;
+    return o;
+  }
+  /* Add these cards ({ name: card }) to CROWS.ITEMS (never over a card from the rules). Returns the names added. */
+  function registerItems(map) {
+    var out = [];
+    if (!map || typeof map !== 'object') return out;
+    Object.keys(map).forEach(function (k) { if (isOfficial(k) || !k || k.length > 80) return; var c = cleanItem(map[k]); if (c) { CROWS.ITEMS[k] = c; out.push(k); } });
+    return out;
+  }
+  function unregisterItem(key) { if (!isOfficial(key)) delete CROWS.ITEMS[key]; }
   function bg(c) { return CROWS.BACKGROUNDS[c.bg]; }
 
   // ------------------------------------------------------------------ derived numbers
@@ -3107,7 +3283,7 @@ CROWS.NAME_IDEAS = {
     return msgs;
   }
 
-  window.CrowsSheet = { CONDITIONS: CONDITIONS, MAGIC_SLOTS: MAGIC_SLOTS, item: item, bg: bg, characteristics: characteristics,
+  window.CrowsSheet = { CONDITIONS: CONDITIONS, MAGIC_SLOTS: MAGIC_SLOTS, item: item, isOfficial: isOfficial, cleanItem: cleanItem, registerItems: registerItems, unregisterItem: unregisterItem, bg: bg, characteristics: characteristics,
     expertiseUses: expertiseUses, staminaMax: staminaMax, curStamina: curStamina, setStamina: setStamina, adMax: adMax, adNow: adNow,
     woundCount: woundCount, armorInfo: armorInfo, freshPlay: freshPlay, normalizePlay: normalizePlay, addLog: addLog,
     carried: carried, inHands: inHands, cardById: cardById, findCarried: findCarried, packOcc: packOcc, udInfo: udInfo, udNow: udNow,
@@ -10578,6 +10754,8 @@ var CROWS_TRAIT_TREES = [
   function adopt(s) {
     var base = freshState(s.bg);
     Object.keys(base).forEach(function (k) { if (!(k in s)) s[k] = base[k]; });
+    // Cards for equipment the Ref made (Workshop), kept with the crow that got it: known before its cards are read below.
+    if (s.hb && typeof s.hb === 'object' && !Array.isArray(s.hb)) { var hb = {}; Sheet.registerItems(s.hb).forEach(function (k) { hb[k] = CROWS.ITEMS[k]; }); s.hb = hb; } else delete s.hb;
     s.inv = s.inv.filter(function (c) { return c && typeof c.key === 'string' && c.key && c.key.length <= 80; }).map(function (c) {
       return liveProps(c, { id: nextUid(), key: c.key, qty: Math.max(1, Math.min(item(c.key).st, c.qty | 0)), area: AREAS[c.area] ? c.area : 'none', idx: c.idx | 0 });
     });
@@ -12904,6 +13082,7 @@ var CROWS_TRAIT_TREES = [
       var was = cur(), prompts = was ? myPrompts().map(function (p) { return p.id; }) : [];
       var sessWas = JSON.stringify(session()), restWas = resting();
       fight = { charId: id, version: j.version, watch: j.watch, campaign: j.campaign, combat: j.combat, you: j.you };
+      if (j.combat && j.combat.defs) window.CrowsSheet.registerItems(j.combat.defs);   // the Ref's own equipment on the ground (its cards)
       var now = cur();
       if (resting() && !restWas) C.toast('The party is resting: pick your food and rest activity on the Rest & turns tab, and send them to the Ref.', 6000);
       if (now && !was) C.toast('Combat! ' + (fight.campaign ? fight.campaign.name + ': ' : '') + 'your Ref started a fight.', 5000);
@@ -12985,6 +13164,8 @@ var CROWS_TRAIT_TREES = [
     (c.given || []).forEach(function (g) {
       if (g.to !== fight.you || got.indexOf(g.id) >= 0) return;
       got.push(g.id); delete reaching[g.item];
+      var def = c.defs && c.defs[g.key];   // equipment the Ref made: the sheet keeps its card
+      if (def && !window.CrowsSheet.isOfficial(g.key)) { var hb = sheet().hb && typeof sheet().hb === 'object' ? sheet().hb : (sheet().hb = {}); hb[g.key] = window.CrowsSheet.cleanItem(def); }
       var area = C.takeItem(g);
       msgs.push('Picked up ' + g.key + (area === 'hand' ? '.' : area === 'none' ? ': no room for it, so it’s set aside.' : ': no free hand, so it went in your ' + (area === 'pack' ? 'backpack' : 'belt') + '.'));
     });
@@ -13624,6 +13805,8 @@ var CROWS_TRAIT_TREES = [
     if (fight() && Combat.setView) kids.push(fab('list', 'Show the fight as text lists instead (the map steps aside during fights; switch back from the Combat card)', function () {
       if (document.fullscreenElement) document.exitFullscreen(); Combat.setView('text'); var b = $('play-combat'); if (b) b.scrollIntoView({ block: 'start' }); }, 'sm ghost', 'Lists'));
     P.L.tl.appendChild(el('div', { class: 'hud-grp' }, kids));
+    // The environment the Ref set (darkness, rain, the Miasma...): its rules are the chip's tooltip.
+    if (sc.envInfo && sc.envInfo.length) P.L.tl.appendChild(el('div', { class: 'hud-grp env' }, sc.envInfo.map(function (e) { return chip(e[0], 'env', e[0] + ': ' + e[1]); })));
     var t = P.sel && sc.tokens.filter(function (k) { return k.id === P.sel; })[0];
     if (!t) { P.hudFor = null; P.L.hud.className = 'vtt-hud'; return; }
     var enter = P.hudFor !== t.id; P.hudFor = t.id; P.L.hud.className = 'vtt-hud' + (enter ? ' enter' : '');
@@ -13830,7 +14013,7 @@ var CROWS_TRAIT_TREES = [
         var o = Object.assign({}, k), kn = k.cid && Combat.known ? Combat.known(k.cid) : null; o.mine = mine(k); o.size = k.size;
         if (kn && o.hpf == null && kn.stMax) { o.hpf = Math.max(0, Math.min(1, kn.st / kn.stMax)); delete o.hw; }   // Monster Expert: its Stamina
         return o;
-      }), pins: t.pins || [], walls: [], move: t.move, moved: t.moved, art: t.art || {} };
+      }), pins: t.pins || [], walls: [], move: t.move, moved: t.moved, art: t.art || {}, env: t.env || null, envInfo: t.envInfo || [] };
     var key = fog ? fog.cw + 'x' + fog.ch + ':' + fog.d : '';
     if (key !== P.maskKey) { P.maskKey = key; P.mask = Tbl.unpackMask(fog); }
     // Pings made since this page last looked (the first look only notes where they are).
