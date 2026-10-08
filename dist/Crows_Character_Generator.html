@@ -13763,8 +13763,6 @@ var CROWS_TRAIT_TREES = [
     var sc = P.scene, c = P.data && P.data.combat; P.L.tl.innerHTML = '';
     if (!sc) return;
     P.L.tl.appendChild(el('div', { class: 'glass row-g' }, [el('b', { class: 'hud-chip dim', text: sc.name || 'Tabletop' }), c && c.round ? el('span', { class: 'hud-chip round', text: 'Round ' + c.round }) : null]));
-    // The environment the Ref set (darkness, rain, the Miasma...): its rules are the chip's tooltip.
-    if (sc.envInfo && sc.envInfo.length) P.L.tl.appendChild(el('div', { class: 'glass row-g env' }, sc.envInfo.map(function (e) { return el('span', { class: 'hud-chip env', text: e[0], title: e[0] + ': ' + e[1] }); })));
   }
   function renderBar() {
     if (!P.L) return;
@@ -13807,6 +13805,8 @@ var CROWS_TRAIT_TREES = [
     if (fight() && Combat.setView) kids.push(fab('list', 'Show the fight as text lists instead (the map steps aside during fights; switch back from the Combat card)', function () {
       if (document.fullscreenElement) document.exitFullscreen(); Combat.setView('text'); var b = $('play-combat'); if (b) b.scrollIntoView({ block: 'start' }); }, 'sm ghost', 'Lists'));
     P.L.tl.appendChild(el('div', { class: 'hud-grp' }, kids));
+    // The environment the Ref set (darkness, rain, the Miasma...): its rules are the chip's tooltip.
+    if (sc.envInfo && sc.envInfo.length) P.L.tl.appendChild(el('div', { class: 'hud-grp env' }, sc.envInfo.map(function (e) { return chip(e[0], 'env', e[0] + ': ' + e[1]); })));
     var t = P.sel && sc.tokens.filter(function (k) { return k.id === P.sel; })[0];
     if (!t) { P.hudFor = null; P.L.hud.className = 'vtt-hud'; return; }
     var enter = P.hudFor !== t.id; P.hudFor = t.id; P.L.hud.className = 'vtt-hud' + (enter ? ' enter' : '');

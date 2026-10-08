@@ -8,8 +8,11 @@ Tabletop tab (a walled room with a closed door, a creature inside and one outsid
 players. Then the player's Table must show: the crow and the creature in the room, but not the creature beyond the wall
 (fog of war); the fog mask must hide the far room; a move from the player must reach the Ref's token, and a move through the
 wall must not; opening the door must reveal the creature; hiding a token must remove it; a ping must reach the Ref.
+The environment the Ref turns on (rain, darkness) must reach the player's map: its chips, with the rules, and its weather layer.
 Then a fight on the map: the player's turn strip and Fight drawer, an attack from the map's Attack drawer reaching the Ref, the
 text lists (the player's own choice, then the Ref's default) and back, and the strip going when the Ref ends the fight.
+In the fight, a weapon made in the Ref's Workshop is put on the ground: its card reaches the player's page, the player picks it
+up, and the crow's saved sheet keeps the card.
 Everything it made is deleted. Logs in through server/test_instance.py (never typing a password into a browser).
 """
 import argparse, os, sys
@@ -161,6 +164,20 @@ def main():
         rwait("return (scene().pings || []).some(function (k) { return Math.round(k.x) === 400 && Math.round(k.y) === 300; })", "the ping to reach the Ref")
         ok("a ping from the player reaches the Ref")
 
+        # The environment (the Tabletop's Environment drawer): rain and darkness reach the player's map.
+        r("q('#sec-vtt .vtt-tr button[title^=\"Environment\"]').click();")
+        r("qa('#sec-vtt .env-tog').filter(function (x) { return /^Rain/.test(text(x)); })[0].click();")
+        r("qa('#sec-vtt .env-tog').filter(function (x) { return /^Darkness/.test(text(x)); })[0].click();")
+        assert r("var e = scene().env || {}; return !!(e.rain && e.dark)")
+        pwait("var t = pub(); return !!(t && t.env && t.env.rain && t.env.dark)", "the environment in the player's copy of the scene")
+        chips = p("return qa('#play-table .hud-chip.env').map(function (c) { return [text(c), c.title]; })")
+        assert [c[0] for c in chips] == ["Darkness", "Rain"] and "double bane" in chips[0][1], chips
+        assert p("return !!q('#play-table canvas.vtt-weather')")
+        ok("the environment the Ref turns on (rain, darkness) reaches the player's map: chips with the rules, and the weather layer")
+        r("window.CrowsRef.state.vtt.scenes.forEach(function (s) { if (s.env) s.env = {}; }); q('#sec-vtt .vtt-drawer .fab[title=Close]') && q('#sec-vtt .vtt-drawer .fab[title=Close]').click(); window.CrowsRefApp.save(); window.CrowsRefApp.render();")
+        pwait("var t = pub(); return !!t && !t.env && !qa('#play-table .hud-chip.env').length", "the environment to clear on the player's map")
+        ok("...and clears from it when the Ref turns it off")
+
         # A fight on the map (the battle map is the players' default view).
         r("""var A = window.CrowsRefApp; scene().tokens.forEach(function (t) { t.hidden = false; }); A.addParty();
              var c = window.CrowsRef.state.session.combat, me = c.list.filter(function (x) { return x.kind === 'pc'; })[0];
@@ -175,6 +192,29 @@ def main():
              var b = qa('#play-table button').filter(function (x) { return text(x) === 'Send as it is'; })[0]; if (b) b.click();""")
         rwait("return (window.CrowsRef.state.session.combat.acts || []).some(function (a) { return a.type === 'attack'; })", "the attack from the map to reach the Ref")
         ok("an attack from the map's Attack drawer reaches the Ref")
+        # A weapon from the Ref's Workshop on the ground: its card reaches the player, who picks it up onto their sheet.
+        r("""var A = window.CrowsRefApp, h = window.CrowsRef.state.homebrew;
+             h.items.push({ id: A.nid(), n: 'Thornblade (test)', kind: 'weapon', gc: 20, sl: 1, st: 1, txt: '', craft: { exp: '' }, wt: 'Stabbing', hands: 1, reach: 1,
+               range: 0, ch: 'S', t2: 3, t3: 7, q: { Brutal: true }, metal: 'Steel', wood: '', ench: ['Vicious'] });
+             A.syncHomebrew(); A.onGround().push(A.newItem('Thornblade (test)', 1, false)); A.save(); A.render();""")
+        pwait("var c = CROWS.ITEMS['Thornblade (test)']; return !!(c && c.custom && /Vicious/.test(c.txt) && window.CrowsCombat.ground().some(function (it) { return it.key === 'Thornblade (test)'; }))",
+              "the Workshop weapon's card on the player's page")
+        ok("a weapon from the Ref's Workshop on the ground: its card reaches the player's page")
+        p("window.CrowsApp.state.inv.forEach(function (c) { if (c.area === 'hand') c.area = 'none'; });")   # free hands (the crow's starting kit fills them)
+        why = p("var it = window.CrowsCombat.ground().filter(function (x) { return x.key === 'Thornblade (test)'; })[0]; var w = window.CrowsCombat.cantPickUp(it); if (!w) window.CrowsCombat.pickUp(it); return w;")
+        assert not why, why
+        pwait("return window.CrowsApp.state.inv.some(function (c) { return c.key === 'Thornblade (test)'; })", "the weapon on the player's sheet")
+        assert p("var h = window.CrowsApp.state.hb || {}, c = h['Thornblade (test)']; return !!(c && c.cat === 'weapon' && /Attack 2d10 \\+ S\\. 12-16: 4 \\+ S; 17\\+: 8 \\+ S/.test(c.txt))")
+        ok("the player picks it up: the crow's sheet carries it and keeps its card")
+        saved = None
+        for _ in range(20):
+            saved = pl.get("get", kind="characters", id=char)["item"]["data"]
+            if "Thornblade (test)" in (saved.get("hb") or {}) and any(c.get("key") == "Thornblade (test)" for c in saved.get("inv", [])):
+                break
+            R.js("return new Promise(function (ok) { setTimeout(ok, 1500); })")
+        assert "Thornblade (test)" in (saved.get("hb") or {}), "the server's copy of the crow has no card for the weapon"
+        assert any(c.get("key") == "Thornblade (test)" for c in saved.get("inv", [])), "the server's copy of the crow doesn't carry the weapon"
+        ok("the server's copy of the crow carries the weapon and its card")
         p("window.CrowsCombat.setView('text');")
         pwait("return q('#play-table').hidden && qa('#play-combat .cbt-row').length >= 3", "the fight as text lists")
         ok("As lists: the map steps aside and the Combat card lists the enemies and allies")

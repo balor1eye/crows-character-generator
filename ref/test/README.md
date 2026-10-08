@@ -193,8 +193,10 @@ The graphical tabletop between the Ref Screen and a player's Play page on the te
 `run_live_combat_test.py`). A Dungeon scene with a walled room and a closed door: the player must see their crow and the creature in the lit
 room but not the one behind the wall, the fog mask must hide the far room, the published scene must hold no walls, a player's move must reach the
 Ref's token while a move through the wall must not, opening the door must reveal the creature, a token the Ref hides must vanish, and a ping must
-reach the Ref. Then a fight on the map: the player's turn strip and Fight drawer show, an attack from the map's Attack drawer reaches the Ref,
-As lists hides the map behind the Combat card's lists (the player's own choice, then the Ref's default) and back, and the strip goes when the Ref
+reach the Ref. The environment the Ref turns on (rain and darkness) must reach the player's map as chips (with their rules) and the weather
+layer, and clear again. Then a fight on the map: the player's turn strip and Fight drawer show, an attack from the map's Attack drawer reaches the Ref,
+a weapon made in the Ref's Workshop and put on the ground arrives with its card, the player picks it up, and the server's copy of the crow keeps
+the weapon and its card, As lists hides the map behind the Combat card's lists (the player's own choice, then the Ref's default) and back, and the strip goes when the Ref
 ends the fight. It deletes what it made.
 
 ```bash
