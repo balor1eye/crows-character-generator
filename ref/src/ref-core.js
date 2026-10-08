@@ -120,6 +120,8 @@
       dice: { mod: 0, net: 0, expr: '3d6', ud: 1 },
       prefs: { tabletop: false, off: {}, playerView: 'map' },
       vtt: { scenes: [], cur: '', shown: false, clean: true },
+      // Objects found or saved for each map picture (ref-mapobj.js): mapKits[mapId] = { objects, env, src, at, noAsk }; mapPairs[unlabeledId] = labeledId.
+      mapKits: {}, mapPairs: {},
       // The Workshop (ref-homebrew.js): the Ref's own creatures and equipment.
       homebrew: { creatures: [], items: [] },
       // Practice fights on the Tabletop (ref-practice.js): the Ref's choices, the fight under way (with the real one to put back), past results.

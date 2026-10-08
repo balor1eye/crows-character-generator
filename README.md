@@ -181,6 +181,12 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
   the environment, where every token stands (and where the crows start), the items on the ground and what each creature holds, and, if
   asked, each creature's Stamina, AD, conditions, and spent uses as they are now. Loading it (the Add drawer, or **Run on the Tabletop** on
   the Encounters tab) builds the scene again and puts everyone back in place; **Update** saves a changed map over it.
+- **Map objects** (Tabletop, Maps tab): a map you add under **Maps > Add a map…** is read in the background for its furniture, chests,
+  altars, and lights (Claude's vision through the accounts site when you are logged in and the server has a key; otherwise the browser
+  finds shapes only). Loading a map onto a scene places those objects as locked marker tokens (lights visible to the players, furniture for
+  you) and any environment saved with the map; a map with none yet asks "Generate objects?" (Not now, or Don't ask for this map). Right-click
+  the board > **Map objects** to save the objects and environment on the scene as the map's set, place or regenerate them, or remove them;
+  right-click an uploaded map to pair it with its labeled version, so objects named on the labeled picture carry over to every version.
 - **Workshop** (Campaign group): your own **creatures** and **equipment**, kept with the campaign.
   A creature can start blank or from any creature in the Bestiary (**Make a variant** on its card) and has every stat a stat block has:
   type, size, power, Stamina, AD, slots, reactions, Agility/Mind/Strength, speed (climb, upside down, swim, fly, burrow), attacks (bonus,

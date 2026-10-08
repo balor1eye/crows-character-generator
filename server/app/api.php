@@ -26,7 +26,7 @@ function fail(string $msg, int $status = 400, array $extra = []): never { throw 
 
 function raw_body(): string {
     static $raw = null;
-    return $raw ??= (string)file_get_contents('php://input', false, null, 0, MAX_DATA_BYTES + 100000);
+    return $raw ??= (string)file_get_contents('php://input', false, null, 0, (($_GET['a'] ?? '') === 'map.detect' ? 6500000 : MAX_DATA_BYTES) + 100000);
 }
 function body(): array {
     static $b = null;
@@ -1793,11 +1793,140 @@ function a_admin_audit(): array {
     }, $rows)];
 }
 
+// ---------------------------------------------------------------- map object detection (Claude vision)
+const MAP_OBJECT_TYPES = ['chest','table','chair','bed','shelf','altar','statue','pillar','barrel','crate','well','fountain','trap','door','stairs','light','plant','rubble','body','other'];
+
+/** Clip a model-supplied string to $max characters, with control characters and runs of space removed. */
+function map_clip($v, int $max): string {
+    if (!is_string($v)) return '';
+    $v = trim(preg_replace('/[\x00-\x1f\x7f\s]+/u', ' ', $v) ?? '');
+    return function_exists('mb_substr') ? mb_substr($v, 0, $max) : substr($v, 0, $max);
+}
+function map_frac($v, float $default = 0.0): float {
+    return is_int($v) || is_float($v) ? round(max(0.0, min(1.0, (float)$v)), 4) : $default;
+}
+
+/** At most 20 detections an hour per person, counted in a small file under sync/ (no table needed). */
+function map_detect_throttle(int $userId): void {
+    $dir = sync_dir();
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $f = $dir . '/.mapdetect-' . $userId . '.json';
+    $fh = @fopen($f, 'c+');
+    if (!$fh) return;
+    flock($fh, LOCK_EX);
+    $times = json_decode((string)stream_get_contents($fh), true);
+    $since = time() - 3600;
+    $times = array_values(array_filter(is_array($times) ? $times : [], fn($t) => is_int($t) && $t > $since));
+    $over = count($times) >= 20;
+    if (!$over) $times[] = time();
+    ftruncate($fh, 0); rewind($fh); fwrite($fh, json_encode($times));
+    flock($fh, LOCK_UN); fclose($fh);
+    if ($over) fail('Too many map scans this hour. Please try again later.', 429);
+}
+
+function a_map_detect(): array {
+    $s = need_login();
+    $c = config();
+    $key = $c['anthropic_api_key'] ?? '';
+    if (!is_string($key) || $key === '') fail('Automatic object detection is not set up on this server.', 503, ['code' => 'unconfigured']);
+    $b = body();
+    $img = $b['image'] ?? '';
+    if (!is_string($img) || $img === '' || strlen($img) > 6000000 || !preg_match('/^[A-Za-z0-9+\/]+={0,2}$/', $img)) fail('Bad or oversized image.');
+    $mime = $b['mime'] ?? 'image/jpeg';
+    if (!is_string($mime) || !in_array($mime, ['image/jpeg', 'image/png', 'image/webp'], true)) fail('Unsupported image type.');
+    $kind = $b['kind'] ?? 'dungeon';
+    if (!is_string($kind) || !in_array($kind, ['dungeon', 'open', 'village'], true)) fail('Bad map kind.');
+    $hasLabels = !empty($b['hasLabels']);
+    $cols = is_int($b['cols'] ?? 0) ? max(0, min(500, $b['cols'])) : 0;
+    $rows = is_int($b['rows'] ?? 0) ? max(0, min(500, $b['rows'])) : 0;
+    $title = map_clip($b['title'] ?? '', 80);
+    $envKeys = [];
+    $ek = $b['envKeys'] ?? [];
+    if (!is_array($ek) || count($ek) > 40) fail('Bad environment list.');
+    foreach ($ek as $pair) {
+        if (!is_array($pair) || !isset($pair[0]) || !is_string($pair[0]) || !preg_match('/^[A-Za-z0-9_-]{1,32}$/', $pair[0])) fail('Bad environment list.');
+        $envKeys[$pair[0]] = map_clip($pair[1] ?? '', 40);
+    }
+    map_detect_throttle((int)$s['id']);
+
+    $objSchema = ['type' => 'object', 'properties' => [
+        'name' => ['type' => 'string', 'description' => 'Short name, at most 30 characters'],
+        'type' => ['type' => 'string', 'enum' => MAP_OBJECT_TYPES],
+        'x' => ['type' => 'number', 'description' => 'Centre, fraction of image width, 0 to 1'],
+        'y' => ['type' => 'number', 'description' => 'Centre, fraction of image height, 0 to 1'],
+        'w' => ['type' => 'number', 'description' => 'Width, fraction of image width'],
+        'h' => ['type' => 'number', 'description' => 'Height, fraction of image height'],
+        'light' => ['type' => 'boolean', 'description' => 'It gives off light (lit brazier, torch, fireplace, candles)'],
+        'hidden' => ['type' => 'boolean', 'description' => 'A secret or trap players should not see at first'],
+        'note' => ['type' => 'string', 'description' => 'Optional short note, may be empty'],
+    ], 'required' => ['name', 'type', 'x', 'y', 'w', 'h']];
+    $envSchema = ['type' => 'array', 'items' => $envKeys ? ['type' => 'string', 'enum' => array_keys($envKeys)] : ['type' => 'string']];
+    $tool = ['name' => 'report_objects', 'description' => 'Report the objects found on the battle map.',
+        'input_schema' => ['type' => 'object', 'properties' => [
+            'objects' => ['type' => 'array', 'maxItems' => 60, 'items' => $objSchema],
+            'env' => $envSchema,
+        ], 'required' => ['objects', 'env']]];
+
+    $prompt = 'This image is a top-down tabletop RPG battle map' . ($title !== '' ? ' titled "' . $title . '"' : '')
+        . ' (' . $kind . ' setting' . ($cols > 0 && $rows > 0 ? ", $cols x $rows squares" : '') . '). '
+        . 'List the distinct physical objects a game master would want as movable tokens: furniture, chests, altars, statues, pillars, barrels, wells, traps, doors, stairs, lit braziers or torches, and the like. '
+        . 'Do not report walls, floors, rug patterns, or decorative texture. '
+        . 'Give each object\'s centre (x, y) and size (w, h) as fractions of the image width and height. '
+        . ($hasLabels ? 'The map has printed labels or a legend: use them to name objects, and do NOT report the label text itself as an object. ' : '')
+        . 'Keep names short (30 characters or fewer). Report at most 60 objects. '
+        . ($envKeys ? 'In env, list keys from the allowed set only when the picture clearly implies them (for example a dark cave); usually leave it empty. Allowed: '
+            . implode(', ', array_map(fn($k, $l) => $l !== '' ? "$k ($l)" : (string)$k, array_keys($envKeys), $envKeys)) . '. ' : 'Leave env empty. ')
+        . 'Answer by calling report_objects.';
+    $model = is_string($c['anthropic_model'] ?? null) && $c['anthropic_model'] !== '' ? $c['anthropic_model'] : 'claude-sonnet-5-5';
+    $payload = ['model' => $model, 'max_tokens' => 4096, 'tools' => [$tool], 'tool_choice' => ['type' => 'tool', 'name' => 'report_objects'],
+        'messages' => [['role' => 'user', 'content' => [
+            ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mime, 'data' => $img]],
+            ['type' => 'text', 'text' => $prompt],
+        ]]]];
+
+    $ch = curl_init('https://api.anthropic.com/v1/messages');
+    curl_setopt_array($ch, [CURLOPT_RETURNTRANSFER => true, CURLOPT_TIMEOUT => 90, CURLOPT_CONNECTTIMEOUT => 10, CURLOPT_FOLLOWLOCATION => false,
+        CURLOPT_POST => true, CURLOPT_POSTFIELDS => json_encode($payload),
+        CURLOPT_HTTPHEADER => ['x-api-key: ' . $key, 'anthropic-version: 2023-06-01', 'content-type: application/json']]);
+    $out = curl_exec($ch);
+    $code = (int)curl_getinfo($ch, CURLINFO_RESPONSE_CODE);
+    curl_close($ch);
+    $j = is_string($out) ? json_decode($out, true) : null;
+    if ($code !== 200 || !is_array($j)) {
+        error_log('crows map.detect: upstream HTTP ' . $code . (is_array($j) && isset($j['error']['type']) ? ' ' . $j['error']['type'] : ''));
+        fail('The object detector is not available right now.', 502);
+    }
+    $input = null;
+    foreach (($j['content'] ?? []) as $blk) {
+        if (is_array($blk) && ($blk['type'] ?? '') === 'tool_use' && ($blk['name'] ?? '') === 'report_objects' && is_array($blk['input'] ?? null)) { $input = $blk['input']; break; }
+    }
+    if ($input === null) fail('The object detector gave no answer.', 502);
+
+    $objects = [];
+    foreach (is_array($input['objects'] ?? null) ? $input['objects'] : [] as $o) {
+        if (count($objects) >= 60) break;
+        if (!is_array($o) || !isset($o['x'], $o['y']) || !is_numeric($o['x']) || !is_numeric($o['y'])) continue;
+        $name = map_clip($o['name'] ?? '', 30);
+        if ($name === '') continue;
+        $type = is_string($o['type'] ?? null) && in_array($o['type'], MAP_OBJECT_TYPES, true) ? $o['type'] : 'other';
+        $w = map_frac($o['w'] ?? 0, 0.03); $h = map_frac($o['h'] ?? 0, 0.03);
+        $objects[] = ['name' => $name, 'type' => $type, 'x' => map_frac($o['x']), 'y' => map_frac($o['y']),
+            'w' => max(0.005, $w), 'h' => max(0.005, $h), 'light' => ($o['light'] ?? false) === true, 'hidden' => ($o['hidden'] ?? false) === true,
+            'note' => map_clip($o['note'] ?? '', 120)];
+    }
+    $env = [];
+    foreach (is_array($input['env'] ?? null) ? $input['env'] : [] as $e) {
+        if (is_string($e) && isset($envKeys[$e]) && !in_array($e, $env, true)) $env[] = $e;
+    }
+    return ['objects' => $objects, 'env' => $env, 'model' => $model];
+}
+
 // ---------------------------------------------------------------- dispatch
 const ACTIONS = [
     // name => [method, handler, needs csrf]
     'me' => ['GET', 'a_me', false],
     'register' => ['POST', 'a_register', false],
+    'map.detect' => ['POST', 'a_map_detect', true],
     'register.verify' => ['POST', 'a_register_verify', false],
     'register.resend' => ['POST', 'a_register_resend', false],
     'login' => ['POST', 'a_login', false],

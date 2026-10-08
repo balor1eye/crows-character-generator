@@ -12,6 +12,9 @@ return [
     // redirect URI <site_url>api.php?a=discord.callback under OAuth2.
     // 'discord_client_id' => '',
     // 'discord_client_secret' => '',
+    // Automatic map object detection (Claude vision, action map.detect); 503 'unconfigured' while the key is blank.
+    // 'anthropic_api_key' => '',
+    // 'anthropic_model' => 'claude-sonnet-5-5',
     // Test instance only (~/crows-test-app/config.php): no real email, just a log file; enables seed_test.php.
     // 'mail_log' => __DIR__ . '/mail.log',
     // 'test_instance' => true,
