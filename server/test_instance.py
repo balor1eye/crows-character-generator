@@ -485,6 +485,26 @@ def smoke():
     ref.post("art.delete", {"key": "m:smoketest"}); ref.post("art.delete", {"key": "c:Smoke Wolf"})
     check("deleted pictures are gone", not {"m:smoketest", "c:Smoke Wolf"} & {a["key"] for a in ref.get("art.list")["art"]})
 
+    # the Ref's AI key vault (ciphertext only; the server never sees a key)
+    b64 = lambda n: base64.b64encode(bytes(range(n))).decode()
+    vault = {"v": 1, "kdf": "PBKDF2-SHA256", "iter": 600000, "salt": b64(16), "iv": b64(12), "ct": b64(40), "hint": "wxyz"}
+    vjson = json.dumps(vault)
+    ref.post("vault.delete")
+    check("a Ref with no vault gets null", ref.get("vault.get")["vault"] is None)
+    ref.post("vault.save", {"vault": vjson})
+    check("a saved vault comes back unchanged", ref.get("vault.get")["vault"] == vjson)
+    fails("a player can't read a vault", 403, lambda: p1.get("vault.get"))
+    fails("a player can't save a vault", 403, lambda: p1.post("vault.save", {"vault": vjson}))
+    fails("a vault with an extra key is refused", 400, lambda: ref.post("vault.save", {"vault": json.dumps({**vault, "key": "sk-x"})}))
+    fails("a vault with too few iterations is refused", 400, lambda: ref.post("vault.save", {"vault": json.dumps({**vault, "iter": 1000})}))
+    fails("a vault with a bad iv is refused", 400, lambda: ref.post("vault.save", {"vault": json.dumps({**vault, "iv": b64(8)})}))
+    fails("a vault that isn't JSON is refused", 400, lambda: ref.post("vault.save", {"vault": "sk-ant-nope"}))
+    fails("a vault over 8 KB is refused", 400, lambda: ref.post("vault.save", {"vault": json.dumps({**vault, "ct": "A" * 9000})}))
+    check("a refused save leaves the vault alone", ref.get("vault.get")["vault"] == vjson)
+    check("the vault is not in the admin audit log", "wxyz" not in json.dumps(admin.get("admin.audit")) and b64(40) not in json.dumps(admin.get("admin.users")))
+    ref.post("vault.delete")
+    check("a deleted vault is gone", ref.get("vault.get")["vault"] is None)
+
     # clean up what this run made
     ref.post("link.remove", {"id": acc["id"]}); ref.post("link.remove", {"id": acc2["id"]})
     ref.post("delete", {"id": camp["id"]}, kind="campaigns")

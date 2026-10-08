@@ -140,7 +140,7 @@ A separate, self-contained app for running sessions and keeping the campaign bet
 on the accounts site (Ref accounts only), or offline as
 **`dist/Crows_Ref_Screen.html`** (one file, works offline, autosaves in the browser; **Save campaign /
 Load campaign** writes a `.json` file). The tabs come in three groups: **Run** (Session, Tabletop, Encounters, Travel),
-**Campaign** (Party, Village, World, Workshop, Preferences), and **Reference** (Bestiary, Maps, Tables, Rules). The sidebar keeps the timer, the dice,
+**Campaign** (Party, Village, World, Workshop, AI, Preferences), and **Reference** (Bestiary, Maps, Tables, Rules). The sidebar keeps the timer, the dice,
 and the session log (the last 14 entries, or Show all, with a box for notes).
 
 - **Tabletop** (Run group): a graphical tabletop in the spirit of Foundry VTT, for every mode of play. Make a **scene**: a **Dungeon** (a map or
@@ -181,6 +181,12 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
   the environment, where every token stands (and where the crows start), the items on the ground and what each creature holds, and, if
   asked, each creature's Stamina, AD, conditions, and spent uses as they are now. Loading it (the Add drawer, or **Run on the Tabletop** on
   the Encounters tab) builds the scene again and puts everyone back in place; **Update** saves a changed map over it.
+- **Map objects** (Tabletop, Maps tab): a map you add under **Maps > Add a map…** is read in the background for its furniture, chests,
+  altars, and lights (Claude's vision through the accounts site when you are logged in and the server has a key; otherwise the browser
+  finds shapes only). Loading a map onto a scene places those objects as locked marker tokens (lights visible to the players, furniture for
+  you) and any environment saved with the map; a map with none yet asks "Generate objects?" (Not now, or Don't ask for this map). Right-click
+  the board > **Map objects** to save the objects and environment on the scene as the map's set, place or regenerate them, or remove them;
+  right-click an uploaded map to pair it with its labeled version, so objects named on the labeled picture carry over to every version.
 - **Workshop** (Campaign group): your own **creatures** and **equipment**, kept with the campaign.
   A creature can start blank or from any creature in the Bestiary (**Make a variant** on its card) and has every stat a stat block has:
   type, size, power, Stamina, AD, slots, reactions, Agility/Mind/Strength, speed (climb, upside down, swim, fly, burrow), attacks (bonus,
@@ -197,6 +203,13 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
   duration, attack damage + Mind or tier outcomes), crafting materials, treasure, or vehicles, with an optional crafting recipe. The editor
   shows the card as it will read, checks the 4 Enchanting uses limit, and offers the rules' price for the base item, upgrades, and
   enchantments. Items join the item lists (items on the ground, creature equipment); a crow that picks one up gets its card on their sheet.
+- **AI** (Campaign group): keep your own Anthropic API key to have Claude find the objects on maps you upload. The key is encrypted in your
+  browser with a vault passphrase you choose (at least 12 characters, not your account password; PBKDF2-SHA256 600000 rounds, AES-GCM) and only
+  the ciphertext is stored: in your account when logged in (nobody else, including the site's administrator, can read it), otherwise in this
+  browser. Unlock it with the passphrase (it locks after 30 minutes idle, on logout, and when you leave the page); the browser then calls
+  Anthropic directly. Test the key, pick the model for map scans, change the passphrase, or remove the key. Map scans try your key first, then
+  the site's key if the server has one, then shape finding. Residual risk: whoever publishes this page's scripts could change them to capture the
+  key when you unlock it.
 - **Session**: Start session and End session (ending one fills in the XP award from the players' claims, with the greed
   bonus, and reminds you of the village cycle; starting the next archives the log), the shared dungeon-turn timer (60/30/20 minutes or every 1d6 rooms), Encounter Number with
   crowded/chaos adjustments, greed bonus, End DT (ends DT conditions, rolls the encounter check and the monster

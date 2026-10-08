@@ -1033,6 +1033,10 @@ body[data-tab="vtt"] .side-timer { display: none; }
       <section class="card" id="sec-hb-creatures"></section>
       <section class="card" id="sec-hb-items"></section>
     </div>
+    <div class="page" id="page-ai">
+      <section class="card" id="sec-ai-key"></section>
+      <section class="card" id="sec-ai-about"></section>
+    </div>
     <div class="page" id="page-bestiary">
       <section class="card" id="sec-bestiary"></section>
     </div>
@@ -3394,6 +3398,354 @@ CROWS.NAME_IDEAS = {
 </script>
 <script>
 /*
+ * Map vision helpers: window.CrowsMapVision (also module.exports under node, for ref/test/test_map_vision.js).
+ *
+ * Pixel buffers are { data: Uint8ClampedArray RGBA, width, height } (what canvas getImageData returns).
+ *   pixels(img, maxSide)    browser: draw an <img> into a canvas, long side <= maxSide, return a buffer
+ *   jpeg(img, maxSide, q)   browser: base64 JPEG (no data: prefix) of the scaled image, for the server's map.detect
+ *   align(a, b)             { sx, sy, ox, oy, score } | null: bx = ax*sx + ox, by = ay*sy + oy in normalized (0..1) coordinates
+ *   transform(objs, T)      objects mapped through an align() result; those whose centre leaves 0..1 are dropped
+ *   detect(buf, grid)       heuristic object/light finder, objects in the map.detect shape (fractions of the image)
+ *
+ * align cost: two edge maps (Sobel magnitude, lightly blurred, clipped so printed text cannot dominate). A coarse pass at 64 px long
+ * side tries ~23 scales (0.4..3 in 9% steps; one pixel scale for both axes, so a differently framed sheet still works) x every
+ * 2 px offset, scoring a normalized cross-correlation on a sparse grid of a's pixels that fall inside b. The best few distinct
+ * candidates are refined by pattern search on 192 px maps. About 0.2-0.5 s for 512 px inputs in a browser.
+ *
+ * detect: everything works on a downsample where a square is ~8 px. Blobs are pixels that differ from a wide blur of their
+ * surroundings by more than the floor's own noise, opened to drop speckle and lines, then connected components that are
+ * 0.4-4.5 squares, compact and not elongated. Light = small bright warm (orange/yellow) blobs. Deterministic.
+ */
+(function () {
+  'use strict';
+  var V = {};
+
+  // ------------------------------------------------------------------ browser helpers
+  function canvasFor(img, maxSide) {
+    var w = img.naturalWidth || img.width, h = img.naturalHeight || img.height;
+    var k = Math.min(1, maxSide / Math.max(w, h));
+    var c = document.createElement('canvas');
+    c.width = Math.max(1, Math.round(w * k)); c.height = Math.max(1, Math.round(h * k));
+    var x = c.getContext('2d');
+    x.drawImage(img, 0, 0, c.width, c.height);
+    return c;
+  }
+  V.pixels = function (img, maxSide) {
+    var c = canvasFor(img, maxSide || 512);
+    return { data: c.getContext('2d').getImageData(0, 0, c.width, c.height).data, width: c.width, height: c.height };
+  };
+  V.jpeg = function (img, maxSide, quality) {
+    var c = canvasFor(img, maxSide || 1600);
+    var u = c.toDataURL('image/jpeg', quality || 0.85);
+    return u.slice(u.indexOf(',') + 1);
+  };
+
+  // ------------------------------------------------------------------ image plumbing
+  // Area-average resample. src has `stride` interleaved channels; the first `och` are kept. Returns Float32Array(nw*nh*och).
+  function box(src, sw, sh, stride, nw, nh, och) {
+    var out = new Float32Array(nw * nh * och);
+    var fx = sw / nw, fy = sh / nh;
+    var stx = Math.max(1, Math.floor(fx / 4)), sty = Math.max(1, Math.floor(fy / 4));
+    for (var y = 0; y < nh; y++) {
+      var y0 = Math.floor(y * fy), y1 = Math.max(y0 + 1, Math.min(sh, Math.ceil((y + 1) * fy)));
+      for (var x = 0; x < nw; x++) {
+        var x0 = Math.floor(x * fx), x1 = Math.max(x0 + 1, Math.min(sw, Math.ceil((x + 1) * fx)));
+        var n = 0, a0 = 0, a1 = 0, a2 = 0;
+        for (var j = y0; j < y1; j += sty) {
+          for (var i = x0; i < x1; i += stx) {
+            var p = (j * sw + i) * stride;
+            a0 += src[p]; if (och > 1) { a1 += src[p + 1]; a2 += src[p + 2]; }
+            n++;
+          }
+        }
+        var o = (y * nw + x) * och;
+        out[o] = a0 / n; if (och > 1) { out[o + 1] = a1 / n; out[o + 2] = a2 / n; }
+      }
+    }
+    return out;
+  }
+  function grayOf(buf, nw, nh) {
+    var rgb = box(buf.data, buf.width, buf.height, 4, nw, nh, 3), g = new Float32Array(nw * nh);
+    for (var i = 0; i < g.length; i++) g[i] = 0.299 * rgb[i * 3] + 0.587 * rgb[i * 3 + 1] + 0.114 * rgb[i * 3 + 2];
+    return g;
+  }
+  function sizeFor(buf, L) {
+    var k = L / Math.max(buf.width, buf.height);
+    return [Math.max(2, Math.round(buf.width * k)), Math.max(2, Math.round(buf.height * k))];
+  }
+  function blur3(src, w, h) {
+    var t = new Float32Array(src.length), o = new Float32Array(src.length), x, y, i;
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) {
+      i = y * w + x;
+      t[i] = (src[x > 0 ? i - 1 : i] + src[i] + src[x < w - 1 ? i + 1 : i]) / 3;
+    }
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) {
+      i = y * w + x;
+      o[i] = (t[y > 0 ? i - w : i] + t[i] + t[y < h - 1 ? i + w : i]) / 3;
+    }
+    return o;
+  }
+  // Edge strength map: Sobel magnitude, blurred twice, clipped at ~97th percentile, scaled 0..1.
+  function edgeMap(g, w, h) {
+    var e = new Float32Array(w * h), x, y, i;
+    for (y = 1; y < h - 1; y++) for (x = 1; x < w - 1; x++) {
+      i = y * w + x;
+      var gx = g[i - w + 1] + 2 * g[i + 1] + g[i + w + 1] - g[i - w - 1] - 2 * g[i - 1] - g[i + w - 1];
+      var gy = g[i + w - 1] + 2 * g[i + w] + g[i + w + 1] - g[i - w - 1] - 2 * g[i - w] - g[i - w + 1];
+      e[i] = Math.sqrt(gx * gx + gy * gy);
+    }
+    e = blur3(blur3(e, w, h), w, h);
+    var hist = new Uint32Array(256), mx = 0;
+    for (i = 0; i < e.length; i++) if (e[i] > mx) mx = e[i];
+    if (mx <= 0) return { e: e, w: w, h: h };
+    for (i = 0; i < e.length; i++) hist[Math.min(255, Math.floor(e[i] / mx * 255))]++;
+    var acc = 0, cut = mx, want = e.length * 0.97;
+    for (i = 0; i < 256; i++) { acc += hist[i]; if (acc >= want) { cut = (i + 1) / 255 * mx; break; } }
+    for (i = 0; i < e.length; i++) e[i] = Math.min(1, e[i] / cut);
+    return { e: e, w: w, h: h };
+  }
+  function edgesAt(buf, L) {
+    var d = sizeFor(buf, L);
+    return edgeMap(grayOf(buf, d[0], d[1]), d[0], d[1]);
+  }
+
+  // ------------------------------------------------------------------ align
+  // Score a map a -> b: b_px = (a_px - ca) * s + c (c = where a's centre lands, in b pixels). st = sampling stride in a.
+  // Returns normalized cross-correlation over a's pixels landing inside b, scaled down when the overlap is small.
+  function score(A, B, s, cx, cy, st) {
+    var wa = A.w, ha = A.h, wb = B.w, hb = B.h, ae = A.e, be = B.e;
+    var ox = cx - wa / 2 * s, oy = cy - ha / 2 * s;
+    var ix0 = Math.max(0, ox), iy0 = Math.max(0, oy), ix1 = Math.min(wb, ox + wa * s), iy1 = Math.min(hb, oy + ha * s);
+    if (ix1 <= ix0 || iy1 <= iy0) return 0;
+    var cov = (ix1 - ix0) * (iy1 - iy0) / Math.min(wa * ha * s * s, wb * hb);
+    if (cov < 0.3) return 0;
+    var n = 0, sa = 0, sb = 0, saa = 0, sbb = 0, sab = 0;
+    var i0 = Math.max(1, Math.ceil((ix0 - ox) / s)), i1 = Math.min(wa - 2, Math.floor((ix1 - ox) / s));
+    var j0 = Math.max(1, Math.ceil((iy0 - oy) / s)), j1 = Math.min(ha - 2, Math.floor((iy1 - oy) / s));
+    for (var j = j0; j <= j1; j += st) {
+      var by = j * s + oy;
+      if (by < 0 || by >= hb - 1) continue;
+      var yi = by | 0, fy = by - yi;
+      for (var i = i0; i <= i1; i += st) {
+        var bx = i * s + ox;
+        if (bx < 0 || bx >= wb - 1) continue;
+        var xi = bx | 0, fx = bx - xi, p = yi * wb + xi;
+        var vb = (be[p] * (1 - fx) + be[p + 1] * fx) * (1 - fy) + (be[p + wb] * (1 - fx) + be[p + wb + 1] * fx) * fy;
+        var va = ae[j * wa + i];
+        n++; sa += va; sb += vb; saa += va * va; sbb += vb * vb; sab += va * vb;
+      }
+    }
+    if (n < 60) return 0;
+    var cva = saa / n - sa * sa / (n * n), cvb = sbb / n - sb * sb / (n * n);
+    if (cva < 1e-6 || cvb < 1e-6) return 0;
+    var r = (sab / n - sa * sb / (n * n)) / Math.sqrt(cva * cvb);
+    if (r <= 0) return 0;
+    return r * Math.sqrt(Math.min(1, cov / 0.6));
+  }
+
+  V.align = function (a, b) {
+    if (!a || !b || !a.width || !b.width) return null;
+    // coarse
+    var A = edgesAt(a, 64), B = edgesAt(b, 64), cands = [], s, k;
+    for (k = 0; ; k++) {
+      s = 0.4 * Math.pow(1.09, k);
+      if (s > 3.05) break;
+      var oxl = -A.w * s * 0.7, oxh = B.w - A.w * s * 0.3, oyl = -A.h * s * 0.7, oyh = B.h - A.h * s * 0.3;
+      for (var oy = oyl; oy <= oyh; oy += 2) for (var ox = oxl; ox <= oxh; ox += 2) {
+        var cx = ox + A.w / 2 * s, cy = oy + A.h / 2 * s;
+        var sc = score(A, B, s, cx, cy, 3);
+        if (sc > 0.2) cands.push({ s: s, cx: cx, cy: cy, sc: sc });
+      }
+      if (cands.length > 600) { cands.sort(byScore); cands.length = 150; }
+    }
+    cands.sort(byScore);
+    var picks = [];
+    for (var c = 0; c < cands.length && picks.length < 6; c++) {
+      var ok = true;
+      for (var q = 0; q < picks.length; q++) {
+        var p = picks[q];
+        if (Math.abs(Math.log(cands[c].s / p.s)) < 0.15 && Math.abs(cands[c].cx - p.cx) < 6 && Math.abs(cands[c].cy - p.cy) < 6) { ok = false; break; }
+      }
+      if (ok) picks.push(cands[c]);
+    }
+    if (!picks.length) return null;
+    // refine on 192 px maps
+    var A2 = edgesAt(a, 192), B2 = edgesAt(b, 192), best = null;
+    var rs = A2.w / A.w; // a-frame scale 64 -> 192 (b frame scales the same way)
+    for (var m = 0; m < picks.length; m++) {
+      var cur = { s: picks[m].s, cx: picks[m].cx * (B2.w / B.w), cy: picks[m].cy * (B2.h / B.h) };
+      // s is b-px per a-px; both frames change by their own long-side factor
+      cur.s = picks[m].s * (B2.w / B.w) / (A2.w / A.w);
+      cur.sc = score(A2, B2, cur.s, cur.cx, cur.cy, 2);
+      var steps = [[1.04, 3], [1.02, 1.5], [1.01, 0.75], [1.005, 0.4]];
+      for (var L = 0; L < steps.length; L++) {
+        for (var it = 0; it < 24; it++) {
+          var moved = false, ds = steps[L][0], dd = steps[L][1];
+          var tries = [[cur.s * ds, cur.cx, cur.cy], [cur.s / ds, cur.cx, cur.cy], [cur.s, cur.cx + dd, cur.cy], [cur.s, cur.cx - dd, cur.cy],
+            [cur.s, cur.cx, cur.cy + dd], [cur.s, cur.cx, cur.cy - dd]];
+          for (var t = 0; t < tries.length; t++) {
+            var v = score(A2, B2, tries[t][0], tries[t][1], tries[t][2], 2);
+            if (v > cur.sc + 1e-6) { cur = { s: tries[t][0], cx: tries[t][1], cy: tries[t][2], sc: v }; moved = true; }
+          }
+          if (!moved) break;
+        }
+      }
+      if (!best || cur.sc > best.sc) best = cur;
+    }
+    if (!best || best.sc < 0.35) return null;
+    var sx = best.s * A2.w / B2.w, sy = best.s * A2.h / B2.h;
+    var ox2 = best.cx - A2.w / 2 * best.s, oy2 = best.cy - A2.h / 2 * best.s;
+    return { sx: sx, sy: sy, ox: ox2 / B2.w, oy: oy2 / B2.h, score: Math.min(1, best.sc) };
+  };
+  function byScore(p, q) { return q.sc - p.sc; }
+
+  V.transform = function (objs, T) {
+    var out = [];
+    if (!T) return out;
+    for (var i = 0; i < (objs || []).length; i++) {
+      var o = objs[i], r = {}, k;
+      for (k in o) if (Object.prototype.hasOwnProperty.call(o, k)) r[k] = o[k];
+      r.x = o.x * T.sx + T.ox; r.y = o.y * T.sy + T.oy;
+      r.w = o.w * T.sx; r.h = o.h * T.sy;
+      if (r.x < 0 || r.x > 1 || r.y < 0 || r.y > 1) continue;
+      out.push(r);
+    }
+    return out;
+  };
+
+  // ------------------------------------------------------------------ detect
+  function boxBlur(src, w, h, r) {
+    // integral-image box blur with clamped window
+    var I = new Float64Array((w + 1) * (h + 1)), x, y;
+    for (y = 0; y < h; y++) {
+      var row = 0;
+      for (x = 0; x < w; x++) { row += src[y * w + x]; I[(y + 1) * (w + 1) + x + 1] = I[y * (w + 1) + x + 1] + row; }
+    }
+    var out = new Float32Array(w * h);
+    for (y = 0; y < h; y++) {
+      var y0 = Math.max(0, y - r), y1 = Math.min(h, y + r + 1);
+      for (x = 0; x < w; x++) {
+        var x0 = Math.max(0, x - r), x1 = Math.min(w, x + r + 1);
+        out[y * w + x] = (I[y1 * (w + 1) + x1] - I[y0 * (w + 1) + x1] - I[y1 * (w + 1) + x0] + I[y0 * (w + 1) + x0]) / ((x1 - x0) * (y1 - y0));
+      }
+    }
+    return out;
+  }
+  function morph(m, w, h, grow) { // 3x3 erode (grow=false) or dilate (grow=true)
+    var o = new Uint8Array(m.length), x, y;
+    for (y = 0; y < h; y++) for (x = 0; x < w; x++) {
+      var hit = grow ? 0 : 1;
+      for (var dy = -1; dy <= 1; dy++) for (var dx = -1; dx <= 1; dx++) {
+        var xx = x + dx, yy = y + dy, v = (xx < 0 || yy < 0 || xx >= w || yy >= h) ? 0 : m[yy * w + xx];
+        if (grow) { if (v) hit = 1; } else if (!v) hit = 0;
+      }
+      o[y * w + x] = hit;
+    }
+    return o;
+  }
+  // 4-connected components of a mask: [{ x0, y0, x1, y1, n, sx, sy, sum }]; `weight` (optional) accumulates into sum.
+  function components(m, w, h, weight) {
+    var seen = new Uint8Array(m.length), out = [], stack = [];
+    for (var s = 0; s < m.length; s++) {
+      if (!m[s] || seen[s]) continue;
+      var c = { x0: w, y0: h, x1: -1, y1: -1, n: 0, sx: 0, sy: 0, sum: 0 };
+      seen[s] = 1; stack.length = 0; stack.push(s);
+      while (stack.length) {
+        var p = stack.pop(), x = p % w, y = (p - x) / w;
+        c.n++; c.sx += x; c.sy += y; if (weight) c.sum += weight[p];
+        if (x < c.x0) c.x0 = x; if (x > c.x1) c.x1 = x; if (y < c.y0) c.y0 = y; if (y > c.y1) c.y1 = y;
+        if (x > 0 && m[p - 1] && !seen[p - 1]) { seen[p - 1] = 1; stack.push(p - 1); }
+        if (x < w - 1 && m[p + 1] && !seen[p + 1]) { seen[p + 1] = 1; stack.push(p + 1); }
+        if (y > 0 && m[p - w] && !seen[p - w]) { seen[p - w] = 1; stack.push(p - w); }
+        if (y < h - 1 && m[p + w] && !seen[p + w]) { seen[p + w] = 1; stack.push(p + w); }
+      }
+      out.push(c);
+    }
+    return out;
+  }
+
+  V.detect = function (buf, grid) {
+    if (!buf || !buf.width) return [];
+    var cols = grid && grid.cols > 0 ? grid.cols : 30;
+    var sqSrc = buf.width / cols;
+    var k = Math.min(640 / Math.max(buf.width, buf.height), 8 / sqSrc, 1.5);
+    var w = Math.max(8, Math.round(buf.width * k)), h = Math.max(8, Math.round(buf.height * k));
+    var sq = sqSrc * k; // one square in work pixels
+    if (sq < 3) return [];
+    var rgb = box(buf.data, buf.width, buf.height, 4, w, h, 3), n = w * h, i;
+    var g = new Float32Array(n);
+    for (i = 0; i < n; i++) g[i] = 0.299 * rgb[i * 3] + 0.587 * rgb[i * 3 + 1] + 0.114 * rgb[i * 3 + 2];
+    g = blur3(g, w, h);
+    var bg = boxBlur(g, w, h, Math.max(3, Math.round(sq * 3)));
+    var D = new Float32Array(n), ad = new Float32Array(n);
+    for (i = 0; i < n; i++) { D[i] = g[i] - bg[i]; ad[i] = Math.abs(D[i]); }
+    // robust noise level of the floor: median absolute deviation
+    var hist = new Uint32Array(256);
+    for (i = 0; i < n; i++) hist[Math.min(255, Math.floor(ad[i]))]++;
+    var acc = 0, med = 0;
+    for (i = 0; i < 256; i++) { acc += hist[i]; if (acc >= n / 2) { med = i; break; } }
+    var thr = Math.max(18, 1.48 * (med + 0.5) * 3.5);
+    // lights first
+    var lm = new Uint8Array(n);
+    for (i = 0; i < n; i++) {
+      var r = rgb[i * 3], gg = rgb[i * 3 + 1], b = rgb[i * 3 + 2];
+      if (r > 190 && r >= gg && gg >= b && r - b > 70 && gg > 90 && (r + gg + b) / 3 > 140 && D[i] > 22) lm[i] = 1;
+    }
+    var out = [], lights = [], lc = components(lm, w, h, null);
+    for (i = 0; i < lc.length; i++) {
+      var c = lc[i], bw = c.x1 - c.x0 + 1, bh = c.y1 - c.y0 + 1;
+      if (c.n < 3 || Math.max(bw, bh) > 2 * sq) continue;
+      if (Math.min(bw, bh) / Math.max(bw, bh) < 0.4 || c.n / (bw * bh) < 0.4) continue;
+      lights.push({ cx: (c.x0 + c.x1 + 1) / 2, cy: (c.y0 + c.y1 + 1) / 2, bw: Math.max(bw, sq * 0.5), bh: Math.max(bh, sq * 0.5), s: c.n * 1000 });
+    }
+    // objects
+    var mask = new Uint8Array(n);
+    for (i = 0; i < n; i++) if (ad[i] > thr) mask[i] = 1;
+    mask = morph(morph(mask, w, h, false), w, h, true);
+    var cs = components(mask, w, h, ad), objs = [];
+    for (i = 0; i < cs.length; i++) {
+      var o = cs[i], ow = o.x1 - o.x0 + 1, oh = o.y1 - o.y0 + 1;
+      if (ow < sq * 0.4 || oh < sq * 0.4 || ow > sq * 4.5 || oh > sq * 4.5) continue;
+      if (o.n < sq * sq * 0.25) continue;
+      if (Math.min(ow, oh) / Math.max(ow, oh) < 0.3) continue;
+      if (o.n / (ow * oh) < 0.4) continue;
+      objs.push({ cx: (o.x0 + o.x1 + 1) / 2, cy: (o.y0 + o.y1 + 1) / 2, bw: ow, bh: oh, s: o.sum / o.n * Math.sqrt(o.n) });
+    }
+    // lights win over objects on the same spot; near duplicates collapse to the stronger one
+    var keep = [], j, all = [];
+    for (i = 0; i < lights.length; i++) { lights[i].light = true; all.push(lights[i]); }
+    for (i = 0; i < objs.length; i++) {
+      var dup = false;
+      for (j = 0; j < lights.length; j++) if (near(objs[i], lights[j])) { dup = true; break; }
+      if (!dup) all.push(objs[i]);
+    }
+    all.sort(function (p, q) { return (q.light ? 1e12 : 0) + q.s - ((p.light ? 1e12 : 0) + p.s) || p.cy - q.cy || p.cx - q.cx; });
+    for (i = 0; i < all.length; i++) {
+      var d2 = false;
+      for (j = 0; j < keep.length; j++) if (near(all[i], keep[j])) { d2 = true; break; }
+      if (!d2) keep.push(all[i]);
+      if (keep.length >= 40) break;
+    }
+    keep.sort(function (p, q) { return p.cy - q.cy || p.cx - q.cx; });
+    for (i = 0; i < keep.length; i++) {
+      var kk = keep[i];
+      out.push({ name: kk.light ? 'Light' : 'Object', type: kk.light ? 'light' : 'other', x: kk.cx / w, y: kk.cy / h, w: kk.bw / w, h: kk.bh / h,
+        light: !!kk.light, hidden: false, note: '' });
+    }
+    return out;
+  };
+  function near(p, q) {
+    var d = Math.max(p.bw, p.bh, q.bw, q.bh) * 0.6;
+    return Math.abs(p.cx - q.cx) < d && Math.abs(p.cy - q.cy) < d;
+  }
+
+  if (typeof window !== 'undefined') window.CrowsMapVision = V;
+  if (typeof module !== 'undefined' && module.exports) module.exports = V;
+})();
+
+</script>
+<script>
+/*
  * The Nest: dice and tests, shared by the Character Generator's Play mode and the Ref Screen (window.CrowsDice),
  * so a player's roll and the Ref's follow the same rules.
  */
@@ -4589,6 +4941,8 @@ CROWS.NAME_IDEAS = {
 
     /* Call fn(user) once it's known who is logged in (user is null for a guest, offline, or without the accounts server). */
     afterMe: function (fn) { if (meDone) fn(user); else meWaiting.push(fn); },
+    /* Who is logged in now (null for a guest, offline, or before the server has answered). */
+    me: function () { return user; },
     /* For the Ref Screen: what link.save needs to turn the linked character `b` into `data` ({ fields, base }), or null if nothing it may change differs. */
     linkDiff: function (b, data) { return linkDiff(b, data); },
     /* For the Ref Screen: calls the API with this page's login. */
@@ -5315,7 +5669,7 @@ CROWS.NAME_IDEAS = {
       releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderMaps = f('renderMaps'), renderEncounters = f('renderEncounters'),
       renderParty = f('renderParty'), renderPractice = f('renderPractice'), renderPrefs = f('renderPrefs'), renderVtt = f('renderVtt'), renderRules = f('renderRules'), renderSession = f('renderSession'),
       renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
-      renderWorld = f('renderWorld'), renderWorkshop = f('renderWorkshop'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
+      renderAi = f('renderAi'), renderWorld = f('renderWorld'), renderWorkshop = f('renderWorkshop'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
   var state = A.state; A.share('state', function (v) { state = v; });
   var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
@@ -5323,7 +5677,7 @@ CROWS.NAME_IDEAS = {
   var TAB_KEY = 'crows-pt2-ref-tab';
   // The tabs in their groups, shown with the group's name in the tab bar: [group, [[tab id, label], ...]].
   var TAB_GROUPS = [['Run', [['session', 'Session'], ['vtt', 'Tabletop'], ['encounters', 'Encounters'], ['travel', 'Travel']]],
-    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World'], ['workshop', 'Workshop'], ['prefs', 'Preferences']]],
+    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World'], ['workshop', 'Workshop'], ['ai', 'AI'], ['prefs', 'Preferences']]],
     ['Reference', [['bestiary', 'Bestiary'], ['maps', 'Maps'], ['tables', 'Tables'], ['rules', 'Rules']]]];
   var TABS = TAB_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
   var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge', G: 'Holy Shit' };
@@ -5410,6 +5764,8 @@ CROWS.NAME_IDEAS = {
       dice: { mod: 0, net: 0, expr: '3d6', ud: 1 },
       prefs: { tabletop: false, off: {}, playerView: 'map' },
       vtt: { scenes: [], cur: '', shown: false, clean: true },
+      // Objects found or saved for each map picture (ref-mapobj.js): mapKits[mapId] = { objects, env, src, at, noAsk }; mapPairs[unlabeledId] = labeledId.
+      mapKits: {}, mapPairs: {},
       // The Workshop (ref-homebrew.js): the Ref's own creatures and equipment.
       homebrew: { creatures: [], items: [] },
       // Practice fights on the Tabletop (ref-practice.js): the Ref's choices, the fight under way (with the real one to put back), past results.
@@ -5642,7 +5998,7 @@ CROWS.NAME_IDEAS = {
     renderTabbar();
     renderSide();
     if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
-    ({ session: renderSession, vtt: renderVtt, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, workshop: renderWorkshop, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
+    ({ session: renderSession, vtt: renderVtt, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, workshop: renderWorkshop, ai: renderAi, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
     applyPrefs();
     tick();
   }
@@ -8524,7 +8880,7 @@ CROWS.NAME_IDEAS = {
       rollDungeonTable = f('rollDungeonTable'), rollInText = f('rollInText'), rollMerchant = f('rollMerchant'),
       rollMiasmaTouched = f('rollMiasmaTouched'), rollTravelEncounter = f('rollTravelEncounter'), rollTravelers = f('rollTravelers'),
       rollWeather = f('rollWeather'), rollWildAnimal = f('rollWildAnimal'), rowsTable = f('rowsTable'), S = f('S'), save = f('save'), sel = f('sel'),
-      setTab = f('setTab'), showMapOnTabletop = f('showMapOnTabletop'), newEncounter = f('newEncounter'), openEncounter = f('openEncounter');
+      setTab = f('setTab'), showMapOnTabletop = f('showMapOnTabletop'), mapUploaded = f('mapUploaded'), mapTileItems = f('mapTileItems'), newEncounter = f('newEncounter'), openEncounter = f('openEncounter');
   var $ = A.$, d = A.d, d100 = A.d100, el = A.el, fmt = A.fmt, pick = A.pick, plural = A.plural, rollDice = A.rollDice, Rules = A.Rules,
       signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -8729,7 +9085,7 @@ CROWS.NAME_IDEAS = {
     pickImage(4500, 420, function (p) {
       var title = prompt('Map name', p.name); if (title === null) return;
       var rec = { key: 'm:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: (title.trim() || p.name).slice(0, 60), thumb: p.thumb, blob: p.blob, at: Date.now() };
-      putArt(rec).then(function () { custom.maps.push(rec); toast('Map added.'); render(); }, function (e) { toast('Couldn\'t save it: ' + e.message); });
+      putArt(rec).then(function () { custom.maps.push(rec); toast('Map added.'); render(); mapUploaded(rec); }, function (e) { toast('Couldn\'t save it: ' + e.message); });
     });
   }
   loadCustom();
@@ -8820,7 +9176,7 @@ CROWS.NAME_IDEAS = {
         { label: 'Rename', fn: function () { var t = prompt('Map name', m.title); if (t && t.trim()) { var old = m.title; m.title = t.trim().slice(0, 60); putArt(m).then(render, function (e) { m.title = old; toast('Couldn\'t rename it: ' + e.message); }); } } },
         { label: 'Delete', fn: function () { if (confirm('Delete the map "' + m.title + '" from this device?')) removeArt(m.key); } }];
       var views = [{ label: '', file: blobUrl(m), map: { k: m.key } }];
-      return el('button', { type: 'button', class: 'map-tile', oncontextmenu: function (ev) { mapMenu(ev, { title: m.title, views: views, thumb: m.thumb, actions: actions, menu: actions.map(function (a) { return { label: a.label, fn: a.fn, danger: a.label === 'Delete' }; }) }); },
+      return el('button', { type: 'button', class: 'map-tile', oncontextmenu: function (ev) { mapMenu(ev, { title: m.title, views: views, thumb: m.thumb, actions: actions, menu: mapTileItems(m).concat(actions.map(function (a) { return { label: a.label, fn: a.fn, danger: a.label === 'Delete' }; })) }); },
         onclick: function () { lightbox(m.title, views, m.thumb, actions); }
       }, [el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }), el('span', { class: 'b-name', text: m.title }), el('span', { class: 'fine', text: 'Yours' })]);
     }
@@ -8973,7 +9329,7 @@ CROWS.NAME_IDEAS = {
   }
 
   A.add({ renderWorld: renderWorld, randomNPC: randomNPC, renderBestiary: renderBestiary, renderMaps: renderMaps, beastCard: beastCard, renderTables: renderTables, lightbox: lightbox,
-      artFor: artFor, blobUrl: blobUrl, customMaps: function () { return custom.maps; }, parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
+      artFor: artFor, artRemote: function () { return remote; }, blobUrl: blobUrl, customMaps: function () { return custom.maps; }, parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
 })();
 
 </script>
@@ -9072,6 +9428,7 @@ CROWS.NAME_IDEAS = {
   var addCombatant = f('addCombatant'), addParty = f('addParty'), artFor = f('artFor'), beast = f('beast'), blobUrl = f('blobUrl'), btn = f('btn'), byId = f('byId'),
       fxItems = f('fxItems'), monsterExperts = f('monsterExperts'), fxText = f('fxText'), hitControls = f('hitControls'), rich = f('rich'), slotsOf = f('slotsOf'), surprised = f('surprised'), tauntOn = f('tauntOn'),
       undoAct = f('undoAct'),
+      mapLoaded = f('mapLoaded'), mapKitSave = f('mapKitSave'), mapObjMenu = f('mapObjMenu'),
       clockText = f('clockText'), customMaps = f('customMaps'), damage = f('damage'), dungeonEN = f('dungeonEN'), encSummary = f('encSummary'), endDT = f('endDT'), feat = f('feat'),
       feed = f('feed'), heal = f('heal'), healthWord = f('healthWord'), liveChanged = f('liveChanged'), liveOn = f('liveOn'), log = f('log'), nextRound = f('nextRound'),
       pauseTimer = f('pauseTimer'), pendingEnc = f('pendingEnc'), remainMs = f('remainMs'), render = f('render'), runEncounter = f('runEncounter'),
@@ -9140,6 +9497,7 @@ CROWS.NAME_IDEAS = {
     if (kind === 'travel' && REFD && REFD.ART && REFD.ART.maps.length) setMap(sc, { b: (REFD.ART.maps.filter(function (m) { return /cornath/i.test(m.title); })[0] || REFD.ART.maps[0]).variants[0].file });
     changed(); render();
   }
+  function pickMap(sc, m) { setMap(sc, m, mapLoaded); }
   function sameMap(a, b) { return !!a && !!b && (a.b ? a.b === b.b : a.k === b.k); }
   /* A scene made before grids were read from the map has never been checked: look once, and refit it if the map's own grid is of another kind or
      size (a hex map on squares, say). A scene whose grid already agrees keeps its offsets and tuning. `force` refits it whatever it has. */
@@ -9162,9 +9520,9 @@ CROWS.NAME_IDEAS = {
   /* The scene that has this map (the first one), or a new battle-map scene made for it. */
   function sceneForMap(m, title) {
     var sc = V().scenes.filter(function (s) { return sameMap(s.map, m); })[0];
-    if (sc) { checkGrid(sc); return sc; }
+    if (sc) { checkGrid(sc); if (sc.w) mapLoaded(sc); return sc; }
     sc = makeScene('open', (title || 'Map').slice(0, 60));
-    V().scenes.push(sc); setMap(sc, m);
+    V().scenes.push(sc); pickMap(sc, m);
     return sc;
   }
   /* Make a map the live scene on the tabletop right now and go to it. */
@@ -9341,8 +9699,8 @@ CROWS.NAME_IDEAS = {
     return m ? { cols: +m[1], rows: +m[2] } : null;
   }
 
-  /* Set a scene's map and size the scene to the picture (once it has loaded). */
-  function setMap(sc, m) {
+  /* Set a scene's map and size the scene to the picture (once it has loaded); `after(sc)` runs then (the Ref's own choice of map: ref-mapobj.js places or offers its objects). */
+  function setMap(sc, m, after) {
     sc.map = m;
     var src = mapSrc(sc);
     if (!m || !src) { changed(); return; }
@@ -9366,6 +9724,7 @@ CROWS.NAME_IDEAS = {
         }
       }
       sc.autoGrid = m.b || m.k; sc.seen = ''; sc.seenDims = ''; changed(); if (U.view) U.view.sceneChanged(sc.id + 'm'); render();
+      if (after) after(sc);
     };
     img.src = src;
     changed();
@@ -9402,6 +9761,7 @@ CROWS.NAME_IDEAS = {
   /* The hover tooltip's lines for a token (the Ref sees everything). */
   function tipLines(t) {
     var x = combatant(t), out = [{ pc: 'Crow', foe: 'Foe', ally: 'Ally', npc: 'NPC', obj: 'Marker' }[t.kind] + (t.hidden ? ' · hidden from the players' : '') + (t.acted ? ' · acted' : '')];
+    if (t.note) out.push(t.note);
     if (t.dead) out.push('dead'); else if (t.vit) out.push(t.vit);
     if (x && x.kind !== 'pc' && !x.dead) out.push('Players see: ' + (S().combat.showSt || x.kind === 'ally' ? 'its Stamina and AD' : healthWord(x)));
     var ex = x ? monsterExperts(x) : [];
@@ -9743,12 +10103,14 @@ CROWS.NAME_IDEAS = {
       { label: 'Measure', fn: function () { pickTool('measure'); } },
       { sep: true });
     out.push({ label: 'Load a map', sub: maps.map(function (o) {
-      return { label: o[1], on: !!sc.map && o[0] === (sc.map.b ? 'b|' + sc.map.b : 'k|' + sc.map.k), fn: function () { setMap(sc, o[0].charAt(0) === 'b' ? { b: o[0].slice(2) } : { k: o[0].slice(2) }); } };
+      return { label: o[1], on: !!sc.map && o[0] === (sc.map.b ? 'b|' + sc.map.b : 'k|' + sc.map.k), fn: function () { pickMap(sc, o[0].charAt(0) === 'b' ? { b: o[0].slice(2) } : { k: o[0].slice(2) }); } };
     }).concat(sc.map ? [{ sep: true }, { label: 'Plain board (no map)', fn: function () { sc.map = null; changed(); render(); } }] : []) });
     out.push({ label: 'Load a saved encounter', off: !open.length && !run, hint: open.length || run ? '' : 'No saved encounters: roll or build one on the Encounters tab.',
       sub: (run ? [{ label: 'Running: ' + (run.name || 'untitled') + ' (put its creatures here)', fn: function () { loadEncounter(sc, run); } }, open.length ? { sep: true } : null] : [])
         .concat(open.filter(function (e) { return e !== run; }).map(function (e) { return { label: (e.name || 'untitled') + (encSummary(e) ? ' — ' + encSummary(e) : ''), fn: function () { loadEncounter(sc, e); } }; })) });
-    out.push({ label: 'Save this map as an encounter…', fn: function () { openDrawer('save'); } }, { sep: true });
+    out.push({ label: 'Save this map as an encounter…', fn: function () { openDrawer('save'); } });
+    var mo = mapObjMenu(sc); if (mo) out.push(mo);
+    out.push({ sep: true });
     out.push({ label: 'Add here', sub: [
       { label: 'The crows', off: !A.activePCs().length, fn: function () { addCrows(sc); } },
       { label: 'A creature…', fn: function () { openDrawer('add'); } },
@@ -10356,7 +10718,7 @@ CROWS.NAME_IDEAS = {
     var name = el('input', { type: 'text', class: 'in', value: sc.name, maxlength: 60, 'aria-label': 'Scene name' }); name.addEventListener('change', function () { sc.name = this.value.slice(0, 60) || 'Scene'; changed(); render(); });
     var mapSel = el('select', { class: 'in', 'aria-label': 'Map', onchange: function () {
       var v = this.value, m = !v ? null : v.charAt(0) === 'b' ? { b: v.slice(2) } : { k: v.slice(2) };
-      if (!m) { sc.map = null; changed(); render(); } else setMap(sc, m);
+      if (!m) { sc.map = null; changed(); render(); } else pickMap(sc, m);
     } }, mapChoices().map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
     mapSel.value = sc.map ? (sc.map.b ? 'b|' + sc.map.b : 'k|' + sc.map.k) : '';
     var cols = { n: Math.round(sc.w / sc.g) };
@@ -10416,7 +10778,8 @@ CROWS.NAME_IDEAS = {
       .concat((REFD.ENV || []).slice().sort(function (a, b) { return a[1].localeCompare(b[1]); }).map(function (e) {
         return el('button', { type: 'button', class: 'env-tog' + (on[e[0]] ? ' on' : ''), 'aria-pressed': on[e[0]] ? 'true' : 'false', onclick: function () { setEnv(sc, e[0], !on[e[0]]); } },
           [el('span', { class: 'env-sw', 'aria-hidden': 'true' }), el('span', { class: 'env-t' }, [el('b', { text: e[1] }), el('span', { class: 'fine', text: e[2] })])]);
-      }), envList(sc).length ? [btn('Clear the environment', function () { sc.env = {}; log('', 'The environment clears.'); changed(); render(); }, 'btn-small btn-ghost')] : []));
+      }), envList(sc).length ? [btn('Clear the environment', function () { sc.env = {}; log('', 'The environment clears.'); changed(); render(); }, 'btn-small btn-ghost')] : [],
+        sc.map ? [btn('Save for this map', function () { mapKitSave(sc); }, 'btn-small', 'Keep this environment and the objects on the map as its set, placed whenever the map is loaded')] : []));
   }
 
   // ------------------------------------------------------------------ the map as a saved encounter
@@ -10424,7 +10787,7 @@ CROWS.NAME_IDEAS = {
   /* A token as the layout keeps it (a creature's as `cr`, its bestiary name). */
   function layoutTok(t, keepVitals) {
     var o = { kind: t.kind, name: t.name, x: Math.round(t.x), y: Math.round(t.y) };
-    ['size', 'sizeSet', 'hidden', 'label', 'icon', 'speed', 'sight', 'sees', 'locked', 'noArt'].forEach(function (k) { if (t[k] != null && t[k] !== false) o[k] = t[k]; });
+    ['size', 'sizeSet', 'hidden', 'label', 'icon', 'speed', 'sight', 'sees', 'locked', 'noArt', 'note', 'gen', 'otype', 'secret'].forEach(function (k) { if (t[k] != null && t[k] !== false && t[k] !== '') o[k] = t[k]; });
     if (t.light) o.light = clone(t.light);
     var x = combatant(t);
     if (t.cref && (t.kind === 'foe' || t.kind === 'ally')) {
@@ -10553,7 +10916,364 @@ CROWS.NAME_IDEAS = {
     resetSpawn: function () { U.spawn = 0; }, view: function () { return U.view; }, deselect: function () { U.sel = null; } };
   /* From the Encounters tab: run a saved encounter's map layout on the Tabletop. */
   function runOnTabletop(e) { setTab('vtt'); loadLayout(e); }
-  A.add({ envFor: envFor, saveLayout: saveLayout, runOnTabletop: runOnTabletop, vtt: vtt, renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
+  A.add({ vttChanged: changed, envFor: envFor, saveLayout: saveLayout, runOnTabletop: runOnTabletop, vtt: vtt, renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
+})();
+
+</script>
+<script>
+/*
+ * Ref Screen: map objects. A "map kit" is the furniture, lights, and environment of one map picture, kept in state.mapKits[mapId]
+ * ({ objects, env, src: 'ai' | 'auto' | 'ref', at, noAsk }; positions are fractions of that map's picture). Kits come from:
+ *   - detection when a map is uploaded or the Ref asks (generateKit): Claude's vision through the accounts server (api.php map.detect, when
+ *     logged in and the server has a key), otherwise the browser's own shape finding (src/shared/map-vision.js, src 'auto');
+ *   - the Ref saving the objects and environment standing on a scene's map (saveFromScene, src 'ref').
+ * A map with labeled and unlabeled versions (siblings: an official map's variants, uploads with matching titles, or uploads the Ref paired in
+ * state.mapPairs) is read on its labeled version, and the objects are carried to every other version by aligning the pictures.
+ * Loading a map onto a scene (mapLoaded, called from ref-vtt.js) places the kit, or offers to generate one. Tokens are kind 'obj' with gen = map id.
+ */
+(function () {
+  'use strict';
+  var A = window.CrowsRefApp, f = A.fwd;
+  // From the other files (each call goes to the function there).
+  var aiDetect = f('aiDetect'), aiHas = f('aiHas'), aiUnlock = f('aiUnlock'), blobUrl = f('blobUrl'), customMaps = f('customMaps'), render = f('render'), save = f('save'), vttChanged = f('vttChanged'), artRemote = f('artRemote');
+  var el = A.el, toast = A.toast, plural = A.plural, clone = A.clone, REFD = window.REF, Tbl = window.CrowsTable;
+  var state = A.state; A.share('state', function (v) { state = v; });
+  var KINDS_OK = { dungeon: 1, open: 1, village: 1 };
+  var ICONS = { chest: '▣', table: '▭', chair: '⊓', bed: '▬', shelf: '≡', altar: '✚', statue: '♜', pillar: '●', barrel: '◍', crate: '▢', well: '◎', fountain: '≈',
+    trap: '⚠', door: '▯', stairs: '☰', light: '✶', plant: '♣', rubble: '∴', body: '☠', other: '◆' };
+  var LABELS = /\b(labell?ed|labels?|key|gm|dm|players?|unlabell?ed|no labels)\b/ig;
+  var running = {}, waiting = {};   // map id -> the generation under way; map id -> the scene waiting for its objects
+
+  // ------------------------------------------------------------------ maps, their names, and their siblings
+  function kits() { return state.mapKits || (state.mapKits = {}); }
+  function pairs() { return state.mapPairs || (state.mapPairs = {}); }
+  function mapIdOf(m) { return !m ? '' : m.b ? 'b|' + m.b : m.k ? 'k|' + m.k : ''; }
+  function mapOf(id) { return id.charAt(0) === 'b' ? { b: id.slice(2) } : { k: id.slice(2) }; }
+  function hasKit(k) { return !!(k && k.src); }
+  function kitOf(id) { var k = kits()[id]; return hasKit(k) ? k : null; }
+  /* The official map entry and variant for a file, or the upload's record. */
+  function officialOf(id) {
+    var hit = null;
+    if (id.charAt(0) === 'b') (REFD.ART.maps || []).forEach(function (m) { m.variants.forEach(function (v) { if (v.file === id.slice(2)) hit = { m: m, v: v }; }); });
+    return hit;
+  }
+  function recOf(id) { return id.charAt(0) === 'k' ? customMaps().filter(function (r) { return r.key === id.slice(2); })[0] || null : null; }
+  function titleOf(id) {
+    var o = officialOf(id), r = recOf(id);
+    return o ? o.m.title + (o.m.variants.length > 1 ? ' (' + o.v.label + ')' : '') : r ? r.title : 'this map';
+  }
+  function srcOf(id) { var o = officialOf(id), r = recOf(id); return o ? o.v.file : r ? blobUrl(r) : null; }
+  function normTitle(t) { return String(t || '').replace(LABELS, ' ').replace(/[^a-z0-9]+/gi, ' ').trim().toLowerCase(); }
+  function labeledWord(t) { return /\b(labell?ed|labels?|key|gm|dm)\b/i.test(t) && !/\b(unlabell?ed|no labels?)\b/i.test(t); }
+  /* Every version of a map, the map itself included. */
+  function siblings(id) {
+    var o = officialOf(id);
+    if (o) return o.m.variants.map(function (v) { return 'b|' + v.file; });
+    var out = [id], p = pairs();
+    Object.keys(p).forEach(function (a) { if (a === id || p[a] === id) { [a, p[a]].forEach(function (x) { if (out.indexOf(x) < 0 && recOf(x)) out.push(x); }); } });
+    var n = normTitle((recOf(id) || {}).title);
+    if (n) customMaps().forEach(function (r) { var x = 'k|' + r.key; if (out.indexOf(x) < 0 && normTitle(r.title) === n) out.push(x); });
+    return out;
+  }
+  /* The version whose printed labels name the objects: the paired one, a variant labeled so, or an upload titled so. */
+  function labeledOf(id) {
+    var sibs = siblings(id), p = pairs(), hit = null;
+    sibs.forEach(function (s) { if (!hit && p[s] && sibs.indexOf(p[s]) >= 0) hit = p[s]; });
+    if (hit) return hit;
+    sibs.forEach(function (s) {
+      var o = officialOf(s), t = o ? o.v.label : (recOf(s) || {}).title;
+      if (!hit && t && (o ? /label/i.test(t) && !/\b(un|no)[- ]?label/i.test(t) : labeledWord(t))) hit = s;
+    });
+    return hit;
+  }
+  /* Squares across a map picture, when it is known (0 when not). */
+  function colsOf(id, sc) {
+    var o = officialOf(id), r = recOf(id), nm = r && /(\d{2,3})\s*[x×]\s*(\d{2,3})/i.exec(r.title);
+    if (o && o.v.cols) return o.v.cols;
+    if (sc && sc.map && mapIdOf(sc.map) === id && sc.g) return Math.round(sc.w / sc.g);
+    return nm ? +nm[1] : 0;
+  }
+  function loadImg(id) {
+    return new Promise(function (ok, no) {
+      var src = srcOf(id); if (!src) return no(new Error('no picture'));
+      var img = new Image(); img.onload = function () { ok(img); }; img.onerror = function () { no(new Error('picture not found')); }; img.src = src;
+    });
+  }
+
+  // ------------------------------------------------------------------ detection
+  function cropJpeg(img, x0, y0, x1, y1, max) {
+    var sw = (x1 - x0) * img.naturalWidth, sh = (y1 - y0) * img.naturalHeight, k = Math.min(1, max / Math.max(sw, sh));
+    var c = document.createElement('canvas'); c.width = Math.max(1, Math.round(sw * k)); c.height = Math.max(1, Math.round(sh * k));
+    c.getContext('2d').drawImage(img, x0 * img.naturalWidth, y0 * img.naturalHeight, sw, sh, 0, 0, c.width, c.height);
+    return c.toDataURL('image/jpeg', .85).split(',')[1];
+  }
+  function envKeys() { return (REFD.ENV || []).map(function (e) { return [e[0], e[1]]; }); }
+  function askServer(body) {
+    return window.CrowsCloud.api('POST', 'map.detect', '', body).then(function (j) {
+      return { objects: Array.isArray(j.objects) ? j.objects : [], env: Array.isArray(j.env) ? j.env : [] };
+    });
+  }
+  /* Claude's reading of the picture, in one call or (a wide map) up to four overlapping tiles with their results mapped back and de-duplicated. */
+  function detectRemote(img, info, ask) {
+    ask = ask || askServer;
+    var V = window.CrowsMapVision, W = img.naturalWidth, H = img.naturalHeight, cols = info.cols, wide = cols > 50;
+    var tx = wide ? 2 : 1, ty = wide && H / W * cols > 50 ? 2 : 1, ov = .06, jobs = [];
+    for (var j = 0; j < ty; j++) for (var i = 0; i < tx; i++) jobs.push({ x0: Math.max(0, i / tx - ov), x1: Math.min(1, (i + 1) / tx + ov), y0: Math.max(0, j / ty - ov), y1: Math.min(1, (j + 1) / ty + ov) });
+    var base = { mime: 'image/jpeg', hasLabels: info.hasLabels, kind: info.kind, title: info.title, envKeys: envKeys() };
+    return Promise.all(jobs.map(function (t) {
+      var whole = jobs.length === 1;
+      return ask(Object.assign({ image: whole ? V.jpeg(img, 1600, .85) : cropJpeg(img, t.x0, t.y0, t.x1, t.y1, 1600),
+        cols: whole ? cols : Math.round(cols * (t.x1 - t.x0)), rows: cols ? Math.round(cols * (t.y1 - t.y0) * H / W) : 0 }, base)).then(function (r) {
+        r.objects = r.objects.map(function (o) { var c = clone(o); c.x = t.x0 + o.x * (t.x1 - t.x0); c.y = t.y0 + o.y * (t.y1 - t.y0); c.w = o.w * (t.x1 - t.x0); c.h = o.h * (t.y1 - t.y0); return c; });
+        return r;
+      });
+    })).then(function (rs) {
+      var out = [], env = [];
+      rs.forEach(function (r) {
+        r.env.forEach(function (k) { if (env.indexOf(k) < 0) env.push(k); });
+        r.objects.forEach(function (o) {
+          var dup = out.some(function (p) { return String(p.name).toLowerCase() === String(o.name).toLowerCase() && Math.hypot(p.x - o.x, p.y - o.y) < .02; });
+          if (!dup) out.push(o);
+        });
+      });
+      return { objects: out, env: env };
+    });
+  }
+  function cleanObjects(list) {
+    return (list || []).filter(function (o) { return o && isFinite(o.x) && isFinite(o.y) && o.x >= 0 && o.x <= 1 && o.y >= 0 && o.y <= 1; }).slice(0, 80).map(function (o) {
+      return { name: String(o.name || 'Object').slice(0, 40), type: ICONS[o.type] ? o.type : 'other', x: +o.x, y: +o.y, w: Math.max(0.002, +o.w || 0.02), h: Math.max(0.002, +o.h || 0.02),
+        light: !!o.light, hidden: !!o.hidden, note: String(o.note || '').slice(0, 200) };
+    });
+  }
+
+  /* Find the objects on a map (and its other versions) and keep them as its kit. Resolves with the kit; never throws. opts: { cols, kind, force,
+     quiet } (force reads the picture again even over a Ref-saved kit; quiet leaves out the finished message). Only one run per map at a time. */
+  function generateKit(id, opts) {
+    opts = opts || {};
+    if (running[id]) return running[id];
+    var V = window.CrowsMapVision;
+    if (!V) { toast('The object finder isn\'t loaded.'); return Promise.resolve(null); }
+    /* Claude reads the labeled version's printed names; shape finding only would mistake its label text for objects, so it reads an unlabeled one. */
+    var sibs = siblings(id), lab = labeledOf(id), srcId = (artRemote() ? lab : lab === id ? sibs.filter(function (s) { return s !== lab; })[0] : null) || (function () { var full = sibs.filter(function (s) { var o = officialOf(s); return o && /full/i.test(o.v.label); })[0]; return full || id; })();
+    var srcKit = kitOf(srcId), reuse = srcKit && !opts.force, title = titleOf(id), made = null, why = 'log in for named objects', used = '';
+    if (!opts.quiet) toast('Looking for objects on ' + title + '…', 6000);
+    var run = (reuse ? Promise.resolve(null) : loadImg(srcId).then(function (img) {
+      var info = { cols: colsOf(srcId) || (srcId === id ? opts.cols || 0 : 0), hasLabels: srcId === lab, kind: opts.kind || 'dungeon', title: titleOf(srcId) };
+      /* Order: the Ref's own key (asks to unlock it if locked; declining goes on), then the server's key (logged in), then shape finding. */
+      var used = '', ownWhy = '';
+      var own = aiHas().then(function (has) { return has ? aiUnlock() : false; }).then(function (ok) {
+        return ok ? detectRemote(img, info, aiDetect).then(function (r) { used = 'your own Anthropic key'; return r; }, function (e) { ownWhy = 'your own key failed: ' + (e && e.message || 'error'); return null; }) : null;
+      }, function () { return null; });
+      var remote = own.then(function (r) {
+        if (r) return r;
+        return artRemote() ? detectRemote(img, info).then(function (r2) { used = 'the site\'s key'; return r2; }) : Promise.reject(new Error('no login'));
+      });
+      return remote.then(function (r) { r.src = 'ai'; r.used = used; return r; }, function (e) {
+        var r = V.detect(V.pixels(img, 1024), { cols: info.cols });
+        return { objects: r || [], env: [], src: 'auto', why: ownWhy ? ownWhy + (artRemote() ? '; the server can\'t name them right now' : '') : !artRemote() ? 'log in, or add your own key in the AI tab, for named objects' : e && e.status === 429 ? 'the server\'s hourly limit is used up' : 'the server can\'t name them right now' };
+      }).then(function (r) { r.img = img; return r; });
+    })).then(function (r) {
+      var at = Date.now(), noAsk = !!((kits()[srcId] || {}).noAsk), env = {};
+      if (r && r.why) why = r.why;
+      if (r && r.used) used = r.used;
+      if (r) {
+        r.env.forEach(function (k) { env[k] = true; });
+        made = { objects: cleanObjects(r.objects), env: env, src: r.src, at: at, noAsk: noAsk };
+        kits()[srcId] = made;
+      } else made = srcKit;
+      // carry them to the other versions that don't have a kit the Ref saved
+      var others = sibs.filter(function (s) { return s !== srcId && (opts.force ? true : !kitOf(s)); });
+      return others.reduce(function (p, s) {
+        return p.then(function () {
+          if (kitOf(s) && kitOf(s).src === 'ref') return;
+          return loadImg(s).then(function (img2) {
+            var a = r && r.img ? V.pixels(r.img, 512) : null;
+            return (a ? Promise.resolve(a) : loadImg(srcId).then(function (i) { return V.pixels(i, 512); })).then(function (pa) {
+              var T = V.align(pa, V.pixels(img2, 512));
+              if (!T) return;
+              kits()[s] = { objects: cleanObjects(V.transform(made.objects, T)), env: clone(made.env), src: made.src, at: at, noAsk: !!(kits()[s] && kits()[s].noAsk) };
+            });
+          }).catch(function () { /* that version's picture is missing or can't be read */ });
+        });
+      }, Promise.resolve());
+    }).then(function () {
+      delete running[id];
+      save();
+      var k = kitOf(id) || made;
+      if (!opts.quiet) {
+        var n = k ? k.objects.length : 0, via = k && k.src === 'ai' && used ? ', using ' + used : '';
+        toast(!k ? 'Couldn\'t read objects from ' + title + '.' : n ? 'Found ' + plural(n, 'object') + ' on ' + title + (k.src === 'auto' ? ', by shape only (' + why + ').' : via + '.') : 'Found no objects on ' + title + (k.src === 'auto' ? ' by shape (' + why + ').' : via + '.'), 5000);
+      }
+      var sid = waiting[id]; delete waiting[id];
+      if (sid && k) { var sc = scenes().filter(function (s) { return s.id === sid; })[0]; if (sc && mapIdOf(sc.map) === id) { placeKit(sc, id); vttChanged(); render(); } }
+      render();
+      return k;
+    }, function (e) {
+      delete running[id]; delete waiting[id];
+      toast('Couldn\'t read objects from ' + title + ': ' + (e && e.message || 'unknown error'), 5000);
+      return null;
+    });
+    running[id] = run;
+    return run;
+  }
+
+  // ------------------------------------------------------------------ kits on scenes
+  function scenes() { return (state.vtt && state.vtt.scenes) || []; }
+  function genTokens(sc, id) { return sc.tokens.filter(function (t) { return t.gen === id; }); }
+  function objTokens(sc) { return sc.tokens.filter(function (t) { return t.kind === 'obj'; }); }
+  function mergeEnv(sc, env) {
+    var added = 0; sc.env = sc.env || {};
+    Object.keys(env || {}).forEach(function (k) {
+      if (!env[k] || sc.env[k]) return;
+      if (k === 'dark' && sc.env.dim || k === 'dim' && sc.env.dark) return;   // one light level at a time
+      if (k === 'storm' && sc.env.rain || k === 'rain' && sc.env.storm) return;
+      sc.env[k] = true; added++;
+    });
+    return added;
+  }
+  /* Put a kit's objects (and environment) on the scene: tokens the Ref sees (lights the players see too). Returns how many were placed; a scene that
+     already has this map's generated tokens gets none. */
+  function placeKit(sc, id, opts) {
+    var k = kitOf(id); if (!k || !sc.w || !sc.g) return 0;
+    if (genTokens(sc, id).length && !(opts && opts.again)) return 0;
+    var n = 0;
+    k.objects.forEach(function (o) {
+      var size = Math.max(1, Math.round(Math.max(o.w * sc.w, o.h * sc.h) / sc.g)), p = Tbl.snap(sc, o.x * sc.w, o.y * sc.h, size);
+      var lp = /^(\d+)\/(\d+)/.exec(o.lp || '5/5') || [0, 5, 5], light = o.light ? { b: +lp[1], d: +lp[2], on: true } : null;
+      if (light && o.fire) light.fire = true;
+      sc.tokens.push({ id: Tbl.uid('k'), name: o.name || 'Object', kind: 'obj', x: p.x, y: p.y, size: size, hidden: !!o.hidden || (!o.light && !o.shown), speed: 5,
+        gen: id, otype: o.type || 'other', secret: !!o.hidden, icon: ICONS[o.type] || (o.light ? '✶' : '◆'), light: light, label: false, locked: true, note: o.note || '' });
+      n++;
+    });
+    var e = mergeEnv(sc, k.env);
+    if (n || e) { vttChanged(); }
+    return n;
+  }
+  function removeGen(sc, id) {
+    var n = genTokens(sc, id).length; sc.tokens = sc.tokens.filter(function (t) { return t.gen !== id; });
+    if (n) vttChanged();
+    return n;
+  }
+  /* Keep the objects (all the scene's marker tokens) and environment on the scene's map as that map's kit; offers to copy to its other versions. */
+  function saveFromScene(sc) {
+    var id = mapIdOf(sc && sc.map); if (!id) return toast('Put a map on this scene first.');
+    if (!sc.w || !sc.h) return;
+    var objs = objTokens(sc).map(function (t) {
+      var o = { name: t.name, type: t.otype || (t.light ? 'light' : 'other'), x: t.x / sc.w, y: t.y / sc.h, w: (t.size || 1) * sc.g / sc.w, h: (t.size || 1) * sc.g / sc.h,
+        light: !!t.light, hidden: t.secret != null ? !!t.secret : !!t.hidden && !!t.light, note: t.note || '' };
+      if (!t.light && !t.hidden) o.shown = true;
+      if (t.light) { o.lp = t.light.b + '/' + t.light.d; if (t.light.fire) o.fire = true; }
+      return o;
+    });
+    var env = {}; Object.keys(sc.env || {}).forEach(function (k) { if (sc.env[k]) env[k] = true; });
+    var old = kits()[id];
+    kits()[id] = { objects: objs, env: env, src: 'ref', at: Date.now(), noAsk: !!(old && old.noAsk) };
+    objTokens(sc).forEach(function (t) { t.gen = id; });
+    save();
+    var others = siblings(id).filter(function (s) { return s !== id; });
+    toast('Saved ' + plural(objs.length, 'object') + (Object.keys(env).length ? ' and the environment' : '') + ' for ' + titleOf(id) + '.');
+    if (others.length) ask('Copy to the other versions?', 'Carry these objects over to ' + others.map(titleOf).join(', ') + '? Their own saved sets are replaced.', [
+      { label: 'Copy to ' + plural(others.length, 'other version'), primary: true, fn: function () { copyKit(id, others); } }, { label: 'Only this one' }]);
+    render();
+  }
+  /* Carry a kit to other versions of the map by aligning the pictures. */
+  function copyKit(id, targets) {
+    var V = window.CrowsMapVision, k = kitOf(id), done = 0;
+    if (!V || !k) return;
+    loadImg(id).then(function (img) {
+      var pa = V.pixels(img, 512);
+      return targets.reduce(function (p, s) {
+        return p.then(function () {
+          return loadImg(s).then(function (i2) {
+            var T = V.align(pa, V.pixels(i2, 512)); if (!T) return;
+            kits()[s] = { objects: cleanObjects(V.transform(k.objects, T)), env: clone(k.env), src: k.src, at: Date.now(), noAsk: !!(kits()[s] && kits()[s].noAsk) }; done++;
+          }).catch(function () { /* unreadable */ });
+        });
+      }, Promise.resolve());
+    }).then(function () { save(); toast(done ? 'Copied to ' + plural(done, 'other version') + '.' : 'Couldn\'t line the pictures up, so nothing was copied.'); });
+  }
+
+  // ------------------------------------------------------------------ the pop-up
+  /* A small modal dialog: Tab stays inside it, Esc closes it, and focus goes back where it was. buttons: [{ label, fn, primary }]. */
+  function ask(title, text, buttons) {
+    var prev = document.activeElement, old = document.getElementById('mapobj-ask'); if (old) old.remove();
+    var host = document.fullscreenElement || document.body, h = el('h3', { id: 'mapobj-ask-t', text: title, style: 'margin:0 0 .5rem' });
+    function close() { box.remove(); document.removeEventListener('keydown', onKey, true); if (prev && prev.focus && document.body.contains(prev)) prev.focus(); }
+    var bs = buttons.map(function (b) {
+      return el('button', { type: 'button', class: 'btn btn-small' + (b.primary ? ' btn-primary' : ''), text: b.label, onclick: function () { close(); if (b.fn) b.fn(); } });
+    });
+    function onKey(e) {
+      if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); close(); return; }
+      if (e.key !== 'Tab') return;
+      var i = bs.indexOf(document.activeElement), n = bs.length;
+      e.preventDefault(); bs[(i + (e.shiftKey ? n - 1 : 1)) % n].focus();
+    }
+    var box = el('div', { id: 'mapobj-ask', class: 'lightbox', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'mapobj-ask-t', style: 'align-items:center;justify-content:center',
+      onclick: function (e) { if (e.target === box) close(); } }, [
+      el('div', { style: 'background:var(--paper);color:var(--ink);border:1px solid var(--ink);border-radius:8px;padding:1rem;max-width:26rem;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.35)' }, [
+        h, el('p', { text: text, style: 'margin:0 0 .8rem' }), el('div', { class: 'row' }, bs)])]);
+    host.appendChild(box); document.addEventListener('keydown', onKey, true); bs[0].focus();
+  }
+  /* Called by ref-vtt.js once a map the Ref chose is on a scene (not for grid re-fits, saved encounters, or hex/blank scenes). */
+  function mapLoaded(sc) {
+    var id = mapIdOf(sc && sc.map); if (!id || !KINDS_OK[sc.kind]) return;
+    var k = kitOf(id), title = titleOf(id);
+    if (k) {
+      var n = placeKit(sc, id);
+      if (n) { toast('Placed ' + plural(n, 'object') + ' on ' + title + ' from its saved set.'); render(); }
+      return;
+    }
+    if (running[id]) { waiting[id] = sc.id; toast('Still looking for objects on ' + title + '; they go on the map when found.'); return; }
+    if ((kits()[id] || {}).noAsk || objTokens(sc).length) return;
+    ask('Generate objects for ' + title + '?', 'This map has no objects yet. Generate them? (Furniture, chests, altars, and lights are found from the picture.)', [
+      { label: 'Generate', primary: true, fn: function () { generateHere(sc, id); } }, { label: 'Not now' },
+      { label: 'Don\'t ask for this map', fn: function () { setNoAsk(id, true); } }]);
+  }
+  function setNoAsk(id, on) {
+    var k = kits()[id] || (kits()[id] = { objects: [], env: {}, src: '', at: 0, noAsk: false });
+    k.noAsk = !!on; save(); render();
+  }
+  /* Generate for this scene's map and put the objects on it (replacing any generated ones when `again`). */
+  function generateHere(sc, id, again) {
+    if (running[id]) { waiting[id] = sc.id; toast('Still looking for objects; they go on the map when found.'); return; }
+    if (!again) waiting[id] = sc.id;   // the run places them itself when it finishes
+    generateKit(id, { cols: colsOf(id, sc), kind: sc.kind, force: !!again }).then(function (k) {
+      if (!again || !k || mapIdOf(sc.map) !== id) return;
+      removeGen(sc, id);
+      var n = placeKit(sc, id, { again: true }); toast('Placed ' + plural(n, 'object') + '.'); vttChanged(); render();
+    });
+  }
+
+  // ------------------------------------------------------------------ the menus
+  /* The board menu's "Map objects" submenu for the scene (null when it has no map). */
+  function menuItems(sc) {
+    var id = mapIdOf(sc && sc.map); if (!id) return null;
+    var k = kitOf(id), mine = genTokens(sc, id).length, busy = !!running[id];
+    return { label: 'Map objects', sub: [
+      { label: 'Save objects & environment for this map', hint: 'Keeps every marker token and the environment as this map\'s set, to place whenever the map is loaded.', fn: function () { saveFromScene(sc); } },
+      { label: 'Place saved objects', off: !k || !k.objects.length && !Object.keys(k.env || {}).length, hint: k ? '' : 'No saved or found objects for this map yet.', fn: function () {
+        var n = placeKit(sc, id, { again: true }); toast(n ? 'Placed ' + plural(n, 'object') + '.' : 'Nothing new to place.'); render(); } },
+      { label: busy ? 'Looking for objects…' : k ? 'Generate objects again' : 'Generate objects', off: busy, hint: 'Reads the picture for furniture, chests, and lights (Claude with your own key from the AI tab, or the site\'s key when logged in; shapes otherwise).',
+        fn: function () { if (k && k.src === 'ref' && !confirm('Replace the objects you saved for this map?')) return; generateHere(sc, id, true); } },
+      { label: 'Remove generated objects', off: !mine, danger: true, fn: function () { var n = removeGen(sc, id); toast('Removed ' + plural(n, 'object') + '.'); render(); } },
+      { sep: true },
+      { label: 'Ask about objects for this map', on: !(kits()[id] || {}).noAsk, hint: 'The pop-up when a map with no objects is loaded.', fn: function () { setNoAsk(id, !(kits()[id] || {}).noAsk); } }] };
+  }
+  /* Items for an uploaded map tile's right-click menu (popMenu: { label, fn | sub }). */
+  function tileItems(m) {
+    var id = 'k|' + m.key, p = pairs(), others = customMaps().filter(function (r) { return r.key !== m.key; });
+    return [{ label: 'Labeled version…', sub: others.map(function (r) {
+      var on = p[id] === 'k|' + r.key;
+      return { label: (on ? '✓ ' : '') + r.title, fn: function () { if (on) delete p[id]; else p[id] = 'k|' + r.key; save(); toast(on ? 'Unpaired.' : '"' + r.title + '" is the labeled version of "' + m.title + '".'); if (!on) generateKit(id, {}); } };
+    }).concat(others.length ? [{ sep: true }] : [], p[id] ? [{ label: 'No labeled version', fn: function () { delete p[id]; save(); render(); } }] : [],
+      others.length ? [] : [{ label: 'Add another map first', fn: function () {} }]) },
+      { label: running[id] ? 'Looking for objects…' : 'Generate objects', fn: function () { if (!running[id]) generateKit(id, { force: true }); } }];
+  }
+  /* After an upload: read it in the background. */
+  function uploaded(rec) { generateKit('k|' + rec.key, {}); }
+
+  A.add({ mapLoaded: mapLoaded, mapKitSave: saveFromScene, mapObjMenu: menuItems, mapTileItems: tileItems, mapUploaded: uploaded, generateKit: generateKit, mapIdOf: mapIdOf,
+    mapKitOf: kitOf, mapSiblings: siblings, mapLabeledOf: labeledOf, placeKit: placeKit });
 })();
 
 </script>
@@ -11689,6 +12409,369 @@ CROWS.NAME_IDEAS = {
   }
 
   A.add({ workshopOpen: workshopOpen, renderWorkshop: renderWorkshop, syncHomebrew: sync, hbToBeast: toBeast, hbToCard: toCard, hbCardText: cardText });
+})();
+
+</script>
+<script>
+/*
+ * Ref Screen: the AI tab and the Ref's own Anthropic API key, kept in a zero-knowledge vault.
+ *
+ * The plaintext key never reaches the accounts server. The browser encrypts it (WebCrypto: PBKDF2-SHA256, 600000 rounds, 16-byte salt ->
+ * AES-GCM-256, 12-byte IV, AAD "crows-ai-vault-v1:" + username) with a passphrase the Ref chooses, never stored anywhere. The server (api.php
+ * vault.get/save/delete) keeps only the ciphertext and hands it back to its owner; not logged in, it is kept in localStorage `crows-ai-vault`
+ * (AAD username "local"). Map scans call api.anthropic.com straight from the browser with the decrypted key.
+ *
+ * Where the key lives: only in the `U` closure variable below (and the non-extractable derived CryptoKey beside it). It is never in `state` (which
+ * syncs to the cloud), on window or the app object (A), in the DOM after entry (the inputs are emptied at once), or in a log. It is dropped
+ * after 30 minutes without activity, on logout (a different or missing account), and on pagehide.
+ * Residual risk: whoever controls the served JavaScript could ship code that reads the key when it is unlocked. The page's CSP limits injected
+ * scripts, not the operator's own build.
+ *
+ * Exported to the other files (A.add): aiReady(), aiHas(), aiUnlock(), aiDetect(body). Under node the crypto is exported for ref/test/test_ai_vault.js.
+ */
+(function () {
+  'use strict';
+  var VERSION = 'crows-ai-vault-v1', ITER = 600000, MIN_PASS = 12, IDLE_MS = 30 * 60 * 1000, LOCAL_KEY = 'crows-ai-vault';
+  var DEFAULT_MODEL = 'claude-sonnet-5-5', TEST_MODEL = 'claude-haiku-4-5-20251001';
+  var MODELS = [['claude-sonnet-5-5', 'Claude Sonnet 5.5 (default)'], ['claude-opus-5-5', 'Claude Opus 5.5 (best, slower, costs more)'], [TEST_MODEL, 'Claude Haiku 4.5 (fastest, cheapest)']];
+  var MAP_OBJECT_TYPES = ['chest', 'table', 'chair', 'bed', 'shelf', 'altar', 'statue', 'pillar', 'barrel', 'crate', 'well', 'fountain', 'trap', 'door', 'stairs', 'light', 'plant', 'rubble', 'body', 'other'];
+  var subtle = typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.subtle;
+
+  // ------------------------------------------------------------------ crypto (pure: no state, no DOM)
+  function b64(buf) { var s = '', a = new Uint8Array(buf); for (var i = 0; i < a.length; i++) s += String.fromCharCode(a[i]); return btoa(s); }
+  function unb64(s) { var t = atob(s), a = new Uint8Array(t.length); for (var i = 0; i < t.length; i++) a[i] = t.charCodeAt(i); return a; }
+  function utf8(s) { return new TextEncoder().encode(s); }
+  function aad(user) { return utf8(VERSION + ':' + user); }
+  function rand(n) { return globalThis.crypto.getRandomValues(new Uint8Array(n)); }
+  /* The AES-GCM key from a passphrase (not extractable). */
+  function derive(pass, salt, iter) {
+    return subtle.importKey('raw', utf8(pass), 'PBKDF2', false, ['deriveKey']).then(function (base) {
+      return subtle.deriveKey({ name: 'PBKDF2', hash: 'SHA-256', salt: salt, iterations: iter }, base, { name: 'AES-GCM', length: 256 }, false, ['encrypt', 'decrypt']);
+    });
+  }
+  /* Encrypt a payload with an already-derived key (a fresh IV each time) into the vault string. */
+  function sealWith(cryptoKey, salt, iter, payload, user, hint) {
+    var iv = rand(12);
+    return subtle.encrypt({ name: 'AES-GCM', iv: iv, additionalData: aad(user) }, cryptoKey, utf8(JSON.stringify(payload))).then(function (ct) {
+      return JSON.stringify({ v: 1, kdf: 'PBKDF2-SHA256', iter: iter, salt: b64(salt), iv: b64(iv), ct: b64(ct), hint: hint || '' });
+    });
+  }
+  /* A new vault string from a passphrase: resolves { vault, cryptoKey, salt, iter }. */
+  function seal(payload, pass, user, hint, iter) {
+    var salt = rand(16); iter = iter || ITER;
+    return derive(pass, salt, iter).then(function (k) { return sealWith(k, salt, iter, payload, user, hint).then(function (vault) { return { vault: vault, cryptoKey: k, salt: salt, iter: iter }; }); });
+  }
+  /* Is this the vault shape the server accepts? Returns the parsed object or null. */
+  function parse(vault) {
+    var o; try { o = JSON.parse(vault); } catch (e) { return null; }
+    if (!o || typeof o !== 'object' || Array.isArray(o)) return null;
+    var keys = Object.keys(o).sort().join();
+    if (keys !== 'ct,hint,iter,iv,kdf,salt,v' || o.v !== 1 || o.kdf !== 'PBKDF2-SHA256' || typeof o.hint !== 'string' || o.hint.length > 4) return null;
+    if (!Number.isInteger(o.iter) || o.iter < 600000 || o.iter > 5000000) return null;
+    try {
+      var s = unb64(o.salt).length, i = unb64(o.iv).length, c = unb64(o.ct).length;
+      if (s < 16 || s > 64 || i !== 12 || c < 16 || c > 4096) return null;
+    } catch (e) { return null; }
+    return o;
+  }
+  /* Decrypt a vault string: resolves { payload, cryptoKey, salt, iter }; rejects (Error 'Wrong passphrase') when the passphrase or account is wrong. */
+  function open(vault, pass, user) {
+    var o = parse(vault);
+    if (!o) return Promise.reject(new Error('The saved key is damaged.'));
+    var salt = unb64(o.salt);
+    return derive(pass, salt, o.iter).then(function (k) {
+      return subtle.decrypt({ name: 'AES-GCM', iv: unb64(o.iv), additionalData: aad(user) }, k, unb64(o.ct)).then(function (pt) {
+        var payload = JSON.parse(new TextDecoder().decode(pt));
+        return { payload: payload, cryptoKey: k, salt: salt, iter: o.iter };
+      });
+    }).then(null, function (e) { throw e && e.message === 'The saved key is damaged.' ? e : new Error('Wrong passphrase'); });
+  }
+  /* A rough strength reading of a passphrase, for the hint. */
+  function strength(p) {
+    var n = p.length, classes = [/[a-z]/, /[A-Z]/, /\d/, /[^A-Za-z0-9]/].filter(function (r) { return r.test(p); }).length, words = p.trim().split(/\s+/).length;
+    if (n < MIN_PASS) return { ok: false, text: n + ' of ' + MIN_PASS + ' characters at least' };
+    if (/^(.)\1+$/.test(p) || /^(password|passphrase|1234567890)/i.test(p)) return { ok: false, text: 'Too easy to guess' };
+    var score = (n >= 16 ? 1 : 0) + (n >= 22 ? 1 : 0) + (classes >= 3 ? 1 : 0) + (words >= 4 ? 1 : 0);
+    return { ok: true, text: score >= 3 ? 'Strong' : score >= 1 ? 'Good' : 'Acceptable; longer is stronger' };
+  }
+
+  // ------------------------------------------------------------------ the map scan (ported from api.php a_map_detect)
+  function clip(v, max) { return typeof v === 'string' ? v.replace(/[\x00-\x1f\x7f\s]+/g, ' ').trim().slice(0, max) : ''; }
+  function frac(v, d) { return typeof v === 'number' && isFinite(v) ? Math.round(Math.max(0, Math.min(1, v)) * 10000) / 10000 : (d || 0); }
+  function detectPayload(body, model) {
+    var kind = ['dungeon', 'open', 'village'].indexOf(body.kind) >= 0 ? body.kind : 'dungeon', title = clip(body.title, 80);
+    var cols = Number.isInteger(body.cols) ? Math.max(0, Math.min(500, body.cols)) : 0, rows = Number.isInteger(body.rows) ? Math.max(0, Math.min(500, body.rows)) : 0;
+    var envKeys = {}, envList = (Array.isArray(body.envKeys) ? body.envKeys : []).slice(0, 40);
+    envList.forEach(function (p) { if (Array.isArray(p) && typeof p[0] === 'string' && /^[A-Za-z0-9_-]{1,32}$/.test(p[0])) envKeys[p[0]] = clip(p[1], 40); });
+    var objSchema = { type: 'object', properties: {
+      name: { type: 'string', description: 'Short name, at most 30 characters' }, type: { type: 'string', 'enum': MAP_OBJECT_TYPES },
+      x: { type: 'number', description: 'Centre, fraction of image width, 0 to 1' }, y: { type: 'number', description: 'Centre, fraction of image height, 0 to 1' },
+      w: { type: 'number', description: 'Width, fraction of image width' }, h: { type: 'number', description: 'Height, fraction of image height' },
+      light: { type: 'boolean', description: 'It gives off light (lit brazier, torch, fireplace, candles)' },
+      hidden: { type: 'boolean', description: 'A secret or trap players should not see at first' }, note: { type: 'string', description: 'Optional short note, may be empty' } },
+      required: ['name', 'type', 'x', 'y', 'w', 'h'] };
+    var names = Object.keys(envKeys);
+    var tool = { name: 'report_objects', description: 'Report the objects found on the battle map.', input_schema: { type: 'object', properties: {
+      objects: { type: 'array', maxItems: 60, items: objSchema }, env: { type: 'array', items: names.length ? { type: 'string', 'enum': names } : { type: 'string' } } }, required: ['objects', 'env'] } };
+    var prompt = 'This image is a top-down tabletop RPG battle map' + (title ? ' titled "' + title + '"' : '') + ' (' + kind + ' setting' + (cols > 0 && rows > 0 ? ', ' + cols + ' x ' + rows + ' squares' : '') + '). '
+      + 'List the distinct physical objects a game master would want as movable tokens: furniture, chests, altars, statues, pillars, barrels, wells, traps, doors, stairs, lit braziers or torches, and the like. '
+      + 'Do not report walls, floors, rug patterns, or decorative texture. '
+      + 'Give each object\'s centre (x, y) and size (w, h) as fractions of the image width and height. '
+      + (body.hasLabels ? 'The map has printed labels or a legend: use them to name objects, and do NOT report the label text itself as an object. ' : '')
+      + 'Keep names short (30 characters or fewer). Report at most 60 objects. '
+      + (names.length ? 'In env, list keys from the allowed set only when the picture clearly implies them (for example a dark cave); usually leave it empty. Allowed: '
+        + names.map(function (k) { return envKeys[k] ? k + ' (' + envKeys[k] + ')' : k; }).join(', ') + '. ' : 'Leave env empty. ')
+      + 'Answer by calling report_objects.';
+    return { envKeys: envKeys, payload: { model: model, max_tokens: 4096, tools: [tool], tool_choice: { type: 'auto' },
+      messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: ['image/jpeg', 'image/png', 'image/webp'].indexOf(body.mime) >= 0 ? body.mime : 'image/jpeg', data: body.image } }, { type: 'text', text: prompt }] }] } };
+  }
+  function detectResult(j, envKeys, model) {
+    var input = null;
+    (Array.isArray(j && j.content) ? j.content : []).forEach(function (b) { if (!input && b && b.type === 'tool_use' && b.name === 'report_objects' && b.input && typeof b.input === 'object') input = b.input; });
+    if (!input) throw new Error('The model gave no answer.');
+    var objects = [], env = [];
+    (Array.isArray(input.objects) ? input.objects : []).forEach(function (o) {
+      if (objects.length >= 60 || !o || typeof o.x !== 'number' || typeof o.y !== 'number') return;
+      var name = clip(o.name, 30); if (!name) return;
+      objects.push({ name: name, type: MAP_OBJECT_TYPES.indexOf(o.type) >= 0 ? o.type : 'other', x: frac(o.x), y: frac(o.y), w: Math.max(0.005, frac(o.w, 0.03)), h: Math.max(0.005, frac(o.h, 0.03)),
+        light: o.light === true, hidden: o.hidden === true, note: clip(o.note, 120) });
+    });
+    (Array.isArray(input.env) ? input.env : []).forEach(function (e) { if (typeof e === 'string' && Object.prototype.hasOwnProperty.call(envKeys, e) && env.indexOf(e) < 0) env.push(e); });
+    return { objects: objects, env: env, model: model };
+  }
+  /* One call to the Anthropic API from the browser. Rejects with Error(message from Anthropic) and .status. */
+  function callAnthropic(apiKey, payload) {
+    return fetch('https://api.anthropic.com/v1/messages', { method: 'POST', cache: 'no-store', credentials: 'omit', referrerPolicy: 'no-referrer',
+      headers: { 'x-api-key': apiKey, 'anthropic-version': '2023-06-01', 'content-type': 'application/json', 'anthropic-dangerous-direct-browser-access': 'true' },
+      body: JSON.stringify(payload) }).then(function (r) {
+      return r.json().then(function (j) { return { r: r, j: j }; }, function () { return { r: r, j: null }; });
+    }, function () { throw new Error('Could not reach Anthropic (offline, or blocked).'); }).then(function (x) {
+      if (x.r.ok && x.j) return x.j;
+      var e = new Error((x.j && x.j.error && x.j.error.message) || 'Anthropic answered HTTP ' + x.r.status + '.'); e.status = x.r.status; throw e;
+    });
+  }
+
+  var Vault = { seal: seal, sealWith: sealWith, open: open, parse: parse, derive: derive, aad: aad, strength: strength, detectPayload: detectPayload, detectResult: detectResult,
+    ITER: ITER, MIN_PASS: MIN_PASS, MODELS: MODELS };
+  if (typeof module !== 'undefined' && module.exports) module.exports = Vault;
+  if (typeof window === 'undefined' || !window.CrowsRefApp) return;
+
+  // ------------------------------------------------------------------ the browser side
+  var A = window.CrowsRefApp, f = A.fwd;
+  var render = f('render'), btn = f('btn');
+  var el = A.el, toast = A.toast;
+
+  var U = null;            // the unlocked vault: { user, key, model, cryptoKey, salt, iter, hint }. The only place the API key lives.
+  var stored = null;       // the encrypted vault string last read or written (not secret), '' when there is none, null before it is read
+  var storedFor = null;    // whose vault `stored` is ('local' or a username)
+  var meKnown = false, loading = null, idleTimer = null, unlocking = null, lastSig = '', note = { text: '', bad: false };
+
+  function who() { var c = window.CrowsCloud, u = c && c.me && c.me(); return u && u.username ? u.username : 'local'; }
+  function online() { return who() !== 'local'; }
+  function lock(why) {
+    var was = !!U; U = null; clearTimeout(idleTimer);
+    clearForm();
+    if (was && why) toast(why);
+    if (was) { lastSig = ''; render(); }
+  }
+  function touch() { clearTimeout(idleTimer); if (U) idleTimer = setTimeout(function () { lock('The AI key locked after 30 minutes idle.'); }, IDLE_MS); }
+  function clearForm() { Array.prototype.forEach.call(document.querySelectorAll('input[data-ai-secret]'), function (n) { n.value = ''; }); }
+  ['pointerdown', 'keydown', 'wheel', 'touchstart'].forEach(function (ev) { document.addEventListener(ev, touch, { capture: true, passive: true }); });
+  window.addEventListener('pagehide', function () { lock(); });
+  setInterval(function () { if (U && U.user !== who()) lock('The AI key locked because you logged out.'); }, 3000);
+
+  /* Read this account's encrypted vault (server when logged in, else this browser). Resolves the vault string or ''. */
+  function load(force) {
+    var c = window.CrowsCloud;
+    if (c && c.afterMe && !meKnown) return new Promise(function (ok) { c.afterMe(function () { meKnown = true; ok(); }); }).then(function () { return load(force); });   // account or this browser: wait until it's known
+    var me = who();
+    if (!force && stored !== null && storedFor === me) return Promise.resolve(stored);
+    if (loading && loading.for === me) return loading.p;
+    var p;
+    if (online()) p = window.CrowsCloud.api('GET', 'vault.get', '').then(function (j) { return typeof j.vault === 'string' ? j.vault : ''; });
+    else p = Promise.resolve().then(function () { try { return localStorage.getItem(LOCAL_KEY) || ''; } catch (e) { return ''; } });
+    var q = p.then(function (v) { if (storedFor !== me && U) lock(); stored = v; storedFor = me; loading = null; return v; }, function (e) { loading = null; throw e; });
+    loading = { for: me, p: q };
+    return q;
+  }
+  function store(vault) {
+    var me = who(), p;
+    if (online()) p = window.CrowsCloud.api('POST', 'vault.save', '', { vault: vault });
+    else p = new Promise(function (ok, no) { try { localStorage.setItem(LOCAL_KEY, vault); ok(); } catch (e) { no(new Error('This browser would not keep it (storage is blocked or full).')); } });
+    return p.then(function () { stored = vault; storedFor = me; });
+  }
+  function discard() {
+    var me = who(), p;
+    if (online()) p = window.CrowsCloud.api('POST', 'vault.delete', '', {});
+    else p = Promise.resolve().then(function () { try { localStorage.removeItem(LOCAL_KEY); } catch (e) { /* ignore */ } });
+    return p.then(function () { stored = ''; storedFor = me; });
+  }
+  function hintOf(vault) { var o = vault && parse(vault); return o ? o.hint : ''; }
+
+  // ------------------------------------------------------------------ the unlock dialog
+  function dialog(title, text, label) {
+    return new Promise(function (resolve) {
+      var prev = document.activeElement, busy = false;
+      var input = el('input', { type: 'password', class: 'in', autocomplete: 'off', spellcheck: 'false', 'data-ai-secret': '1', 'aria-label': label || 'Vault passphrase', style: 'width:100%' });
+      var msg = el('p', { class: 'fine', role: 'alert', text: '', style: 'min-height:1.2em;margin:.3rem 0' });
+      var ok = el('button', { type: 'submit', class: 'btn btn-small btn-primary', text: 'Unlock' });
+      var no = el('button', { type: 'button', class: 'btn btn-small', text: 'Cancel' });
+      var box = el('div', { class: 'lightbox', role: 'dialog', 'aria-modal': 'true', 'aria-labelledby': 'ai-dlg-t', style: 'align-items:center;justify-content:center' }, [
+        el('form', { style: 'background:var(--paper);color:var(--ink);border:1px solid var(--ink);border-radius:8px;padding:1rem;max-width:26rem;width:100%;box-shadow:0 4px 16px rgba(0,0,0,.35)',
+          onsubmit: function (e) { e.preventDefault(); go(); } }, [
+          el('h3', { id: 'ai-dlg-t', text: title, style: 'margin:0 0 .5rem' }), el('p', { text: text, style: 'margin:0 0 .6rem' }), input, msg,
+          el('div', { class: 'row' }, [ok, no])])]);
+      function done(v) { input.value = ''; box.remove(); document.removeEventListener('keydown', onKey, true); if (prev && prev.focus && document.body.contains(prev)) prev.focus(); resolve(v); }
+      function go() {
+        if (busy || !input.value) return;
+        busy = true; ok.disabled = true; msg.textContent = 'Unlocking…';
+        var pass = input.value; input.value = '';
+        open(stored, pass, who()).then(function (r) {
+          pass = '';
+          U = { user: who(), key: String(r.payload.key || ''), model: r.payload.model || DEFAULT_MODEL, cryptoKey: r.cryptoKey, salt: r.salt, iter: r.iter, hint: hintOf(stored) };
+          touch(); lastSig = ''; done(true); render();
+        }, function (e) { pass = ''; busy = false; ok.disabled = false; msg.textContent = e.message + '. Try again.'; input.focus(); });
+      }
+      function onKey(e) {
+        if (e.key === 'Escape') { e.preventDefault(); e.stopPropagation(); done(false); return; }
+        if (e.key !== 'Tab') return;
+        var order = [input, ok, no].filter(function (n) { return !n.disabled; }), i = order.indexOf(document.activeElement);
+        e.preventDefault(); order[(i + (e.shiftKey ? order.length - 1 : 1)) % order.length].focus();
+      }
+      no.addEventListener('click', function () { done(false); });
+      box.addEventListener('click', function (e) { if (e.target === box) done(false); });
+      (document.fullscreenElement || document.body).appendChild(box); document.addEventListener('keydown', onKey, true); input.focus();
+    });
+  }
+
+  // ------------------------------------------------------------------ exports for the other files
+  function aiReady() { return !!U && U.user === who(); }
+  /* Is there a saved key (resolves false when it can't be read)? */
+  function aiHas() { return load().then(function (v) { return !!v; }, function () { return false; }); }
+  /* Unlocked already, or ask for the passphrase. Resolves true/false. */
+  function aiUnlock() {
+    if (aiReady()) return Promise.resolve(true);
+    if (unlocking) return unlocking;
+    unlocking = load().then(function (v) {
+      if (!v) return false;
+      return dialog('Unlock your Anthropic key', 'Enter your vault passphrase. The key is decrypted in this browser only, and locks again after 30 minutes idle.');
+    }, function () { return false; }).then(function (r) { unlocking = null; return r; });
+    return unlocking;
+  }
+  /* The map.detect answer shape ({ objects, env, model }) from the Ref's own key. */
+  function aiDetect(body) {
+    if (!aiReady()) return Promise.reject(new Error('Your AI key is locked.'));
+    touch();
+    var model = U.model || DEFAULT_MODEL, d = detectPayload(body, model);
+    return callAnthropic(U.key, d.payload).then(function (j) { return detectResult(j, d.envKeys, model); });
+  }
+
+  // ------------------------------------------------------------------ the tab
+  function say(text, bad) { note = { text: text, bad: !!bad }; lastSig = ''; render(); }
+  function field(label, control, extra) { return el('label', { class: 'field' }, [label, control, extra]); }
+  function secret(label, auto, id) { return el('input', { type: 'password', class: 'in', autocomplete: auto, spellcheck: 'false', 'data-ai-secret': '1', 'aria-label': label, id: id, style: 'max-width:26rem' }); }
+  function passPair(prefix) {
+    var p1 = secret('Vault passphrase', 'new-password', prefix + '-p1'), p2 = secret('Vault passphrase again', 'new-password', prefix + '-p2');
+    var hint = el('span', { class: 'fine', 'aria-live': 'polite', text: 'At least ' + MIN_PASS + ' characters. Not your account password.' });
+    p1.addEventListener('input', function () { var s = strength(p1.value); hint.textContent = p1.value ? s.text : 'At least ' + MIN_PASS + ' characters. Not your account password.'; hint.style.color = p1.value && !s.ok ? 'var(--bad, #a33)' : ''; });
+    /* The passphrase when both entries agree and are long enough, else null with the reason said. */
+    function take() {
+      var a = p1.value, b = p2.value; p1.value = ''; p2.value = '';
+      if (strength(a).ok === false) { say(strength(a).text + '. Use a passphrase of at least ' + MIN_PASS + ' characters.', true); return null; }
+      if (a !== b) { say('The two passphrases do not match.', true); return null; }
+      return a;
+    }
+    return { nodes: [field('Vault passphrase', p1, hint), field('Vault passphrase again', p2)], take: take };
+  }
+  function persist(payload, pass, hint, user) {
+    return seal(payload, pass, user, hint).then(function (s) { return store(s.vault).then(function () { return s; }); });
+  }
+  function renderAi() {
+    var me = who(), page = document.getElementById('sec-ai-key');
+    if (!page) return;
+    if (stored === null || storedFor !== me) {
+      if (!loading || loading.for !== me) load().then(function () { lastSig = ''; render(); }, function (e) { stored = null; storedFor = null; note = { text: 'Could not read your saved key: ' + (e && e.message || 'error') + '.', bad: true }; });
+    }
+    var have = stored !== null && storedFor === me ? !!stored : null, un = aiReady(), hint = have ? hintOf(stored) : '';
+    var sig = [me, have, un, hint, un ? U.model : '', note.text].join('|');
+    if (sig === lastSig && page.firstChild) return;   // nothing changed: leave what is being typed alone
+    lastSig = sig;
+    var status = have === null ? 'Checking for a saved key…' : !have ? 'No key saved yet.' : (un ? 'Unlocked' : 'Locked') + ': key …' + (hint || '????') + (online() ? ', kept in your account.' : ', kept in this browser (not logged in).');
+    var kids = [el('p', { text: status, role: 'status', style: 'font-weight:bold' })];
+    if (note.text) kids.push(el('p', { class: 'fine', role: 'alert', text: note.text, style: note.bad ? 'color:var(--bad, #a33)' : '' }));
+
+    var row = [];
+    if (have && !un) row.push(btn('Unlock', function () { aiUnlock(); }, 'btn-primary'));
+    if (un) row.push(btn('Lock now', function () { lock('AI key locked.'); }));
+    if (have) row.push(btn('Remove key', function () {
+      if (!confirm('Remove your saved Anthropic key from ' + (online() ? 'your account' : 'this browser') + '? You would need to enter it again to use it.')) return;
+      discard().then(function () { U = null; note = { text: 'Key removed.', bad: false }; lastSig = ''; render(); }, function (e) { say('Could not remove it: ' + e.message, true); });
+    }, 'btn-danger'));
+    if (row.length) kids.push(el('div', { class: 'row' }, row));
+
+    // add or replace
+    var keyIn = secret('Anthropic API key', 'off', 'ai-key-in'), pp = passPair('ai-new'), tested = el('span', { class: 'fine', 'aria-live': 'polite', text: '' });
+    function testKey(k, model) {
+      tested.textContent = 'Testing…';
+      return callAnthropic(k, { model: TEST_MODEL, max_tokens: 1, messages: [{ role: 'user', content: 'hi' }] }).then(function () { tested.textContent = 'The key works.'; return true; },
+        function (e) { tested.textContent = 'Anthropic says: ' + e.message; return false; });
+    }
+    kids.push(el('h3', { text: have ? 'Replace the key' : 'Add your key', style: 'margin:.8rem 0 .3rem' }),
+      field('Anthropic API key', keyIn, el('span', { class: 'fine', text: 'From console.anthropic.com. It is encrypted here before it goes anywhere.' })));
+    pp.nodes.forEach(function (n) { kids.push(n); });
+    kids.push(el('div', { class: 'row' }, [
+      btn('Test key', function () { var k = keyIn.value.trim() || (U && U.key); if (!k) { tested.textContent = 'Type a key to test (or unlock the saved one).'; return; } testKey(k); }),
+      btn('Save key', function () {
+        var k = keyIn.value.trim(); keyIn.value = '';
+        if (!k) return say('Type your API key first.', true);
+        var pass = pp.take(); if (pass === null) return;
+        tested.textContent = 'Encrypting…';
+        var payload = { key: k, model: un ? U.model : DEFAULT_MODEL, at: Date.now() }, me2 = who();
+        persist(payload, pass, k.slice(-4), me2).then(function (s) {
+          U = { user: me2, key: payload.key, model: payload.model, cryptoKey: s.cryptoKey, salt: s.salt, iter: s.iter, hint: k.slice(-4) };
+          touch(); note = { text: 'Saved and unlocked. Use Test key to check it works.', bad: false }; lastSig = ''; render();
+        }, function (e) { say('Could not save it: ' + e.message, true); });
+      }, 'btn-primary'), tested]));
+
+    if (un) {
+      var sm = el('select', { class: 'in', 'aria-label': 'Model for map scans' }, MODELS.map(function (m) { return el('option', { value: m[0], text: m[1] }); }));
+      sm.value = U.model;
+      sm.addEventListener('change', function () {
+        var model = sm.value, u = U; if (!u) return;
+        sealWith(u.cryptoKey, u.salt, u.iter, { key: u.key, model: model, at: Date.now() }, u.user, u.hint).then(store).then(function () {
+          if (U === u) U.model = model; note = { text: 'Map scans will use ' + model + '.', bad: false }; lastSig = ''; render();
+        }, function (e) { say('Could not save the model: ' + e.message, true); });
+      });
+      var pp2 = passPair('ai-chg');
+      kids.push(el('h3', { text: 'Model for map scans', style: 'margin:.8rem 0 .3rem' }), sm,
+        el('h3', { text: 'Change passphrase', style: 'margin:.8rem 0 .3rem' }));
+      pp2.nodes.forEach(function (n) { kids.push(n); });
+      kids.push(btn('Change passphrase', function () {
+        var pass = pp2.take(), u = U; if (pass === null || !u) return;
+        persist({ key: u.key, model: u.model, at: Date.now() }, pass, u.hint, u.user).then(function (s) {
+          if (U === u) { U.cryptoKey = s.cryptoKey; U.salt = s.salt; U.iter = s.iter; }
+          note = { text: 'Passphrase changed.', bad: false }; lastSig = ''; render();
+        }, function (e) { say('Could not change it: ' + e.message, true); });
+        pass = '';
+      }));
+    } else if (have) kids.push(el('p', { class: 'fine', text: 'Unlock the key to choose the model or change the passphrase.' }));
+
+    page.innerHTML = '';
+    page.appendChild(el('h2', null, ['AI', el('small', { text: 'your own Anthropic key, for scanning maps' })]));
+    kids.forEach(function (k) { page.appendChild(k); });
+
+    var about = document.getElementById('sec-ai-about');
+    if (about && !about.firstChild) {
+      about.appendChild(el('h2', { text: 'How your key is protected' }));
+      [ 'With your own key, Claude reads the maps you upload and lists their furniture and lights. You pay Anthropic directly; nothing is billed through this site.',
+        'Your key is encrypted in this browser with a vault passphrase you choose (not your account password), using AES-GCM with a key made from the passphrase by 600,000 rounds of PBKDF2. Only the scrambled result is stored: in your account when you are logged in, or in this browser when you are not. The site\'s server, its administrator, and anyone who gets into its database see only that, and cannot read the key. Nobody can recover a forgotten passphrase; you would add the key again.',
+        'To scan a map, your browser unlocks the key and talks to Anthropic directly. The decrypted key is held in memory only: never saved with the campaign, never shown again after you type it, and dropped after 30 minutes idle, on logout, or when you leave the page.',
+        'What this cannot stop: whoever controls this site\'s scripts could change them to capture the key at the moment you unlock it. The page\'s security policy blocks scripts injected by others, but you are trusting whoever publishes this page. Use a key with a spending limit you are comfortable with, and revoke it at Anthropic if you doubt anything.'
+      ].forEach(function (t) { about.appendChild(el('p', { text: t })); });
+    }
+  }
+
+  A.add({ renderAi: renderAi, aiReady: aiReady, aiHas: aiHas, aiUnlock: aiUnlock, aiDetect: aiDetect });
 })();
 
 </script>

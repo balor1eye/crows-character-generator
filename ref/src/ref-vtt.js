@@ -28,6 +28,7 @@
   var addCombatant = f('addCombatant'), addParty = f('addParty'), artFor = f('artFor'), beast = f('beast'), blobUrl = f('blobUrl'), btn = f('btn'), byId = f('byId'),
       fxItems = f('fxItems'), monsterExperts = f('monsterExperts'), fxText = f('fxText'), hitControls = f('hitControls'), rich = f('rich'), slotsOf = f('slotsOf'), surprised = f('surprised'), tauntOn = f('tauntOn'),
       undoAct = f('undoAct'),
+      mapLoaded = f('mapLoaded'), mapKitSave = f('mapKitSave'), mapObjMenu = f('mapObjMenu'),
       clockText = f('clockText'), customMaps = f('customMaps'), damage = f('damage'), dungeonEN = f('dungeonEN'), encSummary = f('encSummary'), endDT = f('endDT'), feat = f('feat'),
       feed = f('feed'), heal = f('heal'), healthWord = f('healthWord'), liveChanged = f('liveChanged'), liveOn = f('liveOn'), log = f('log'), nextRound = f('nextRound'),
       pauseTimer = f('pauseTimer'), pendingEnc = f('pendingEnc'), remainMs = f('remainMs'), render = f('render'), runEncounter = f('runEncounter'),
@@ -96,6 +97,7 @@
     if (kind === 'travel' && REFD && REFD.ART && REFD.ART.maps.length) setMap(sc, { b: (REFD.ART.maps.filter(function (m) { return /cornath/i.test(m.title); })[0] || REFD.ART.maps[0]).variants[0].file });
     changed(); render();
   }
+  function pickMap(sc, m) { setMap(sc, m, mapLoaded); }
   function sameMap(a, b) { return !!a && !!b && (a.b ? a.b === b.b : a.k === b.k); }
   /* A scene made before grids were read from the map has never been checked: look once, and refit it if the map's own grid is of another kind or
      size (a hex map on squares, say). A scene whose grid already agrees keeps its offsets and tuning. `force` refits it whatever it has. */
@@ -118,9 +120,9 @@
   /* The scene that has this map (the first one), or a new battle-map scene made for it. */
   function sceneForMap(m, title) {
     var sc = V().scenes.filter(function (s) { return sameMap(s.map, m); })[0];
-    if (sc) { checkGrid(sc); return sc; }
+    if (sc) { checkGrid(sc); if (sc.w) mapLoaded(sc); return sc; }
     sc = makeScene('open', (title || 'Map').slice(0, 60));
-    V().scenes.push(sc); setMap(sc, m);
+    V().scenes.push(sc); pickMap(sc, m);
     return sc;
   }
   /* Make a map the live scene on the tabletop right now and go to it. */
@@ -297,8 +299,8 @@
     return m ? { cols: +m[1], rows: +m[2] } : null;
   }
 
-  /* Set a scene's map and size the scene to the picture (once it has loaded). */
-  function setMap(sc, m) {
+  /* Set a scene's map and size the scene to the picture (once it has loaded); `after(sc)` runs then (the Ref's own choice of map: ref-mapobj.js places or offers its objects). */
+  function setMap(sc, m, after) {
     sc.map = m;
     var src = mapSrc(sc);
     if (!m || !src) { changed(); return; }
@@ -322,6 +324,7 @@
         }
       }
       sc.autoGrid = m.b || m.k; sc.seen = ''; sc.seenDims = ''; changed(); if (U.view) U.view.sceneChanged(sc.id + 'm'); render();
+      if (after) after(sc);
     };
     img.src = src;
     changed();
@@ -358,6 +361,7 @@
   /* The hover tooltip's lines for a token (the Ref sees everything). */
   function tipLines(t) {
     var x = combatant(t), out = [{ pc: 'Crow', foe: 'Foe', ally: 'Ally', npc: 'NPC', obj: 'Marker' }[t.kind] + (t.hidden ? ' · hidden from the players' : '') + (t.acted ? ' · acted' : '')];
+    if (t.note) out.push(t.note);
     if (t.dead) out.push('dead'); else if (t.vit) out.push(t.vit);
     if (x && x.kind !== 'pc' && !x.dead) out.push('Players see: ' + (S().combat.showSt || x.kind === 'ally' ? 'its Stamina and AD' : healthWord(x)));
     var ex = x ? monsterExperts(x) : [];
@@ -699,12 +703,14 @@
       { label: 'Measure', fn: function () { pickTool('measure'); } },
       { sep: true });
     out.push({ label: 'Load a map', sub: maps.map(function (o) {
-      return { label: o[1], on: !!sc.map && o[0] === (sc.map.b ? 'b|' + sc.map.b : 'k|' + sc.map.k), fn: function () { setMap(sc, o[0].charAt(0) === 'b' ? { b: o[0].slice(2) } : { k: o[0].slice(2) }); } };
+      return { label: o[1], on: !!sc.map && o[0] === (sc.map.b ? 'b|' + sc.map.b : 'k|' + sc.map.k), fn: function () { pickMap(sc, o[0].charAt(0) === 'b' ? { b: o[0].slice(2) } : { k: o[0].slice(2) }); } };
     }).concat(sc.map ? [{ sep: true }, { label: 'Plain board (no map)', fn: function () { sc.map = null; changed(); render(); } }] : []) });
     out.push({ label: 'Load a saved encounter', off: !open.length && !run, hint: open.length || run ? '' : 'No saved encounters: roll or build one on the Encounters tab.',
       sub: (run ? [{ label: 'Running: ' + (run.name || 'untitled') + ' (put its creatures here)', fn: function () { loadEncounter(sc, run); } }, open.length ? { sep: true } : null] : [])
         .concat(open.filter(function (e) { return e !== run; }).map(function (e) { return { label: (e.name || 'untitled') + (encSummary(e) ? ' — ' + encSummary(e) : ''), fn: function () { loadEncounter(sc, e); } }; })) });
-    out.push({ label: 'Save this map as an encounter…', fn: function () { openDrawer('save'); } }, { sep: true });
+    out.push({ label: 'Save this map as an encounter…', fn: function () { openDrawer('save'); } });
+    var mo = mapObjMenu(sc); if (mo) out.push(mo);
+    out.push({ sep: true });
     out.push({ label: 'Add here', sub: [
       { label: 'The crows', off: !A.activePCs().length, fn: function () { addCrows(sc); } },
       { label: 'A creature…', fn: function () { openDrawer('add'); } },
@@ -1312,7 +1318,7 @@
     var name = el('input', { type: 'text', class: 'in', value: sc.name, maxlength: 60, 'aria-label': 'Scene name' }); name.addEventListener('change', function () { sc.name = this.value.slice(0, 60) || 'Scene'; changed(); render(); });
     var mapSel = el('select', { class: 'in', 'aria-label': 'Map', onchange: function () {
       var v = this.value, m = !v ? null : v.charAt(0) === 'b' ? { b: v.slice(2) } : { k: v.slice(2) };
-      if (!m) { sc.map = null; changed(); render(); } else setMap(sc, m);
+      if (!m) { sc.map = null; changed(); render(); } else pickMap(sc, m);
     } }, mapChoices().map(function (o) { return el('option', { value: o[0], text: o[1] }); }));
     mapSel.value = sc.map ? (sc.map.b ? 'b|' + sc.map.b : 'k|' + sc.map.k) : '';
     var cols = { n: Math.round(sc.w / sc.g) };
@@ -1372,7 +1378,8 @@
       .concat((REFD.ENV || []).slice().sort(function (a, b) { return a[1].localeCompare(b[1]); }).map(function (e) {
         return el('button', { type: 'button', class: 'env-tog' + (on[e[0]] ? ' on' : ''), 'aria-pressed': on[e[0]] ? 'true' : 'false', onclick: function () { setEnv(sc, e[0], !on[e[0]]); } },
           [el('span', { class: 'env-sw', 'aria-hidden': 'true' }), el('span', { class: 'env-t' }, [el('b', { text: e[1] }), el('span', { class: 'fine', text: e[2] })])]);
-      }), envList(sc).length ? [btn('Clear the environment', function () { sc.env = {}; log('', 'The environment clears.'); changed(); render(); }, 'btn-small btn-ghost')] : []));
+      }), envList(sc).length ? [btn('Clear the environment', function () { sc.env = {}; log('', 'The environment clears.'); changed(); render(); }, 'btn-small btn-ghost')] : [],
+        sc.map ? [btn('Save for this map', function () { mapKitSave(sc); }, 'btn-small', 'Keep this environment and the objects on the map as its set, placed whenever the map is loaded')] : []));
   }
 
   // ------------------------------------------------------------------ the map as a saved encounter
@@ -1380,7 +1387,7 @@
   /* A token as the layout keeps it (a creature's as `cr`, its bestiary name). */
   function layoutTok(t, keepVitals) {
     var o = { kind: t.kind, name: t.name, x: Math.round(t.x), y: Math.round(t.y) };
-    ['size', 'sizeSet', 'hidden', 'label', 'icon', 'speed', 'sight', 'sees', 'locked', 'noArt'].forEach(function (k) { if (t[k] != null && t[k] !== false) o[k] = t[k]; });
+    ['size', 'sizeSet', 'hidden', 'label', 'icon', 'speed', 'sight', 'sees', 'locked', 'noArt', 'note', 'gen', 'otype', 'secret'].forEach(function (k) { if (t[k] != null && t[k] !== false && t[k] !== '') o[k] = t[k]; });
     if (t.light) o.light = clone(t.light);
     var x = combatant(t);
     if (t.cref && (t.kind === 'foe' || t.kind === 'ally')) {
@@ -1509,5 +1516,5 @@
     resetSpawn: function () { U.spawn = 0; }, view: function () { return U.view; }, deselect: function () { U.sel = null; } };
   /* From the Encounters tab: run a saved encounter's map layout on the Tabletop. */
   function runOnTabletop(e) { setTab('vtt'); loadLayout(e); }
-  A.add({ envFor: envFor, saveLayout: saveLayout, runOnTabletop: runOnTabletop, vtt: vtt, renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
+  A.add({ vttChanged: changed, envFor: envFor, saveLayout: saveLayout, runOnTabletop: runOnTabletop, vtt: vtt, renderVtt: renderVtt, vttAction: vttAction, publicTable: publicTable, lineOfEffect: lineOfEffect, showMapOnTabletop: showMapOnTabletop });
 })();

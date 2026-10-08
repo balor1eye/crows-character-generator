@@ -11,7 +11,7 @@
       rollDungeonTable = f('rollDungeonTable'), rollInText = f('rollInText'), rollMerchant = f('rollMerchant'),
       rollMiasmaTouched = f('rollMiasmaTouched'), rollTravelEncounter = f('rollTravelEncounter'), rollTravelers = f('rollTravelers'),
       rollWeather = f('rollWeather'), rollWildAnimal = f('rollWildAnimal'), rowsTable = f('rowsTable'), S = f('S'), save = f('save'), sel = f('sel'),
-      setTab = f('setTab'), showMapOnTabletop = f('showMapOnTabletop'), newEncounter = f('newEncounter'), openEncounter = f('openEncounter');
+      setTab = f('setTab'), showMapOnTabletop = f('showMapOnTabletop'), mapUploaded = f('mapUploaded'), mapTileItems = f('mapTileItems'), newEncounter = f('newEncounter'), openEncounter = f('openEncounter');
   var $ = A.$, d = A.d, d100 = A.d100, el = A.el, fmt = A.fmt, pick = A.pick, plural = A.plural, rollDice = A.rollDice, Rules = A.Rules,
       signed = A.signed, SIZES = A.SIZES, toast = A.toast, ui = A.ui;
   var state = A.state; A.share('state', function (v) { state = v; });
@@ -216,7 +216,7 @@
     pickImage(4500, 420, function (p) {
       var title = prompt('Map name', p.name); if (title === null) return;
       var rec = { key: 'm:' + Date.now().toString(36) + Math.random().toString(36).slice(2, 6), title: (title.trim() || p.name).slice(0, 60), thumb: p.thumb, blob: p.blob, at: Date.now() };
-      putArt(rec).then(function () { custom.maps.push(rec); toast('Map added.'); render(); }, function (e) { toast('Couldn\'t save it: ' + e.message); });
+      putArt(rec).then(function () { custom.maps.push(rec); toast('Map added.'); render(); mapUploaded(rec); }, function (e) { toast('Couldn\'t save it: ' + e.message); });
     });
   }
   loadCustom();
@@ -307,7 +307,7 @@
         { label: 'Rename', fn: function () { var t = prompt('Map name', m.title); if (t && t.trim()) { var old = m.title; m.title = t.trim().slice(0, 60); putArt(m).then(render, function (e) { m.title = old; toast('Couldn\'t rename it: ' + e.message); }); } } },
         { label: 'Delete', fn: function () { if (confirm('Delete the map "' + m.title + '" from this device?')) removeArt(m.key); } }];
       var views = [{ label: '', file: blobUrl(m), map: { k: m.key } }];
-      return el('button', { type: 'button', class: 'map-tile', oncontextmenu: function (ev) { mapMenu(ev, { title: m.title, views: views, thumb: m.thumb, actions: actions, menu: actions.map(function (a) { return { label: a.label, fn: a.fn, danger: a.label === 'Delete' }; }) }); },
+      return el('button', { type: 'button', class: 'map-tile', oncontextmenu: function (ev) { mapMenu(ev, { title: m.title, views: views, thumb: m.thumb, actions: actions, menu: mapTileItems(m).concat(actions.map(function (a) { return { label: a.label, fn: a.fn, danger: a.label === 'Delete' }; })) }); },
         onclick: function () { lightbox(m.title, views, m.thumb, actions); }
       }, [el('img', { src: m.thumb, alt: m.title, loading: 'lazy' }), el('span', { class: 'b-name', text: m.title }), el('span', { class: 'fine', text: 'Yours' })]);
     }
@@ -460,5 +460,5 @@
   }
 
   A.add({ renderWorld: renderWorld, randomNPC: randomNPC, renderBestiary: renderBestiary, renderMaps: renderMaps, beastCard: beastCard, renderTables: renderTables, lightbox: lightbox,
-      artFor: artFor, blobUrl: blobUrl, customMaps: function () { return custom.maps; }, parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
+      artFor: artFor, artRemote: function () { return remote; }, blobUrl: blobUrl, customMaps: function () { return custom.maps; }, parseRules: parseRules, renderRules: renderRules, renderRulesBody: renderRulesBody, RULES: RULES });
 })();
