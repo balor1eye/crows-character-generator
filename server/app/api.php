@@ -1878,7 +1878,7 @@ function a_map_detect(): array {
             . implode(', ', array_map(fn($k, $l) => $l !== '' ? "$k ($l)" : (string)$k, array_keys($envKeys), $envKeys)) . '. ' : 'Leave env empty. ')
         . 'Answer by calling report_objects.';
     $model = is_string($c['anthropic_model'] ?? null) && $c['anthropic_model'] !== '' ? $c['anthropic_model'] : 'claude-sonnet-5-5';
-    $payload = ['model' => $model, 'max_tokens' => 4096, 'tools' => [$tool], 'tool_choice' => ['type' => 'tool', 'name' => 'report_objects'],
+    $payload = ['model' => $model, 'max_tokens' => 4096, 'tools' => [$tool], 'tool_choice' => ['type' => 'auto'],   // newer models refuse a forced tool; the prompt asks for it
         'messages' => [['role' => 'user', 'content' => [
             ['type' => 'image', 'source' => ['type' => 'base64', 'media_type' => $mime, 'data' => $img]],
             ['type' => 'text', 'text' => $prompt],
@@ -1893,7 +1893,7 @@ function a_map_detect(): array {
     curl_close($ch);
     $j = is_string($out) ? json_decode($out, true) : null;
     if ($code !== 200 || !is_array($j)) {
-        error_log('crows map.detect: upstream HTTP ' . $code . (is_array($j) && isset($j['error']['type']) ? ' ' . $j['error']['type'] : ''));
+        error_log('crows map.detect: upstream HTTP ' . $code . (is_array($j) && isset($j['error']['type']) ? ' ' . $j['error']['type'] . ': ' . map_clip($j['error']['message'] ?? '', 200) : ''));
         fail('The object detector is not available right now.', 502);
     }
     $input = null;
