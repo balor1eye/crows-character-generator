@@ -140,7 +140,7 @@ A separate, self-contained app for running sessions and keeping the campaign bet
 on the accounts site (Ref accounts only), or offline as
 **`dist/Crows_Ref_Screen.html`** (one file, works offline, autosaves in the browser; **Save campaign /
 Load campaign** writes a `.json` file). The tabs come in three groups: **Run** (Session, Tabletop, Encounters, Travel),
-**Campaign** (Party, Village, World, Workshop, Preferences), and **Reference** (Bestiary, Maps, Tables, Rules). The sidebar keeps the timer, the dice,
+**Campaign** (Party, Village, World, Workshop, AI, Preferences), and **Reference** (Bestiary, Maps, Tables, Rules). The sidebar keeps the timer, the dice,
 and the session log (the last 14 entries, or Show all, with a box for notes).
 
 - **Tabletop** (Run group): a graphical tabletop in the spirit of Foundry VTT, for every mode of play. Make a **scene**: a **Dungeon** (a map or
@@ -203,6 +203,13 @@ and the session log (the last 14 entries, or Show all, with a box for notes).
   duration, attack damage + Mind or tier outcomes), crafting materials, treasure, or vehicles, with an optional crafting recipe. The editor
   shows the card as it will read, checks the 4 Enchanting uses limit, and offers the rules' price for the base item, upgrades, and
   enchantments. Items join the item lists (items on the ground, creature equipment); a crow that picks one up gets its card on their sheet.
+- **AI** (Campaign group): keep your own Anthropic API key to have Claude find the objects on maps you upload. The key is encrypted in your
+  browser with a vault passphrase you choose (at least 12 characters, not your account password; PBKDF2-SHA256 600000 rounds, AES-GCM) and only
+  the ciphertext is stored: in your account when logged in (nobody else, including the site's administrator, can read it), otherwise in this
+  browser. Unlock it with the passphrase (it locks after 30 minutes idle, on logout, and when you leave the page); the browser then calls
+  Anthropic directly. Test the key, pick the model for map scans, change the passphrase, or remove the key. Map scans try your key first, then
+  the site's key if the server has one, then shape finding. Residual risk: whoever publishes this page's scripts could change them to capture the
+  key when you unlock it.
 - **Session**: Start session and End session (ending one fills in the XP award from the players' claims, with the greed
   bonus, and reminds you of the village cycle; starting the next archives the log), the shared dungeon-turn timer (60/30/20 minutes or every 1d6 rooms), Encounter Number with
   crowded/chaos adjustments, greed bonus, End DT (ends DT conditions, rolls the encounter check and the monster

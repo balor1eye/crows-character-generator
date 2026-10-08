@@ -12,7 +12,7 @@
   'use strict';
   var A = window.CrowsRefApp, f = A.fwd;
   // From the other files (each call goes to the function there).
-  var blobUrl = f('blobUrl'), customMaps = f('customMaps'), render = f('render'), save = f('save'), vttChanged = f('vttChanged'), artRemote = f('artRemote');
+  var aiDetect = f('aiDetect'), aiHas = f('aiHas'), aiUnlock = f('aiUnlock'), blobUrl = f('blobUrl'), customMaps = f('customMaps'), render = f('render'), save = f('save'), vttChanged = f('vttChanged'), artRemote = f('artRemote');
   var el = A.el, toast = A.toast, plural = A.plural, clone = A.clone, REFD = window.REF, Tbl = window.CrowsTable;
   var state = A.state; A.share('state', function (v) { state = v; });
   var KINDS_OK = { dungeon: 1, open: 1, village: 1 };
@@ -91,14 +91,15 @@
     });
   }
   /* Claude's reading of the picture, in one call or (a wide map) up to four overlapping tiles with their results mapped back and de-duplicated. */
-  function detectRemote(img, info) {
+  function detectRemote(img, info, ask) {
+    ask = ask || askServer;
     var V = window.CrowsMapVision, W = img.naturalWidth, H = img.naturalHeight, cols = info.cols, wide = cols > 50;
     var tx = wide ? 2 : 1, ty = wide && H / W * cols > 50 ? 2 : 1, ov = .06, jobs = [];
     for (var j = 0; j < ty; j++) for (var i = 0; i < tx; i++) jobs.push({ x0: Math.max(0, i / tx - ov), x1: Math.min(1, (i + 1) / tx + ov), y0: Math.max(0, j / ty - ov), y1: Math.min(1, (j + 1) / ty + ov) });
     var base = { mime: 'image/jpeg', hasLabels: info.hasLabels, kind: info.kind, title: info.title, envKeys: envKeys() };
     return Promise.all(jobs.map(function (t) {
       var whole = jobs.length === 1;
-      return askServer(Object.assign({ image: whole ? V.jpeg(img, 1600, .85) : cropJpeg(img, t.x0, t.y0, t.x1, t.y1, 1600),
+      return ask(Object.assign({ image: whole ? V.jpeg(img, 1600, .85) : cropJpeg(img, t.x0, t.y0, t.x1, t.y1, 1600),
         cols: whole ? cols : Math.round(cols * (t.x1 - t.x0)), rows: cols ? Math.round(cols * (t.y1 - t.y0) * H / W) : 0 }, base)).then(function (r) {
         r.objects = r.objects.map(function (o) { var c = clone(o); c.x = t.x0 + o.x * (t.x1 - t.x0); c.y = t.y0 + o.y * (t.y1 - t.y0); c.w = o.w * (t.x1 - t.x0); c.h = o.h * (t.y1 - t.y0); return c; });
         return r;
@@ -131,18 +132,27 @@
     if (!V) { toast('The object finder isn\'t loaded.'); return Promise.resolve(null); }
     /* Claude reads the labeled version's printed names; shape finding only would mistake its label text for objects, so it reads an unlabeled one. */
     var sibs = siblings(id), lab = labeledOf(id), srcId = (artRemote() ? lab : lab === id ? sibs.filter(function (s) { return s !== lab; })[0] : null) || (function () { var full = sibs.filter(function (s) { var o = officialOf(s); return o && /full/i.test(o.v.label); })[0]; return full || id; })();
-    var srcKit = kitOf(srcId), reuse = srcKit && !opts.force, title = titleOf(id), made = null, why = 'log in for named objects';
+    var srcKit = kitOf(srcId), reuse = srcKit && !opts.force, title = titleOf(id), made = null, why = 'log in for named objects', used = '';
     if (!opts.quiet) toast('Looking for objects on ' + title + '…', 6000);
     var run = (reuse ? Promise.resolve(null) : loadImg(srcId).then(function (img) {
       var info = { cols: colsOf(srcId) || (srcId === id ? opts.cols || 0 : 0), hasLabels: srcId === lab, kind: opts.kind || 'dungeon', title: titleOf(srcId) };
-      var remote = artRemote() ? detectRemote(img, info) : Promise.reject(new Error('no login'));
-      return remote.then(function (r) { r.src = 'ai'; return r; }, function (e) {
+      /* Order: the Ref's own key (asks to unlock it if locked; declining goes on), then the server's key (logged in), then shape finding. */
+      var used = '', ownWhy = '';
+      var own = aiHas().then(function (has) { return has ? aiUnlock() : false; }).then(function (ok) {
+        return ok ? detectRemote(img, info, aiDetect).then(function (r) { used = 'your own Anthropic key'; return r; }, function (e) { ownWhy = 'your own key failed: ' + (e && e.message || 'error'); return null; }) : null;
+      }, function () { return null; });
+      var remote = own.then(function (r) {
+        if (r) return r;
+        return artRemote() ? detectRemote(img, info).then(function (r2) { used = 'the site\'s key'; return r2; }) : Promise.reject(new Error('no login'));
+      });
+      return remote.then(function (r) { r.src = 'ai'; r.used = used; return r; }, function (e) {
         var r = V.detect(V.pixels(img, 1024), { cols: info.cols });
-        return { objects: r || [], env: [], src: 'auto', why: !artRemote() ? 'log in for named objects' : e && e.status === 429 ? 'the server\'s hourly limit is used up' : 'the server can\'t name them right now' };
+        return { objects: r || [], env: [], src: 'auto', why: ownWhy ? ownWhy + (artRemote() ? '; the server can\'t name them right now' : '') : !artRemote() ? 'log in, or add your own key in the AI tab, for named objects' : e && e.status === 429 ? 'the server\'s hourly limit is used up' : 'the server can\'t name them right now' };
       }).then(function (r) { r.img = img; return r; });
     })).then(function (r) {
       var at = Date.now(), noAsk = !!((kits()[srcId] || {}).noAsk), env = {};
       if (r && r.why) why = r.why;
+      if (r && r.used) used = r.used;
       if (r) {
         r.env.forEach(function (k) { env[k] = true; });
         made = { objects: cleanObjects(r.objects), env: env, src: r.src, at: at, noAsk: noAsk };
@@ -168,8 +178,8 @@
       save();
       var k = kitOf(id) || made;
       if (!opts.quiet) {
-        var n = k ? k.objects.length : 0;
-        toast(!k ? 'Couldn\'t read objects from ' + title + '.' : n ? 'Found ' + plural(n, 'object') + ' on ' + title + (k.src === 'auto' ? ', by shape only (' + why + ').' : '.') : 'Found no objects on ' + title + (k.src === 'auto' ? ' by shape (' + why + ').' : '.'), 5000);
+        var n = k ? k.objects.length : 0, via = k && k.src === 'ai' && used ? ', using ' + used : '';
+        toast(!k ? 'Couldn\'t read objects from ' + title + '.' : n ? 'Found ' + plural(n, 'object') + ' on ' + title + (k.src === 'auto' ? ', by shape only (' + why + ').' : via + '.') : 'Found no objects on ' + title + (k.src === 'auto' ? ' by shape (' + why + ').' : via + '.'), 5000);
       }
       var sid = waiting[id]; delete waiting[id];
       if (sid && k) { var sc = scenes().filter(function (s) { return s.id === sid; })[0]; if (sc && mapIdOf(sc.map) === id) { placeKit(sc, id); vttChanged(); render(); } }
@@ -320,7 +330,7 @@
       { label: 'Save objects & environment for this map', hint: 'Keeps every marker token and the environment as this map\'s set, to place whenever the map is loaded.', fn: function () { saveFromScene(sc); } },
       { label: 'Place saved objects', off: !k || !k.objects.length && !Object.keys(k.env || {}).length, hint: k ? '' : 'No saved or found objects for this map yet.', fn: function () {
         var n = placeKit(sc, id, { again: true }); toast(n ? 'Placed ' + plural(n, 'object') + '.' : 'Nothing new to place.'); render(); } },
-      { label: busy ? 'Looking for objects…' : k ? 'Generate objects again' : 'Generate objects', off: busy, hint: 'Reads the picture for furniture, chests, and lights (Claude when logged in; shapes otherwise).',
+      { label: busy ? 'Looking for objects…' : k ? 'Generate objects again' : 'Generate objects', off: busy, hint: 'Reads the picture for furniture, chests, and lights (Claude with your own key from the AI tab, or the site\'s key when logged in; shapes otherwise).',
         fn: function () { if (k && k.src === 'ref' && !confirm('Replace the objects you saved for this map?')) return; generateHere(sc, id, true); } },
       { label: 'Remove generated objects', off: !mine, danger: true, fn: function () { var n = removeGen(sc, id); toast('Removed ' + plural(n, 'object') + '.'); render(); } },
       { sep: true },

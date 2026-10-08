@@ -296,6 +296,15 @@ CREATE TABLE IF NOT EXISTS ref_art (
   CONSTRAINT fk_refart_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
 ) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
 
+-- A Ref's own Anthropic API key, encrypted in the browser with a passphrase the server never sees (see a_vault_* in api.php).
+-- vault is the client's JSON { v, kdf, iter, salt, iv, ct, hint }; only the owner can read it back.
+CREATE TABLE IF NOT EXISTS ai_vaults (
+  user_id INT UNSIGNED NOT NULL PRIMARY KEY,
+  vault MEDIUMTEXT NOT NULL,
+  updated_at DATETIME NOT NULL,
+  CONSTRAINT fk_aivault_user FOREIGN KEY (user_id) REFERENCES users(id) ON DELETE CASCADE
+) ENGINE=InnoDB DEFAULT CHARSET=utf8mb4 COLLATE=utf8mb4_unicode_ci;
+
 -- Discord sign-in (see discord.php): which Discord account an account can log in with.
 CREATE TABLE IF NOT EXISTS discord_links (
   user_id INT UNSIGNED NOT NULL PRIMARY KEY,

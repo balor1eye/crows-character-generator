@@ -18,6 +18,7 @@ const TEST_ACCOUNTS = [
 
 if (in_array('--unthrottle', $argv, true)) {
     q('DELETE FROM login_attempts');
+    foreach (glob(sync_dir() . '/.aivault-*.json') ?: [] as $f) @unlink($f);
     exit("Rate limits cleared.\n");
 }
 

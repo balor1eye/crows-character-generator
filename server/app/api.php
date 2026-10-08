@@ -1806,6 +1806,65 @@ function map_frac($v, float $default = 0.0): float {
     return is_int($v) || is_float($v) ? round(max(0.0, min(1.0, (float)$v)), 4) : $default;
 }
 
+// ---------------------------------------------------------------- Ref's AI key vault
+/*
+ * ai_vaults: a Ref's own Anthropic API key, encrypted in their browser with a passphrase the server never sees. We keep only the
+ * ciphertext blob and give it back only to its owner (the row is picked by the session, never by input). It is never in admin.users,
+ * admin.audit, or any listing, and the audit log records only that it was saved or deleted.
+ */
+const VAULT_MAX_BYTES = 8192;
+function vault_b64(mixed $v, int $minBytes, int $maxBytes): bool {
+    if (!is_string($v) || $v === '' || !preg_match('#^[A-Za-z0-9+/]+={0,2}$#', $v)) return false;
+    $raw = base64_decode($v, true);
+    return $raw !== false && strlen($raw) >= $minBytes && strlen($raw) <= $maxBytes;
+}
+/** At most 10 saves an hour per person (a small file under sync/, like map.detect). */
+function vault_save_throttle(int $userId): void {
+    $dir = sync_dir();
+    if (!is_dir($dir)) @mkdir($dir, 0755, true);
+    $fh = @fopen($dir . '/.aivault-' . $userId . '.json', 'c+');
+    if (!$fh) return;
+    flock($fh, LOCK_EX);
+    $times = json_decode((string)stream_get_contents($fh), true);
+    $since = time() - 3600;
+    $times = array_values(array_filter(is_array($times) ? $times : [], fn($t) => is_int($t) && $t > $since));
+    $over = count($times) >= 10;
+    if (!$over) $times[] = time();
+    ftruncate($fh, 0); rewind($fh); fwrite($fh, json_encode($times));
+    flock($fh, LOCK_UN); fclose($fh);
+    if ($over) fail('Too many key saves this hour. Please try again later.', 429);
+}
+function a_vault_get(): array {
+    $s = need_ref('Only Refs can keep an AI key.');
+    $r = q('SELECT vault, updated_at FROM ai_vaults WHERE user_id = ?', [$s['id']])->fetch();
+    return $r ? ['vault' => $r['vault'], 'updatedAt' => strtotime($r['updated_at'] . ' UTC')] : ['vault' => null, 'updatedAt' => null];
+}
+function a_vault_save(): array {
+    $s = need_ref('Only Refs can keep an AI key.');
+    $blob = str('vault', VAULT_MAX_BYTES);
+    $j = json_decode($blob, true);
+    $keys = ['v', 'kdf', 'iter', 'salt', 'iv', 'ct', 'hint'];
+    if (!is_array($j) || array_is_list($j) || array_diff(array_keys($j), $keys) || array_diff($keys, array_keys($j))
+        || $j['v'] !== 1 || $j['kdf'] !== 'PBKDF2-SHA256'
+        || !is_int($j['iter']) || $j['iter'] < 600000 || $j['iter'] > 5000000
+        || !vault_b64($j['salt'], 16, 64) || !vault_b64($j['iv'], 12, 12) || !vault_b64($j['ct'], 1, 4096)
+        || !is_string($j['hint']) || mb_strlen($j['hint']) > 4) {
+        fail('That key vault is not in the expected format.');
+    }
+    vault_save_throttle((int)$s['id']);
+    $at = now();
+    q('INSERT INTO ai_vaults (user_id, vault, updated_at) VALUES (?,?,?) ON DUPLICATE KEY UPDATE vault = VALUES(vault), updated_at = VALUES(updated_at)',
+      [$s['id'], $blob, $at]);
+    audit('ai vault saved', (int)$s['id']);
+    return ['updatedAt' => strtotime($at . ' UTC')];
+}
+function a_vault_delete(): array {
+    $s = need_ref('Only Refs can keep an AI key.');
+    q('DELETE FROM ai_vaults WHERE user_id = ?', [$s['id']]);
+    audit('ai vault deleted', (int)$s['id']);
+    return [];
+}
+
 /** At most 20 detections an hour per person, counted in a small file under sync/ (no table needed). */
 function map_detect_throttle(int $userId): void {
     $dir = sync_dir();
@@ -1993,6 +2052,9 @@ const ACTIONS = [
     'art.list' => ['GET', 'a_art_list', false],
     'art.save' => ['POST', 'a_art_save', true],
     'art.delete' => ['POST', 'a_art_delete', true],
+    'vault.get' => ['GET', 'a_vault_get', false],
+    'vault.save' => ['POST', 'a_vault_save', true],
+    'vault.delete' => ['POST', 'a_vault_delete', true],
     'chat.campaigns' => ['GET', 'a_chat_campaigns', false],
     'chat.list' => ['GET', 'a_chat_list', false],
     'chat.send' => ['POST', 'a_chat_send', true],

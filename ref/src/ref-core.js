@@ -25,7 +25,7 @@
       releaseGrabs = f('releaseGrabs'), renderBestiary = f('renderBestiary'), renderMaps = f('renderMaps'), renderEncounters = f('renderEncounters'),
       renderParty = f('renderParty'), renderPractice = f('renderPractice'), renderPrefs = f('renderPrefs'), renderVtt = f('renderVtt'), renderRules = f('renderRules'), renderSession = f('renderSession'),
       renderTables = f('renderTables'), renderTravel = f('renderTravel'), renderVillage = f('renderVillage'),
-      renderWorld = f('renderWorld'), renderWorkshop = f('renderWorkshop'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
+      renderAi = f('renderAi'), renderWorld = f('renderWorld'), renderWorkshop = f('renderWorkshop'), runningEnc = f('runningEnc'), rxLeft = f('rxLeft'), undoAct = f('undoAct');
   var state = A.state; A.share('state', function (v) { state = v; });
   var tab = A.tab; A.share('tab', function (v) { tab = v; });
 
@@ -33,7 +33,7 @@
   var TAB_KEY = 'crows-pt2-ref-tab';
   // The tabs in their groups, shown with the group's name in the tab bar: [group, [[tab id, label], ...]].
   var TAB_GROUPS = [['Run', [['session', 'Session'], ['vtt', 'Tabletop'], ['encounters', 'Encounters'], ['travel', 'Travel']]],
-    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World'], ['workshop', 'Workshop'], ['prefs', 'Preferences']]],
+    ['Campaign', [['party', 'Party'], ['village', 'Village'], ['world', 'World'], ['workshop', 'Workshop'], ['ai', 'AI'], ['prefs', 'Preferences']]],
     ['Reference', [['bestiary', 'Bestiary'], ['maps', 'Maps'], ['tables', 'Tables'], ['rules', 'Rules']]]];
   var TABS = TAB_GROUPS.reduce(function (all, g) { return all.concat(g[1]); }, []);
   var SIZES = { T: 'Tiny', S: 'Small', M: 'Medium', L: 'Large', H: 'Huge', G: 'Holy Shit' };
@@ -354,7 +354,7 @@
     renderTabbar();
     renderSide();
     if (window.CrowsLayout && !layoutFitQueued) { layoutFitQueued = true; requestAnimationFrame(function () { layoutFitQueued = false; window.CrowsLayout.fit(); }); }
-    ({ session: renderSession, vtt: renderVtt, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, workshop: renderWorkshop, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
+    ({ session: renderSession, vtt: renderVtt, encounters: renderEncounters, travel: renderTravel, village: renderVillage, party: renderParty, prefs: renderPrefs, world: renderWorld, workshop: renderWorkshop, ai: renderAi, bestiary: renderBestiary, maps: renderMaps, tables: renderTables, rules: renderRules })[tab]();
     applyPrefs();
     tick();
   }

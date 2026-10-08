@@ -656,6 +656,8 @@
 
     /* Call fn(user) once it's known who is logged in (user is null for a guest, offline, or without the accounts server). */
     afterMe: function (fn) { if (meDone) fn(user); else meWaiting.push(fn); },
+    /* Who is logged in now (null for a guest, offline, or before the server has answered). */
+    me: function () { return user; },
     /* For the Ref Screen: what link.save needs to turn the linked character `b` into `data` ({ fields, base }), or null if nothing it may change differs. */
     linkDiff: function (b, data) { return linkDiff(b, data); },
     /* For the Ref Screen: calls the API with this page's login. */
