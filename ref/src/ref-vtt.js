@@ -48,7 +48,7 @@
     ['blank', 'Blank board', 'An empty board for theater of the mind.']];
   var PRESETS = [['', 'No light'], ['5/5', 'Torch (5/5)'], ['10/10', 'Lantern (10/10)'], ['10/10c', 'Campfire (10/10)'], ['2/2', 'Candle (2/2)'], ['15/15', 'Large fire (15/15)']];
   // [id, name, what it does, hotkey, group]: the palette down the map's left side
-  var TOOLS = [['select', 'Select', 'Move tokens (drag), select, and pan (drag the board). Right-click a token for its details; double-click a door to open or close it.', 'v', 'play'],
+  var TOOLS = [['select', 'Select', 'Move tokens (drag), select, and pan (drag the board). Right-click a token for its details; double-click a door to open or close it. Drag a wall, door, or window to move it, or drag its end to move a corner; Delete removes it; right-click it for more.', 'v', 'play'],
     ['measure', 'Measure', 'Drag to measure squares or hexes.', 'm', 'play'], ['ping', 'Ping', 'Click to point something out to everyone (Alt-click works in any tool).', 'p', 'play'],
     ['wall', 'Wall', 'Click points to draw walls that block sight and movement. Double-click or Esc to finish; Shift snaps to half squares.', 'w', 'walls'],
     ['door', 'Door', 'Click both ends of a door (closed doors block sight and movement).', 'd', 'walls'], ['window', 'Window', 'A window blocks movement but not sight.', 'n', 'walls'],
@@ -58,6 +58,7 @@
     ['pin', 'Pin', 'Click to place a labeled pin (a place, a clue, a door to remember).', 'i', 'pins']];
   var CARRIERS = ['pc', 'ally'];
 
+  var escBound = false;
   var U = ui.vtt = ui.vtt || { view: null, built: false, sel: null, mask: null, sig: '', art: {}, playerView: false, cols: 40, hurt: 1, spawn: 0 };
   
   function V() { return state.vtt; }
@@ -452,7 +453,7 @@
   /* The fog mask for this scene (worked out again only when something that affects it changed). */
   function maskFor(sc) {
     if (sc.fog === 'off') return null;
-    var sig = [sc.id, sc.fog, sc.ambient, sc.w, sc.h, sc.g, sc.seen, JSON.stringify(sc.walls), JSON.stringify(sc.tokens.map(function (t) { return [t.id, t.x, t.y, t.kind, t.dead, t.hidden, t.light, t.sight, t.sees, t.size]; }))].join('|');
+    var sig = [sc.id, sc.fog, sc.ambient, sc.w, sc.h, sc.g, sc.seen, JSON.stringify(sc.walls), JSON.stringify(sc.tokens.map(function (t) { return [t.id, t.x, t.y, t.kind, t.dead, t.hidden, t.light, t.sight, t.sees, t.size, t.blocks, t.fw, t.fh]; }))].join('|');
     if (sig === U.sig && U.mask) return U.mask;
     var m = Tbl.computeVision(sc);
     U.mask = m; U.sig = sig;
@@ -489,6 +490,7 @@
       var pc = (t.conds || []).filter(function (k) { return k !== 'Hidden'; });
       if (pc.length) o.conds = pc;
       if (t.icon) o.icon = t.icon;
+      if (t.fw && t.fh) { o.fw = t.fw; o.fh = t.fh; }
       if (t.label) o.label = true;
       if (t.speed && t.pcId) o.speed = t.speed;
       var k = artKey(t), src = artSrc(k);
@@ -516,7 +518,7 @@
   /* A token moved by the Ref's hand (free) or a player's (blocked by walls). Returns false if it can't. */
   function moveToken(sc, t, x, y, byPlayer) {
     var from = { x: t.x, y: t.y }, to = { x: x, y: y };
-    if (byPlayer && Tbl.pathBlocked(sc, from, to)) return false;
+    if (byPlayer && Tbl.pathBlocked(sc, from, to, t.id)) return false;
     var n = Tbl.dist(sc, from, to);
     t.x = x; t.y = y;
     if (sc.kind === 'travel' && t.kind === 'pc') {
@@ -605,6 +607,8 @@
       onWall: function (w) { var sc = cur(); sc.walls.push({ id: Tbl.uid('w'), a: w.a, b: w.b, t: w.t, open: false }); changed(); render(); },
       onErase: function (w) { var sc = cur(); sc.walls = sc.walls.filter(function (k) { return k !== w; }); U.view.flash((w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2, '#ff9f43'); changed(); render(); },
       onDoor: function (w) { w.open = !w.open; changed(); render(); },
+      onWallEdit: function (w) { changed(); render(); },
+      onWallMenu: function (w, e, pt) { var sc = cur(); if (sc) U.view.menu(e.clientX, e.clientY, wallMenu(sc, w, pt)); },
       onRoom: function (r) {
         var sc = cur(), pts = [[r.x1, r.y1], [r.x2, r.y1], [r.x2, r.y2], [r.x1, r.y2]];
         for (var i = 0; i < 4; i++) sc.walls.push({ id: Tbl.uid('w'), a: pts[i], b: pts[(i + 1) % 4], t: 'wall', open: false });
@@ -634,6 +638,15 @@
     });
     U.ui = el('div', { class: 'vtt-ui' });
     U.L = {};
+    if (!escBound) {
+      escBound = true;
+      // Escape (once the right-click menu, a pop-up, or the map's own ruler hasn't taken it) stops picking a target, else closes the open drawer.
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape' || e.defaultPrevented || !U.host || !U.host.getClientRects().length) return;
+        if (U.pick) { e.preventDefault(); endPick('No target picked.'); render(); return; }
+        if (U.drawer) { e.preventDefault(); U.drawer = null; render(); }
+      });
+    }
     ['tl', 'tc', 'tr', 'tools', 'zoom', 'roster', 'ticker', 'roll', 'hud', 'floats', 'ask', 'drawer', 'banners', 'tip', 'empty'].forEach(function (k) { U.L[k] = el('div', { class: 'vtt-' + k }); U.ui.appendChild(U.L[k]); });
     // The bars (scene, clock and fight, share and view, tools, zoom, tokens) are movable: top, bottom, either side (T.docks).
     Tbl.docks(U.ui, [['tl', 'top'], ['tc', 'top'], ['tr', 'top'], ['tools', 'left'], ['zoom', 'right'], ['roster', 'bottom']].map(function (b) { return { id: b[0], el: U.L[b[0]], zone: b[1] }; }), { key: 'crows-ref-bars' });
@@ -676,7 +689,8 @@
       } });
     } else if (p && !x && S().combat.round) out.push({ label: 'Not in the fight', off: true });
     if (t.kind === 'obj' || t.kind === 'npc') out.push({ label: 'Rename…', fn: function () { var v = prompt('Name', t.name); if (v !== null && v.trim()) { t.name = v.trim().slice(0, 40); changed(); render(); } } });
-    if (t.kind === 'obj') out.push({ label: 'Show its label on the map', on: !!t.label, fn: function () { t.label = !t.label; changed(); render(); } });
+    if (t.kind === 'obj') out.push({ label: 'Show its label on the map', on: !!t.label, fn: function () { t.label = !t.label; changed(); render(); } },
+      { label: 'Blocks sight and movement', on: !!t.blocks, hint: 'Walls of its footprint stop the party\'s line of sight and players\' moves', fn: function () { setBlocks(t, !t.blocks); changed(); render(); } });
     out.push({ sep: true },
       { label: 'Details…', fn: function () { openDrawer('token'); } },
       { label: t.hidden ? 'Show to the players' : 'Hide from the players', fn: function () { t.hidden = !t.hidden; changed(); render(); } },
@@ -689,6 +703,23 @@
       { label: 'Center the view on it', fn: function () { U.view.centerOn(t.x, t.y, true); } },
       { label: 'Duplicate', fn: function () { var c2 = JSON.parse(JSON.stringify(t)); c2.id = Tbl.uid('k'); c2.cid = null; c2.pcId = null; c2.link = null; c2.x += sc.g; sc.tokens.push(c2); U.sel = c2.id; changed(); render(); } },
       { label: 'Remove from the map', danger: true, fn: function () { removeToken(sc, t); } });
+    return out;
+  }
+  /* Right-click a wall, door, or window: open or close it, change what it is, cut it in two, delete it. */
+  function wallMenu(sc, w, pt) {
+    var name = { wall: 'Wall', door: 'Door · ' + (w.open ? 'open' : 'closed'), window: 'Window' }[w.t] || 'Wall', out = [{ head: name + (w.gen ? ' · from the map' : '') }];
+    function set(t) { w.t = t; if (t !== 'door') w.open = false; changed(); render(); }
+    if (w.t === 'door') out.push({ label: w.open ? 'Close it' : 'Open it', fn: function () { w.open = !w.open; changed(); render(); } });
+    out.push({ label: 'Make it', sub: [['wall', 'Wall'], ['door', 'Door'], ['window', 'Window']].map(function (k) { return { label: k[1], on: w.t === k[0], fn: function () { set(k[0]); } }; }) },
+      { label: 'Split here', hint: 'Cut it in two at this point (to move part of it, or make part a door)', fn: function () {
+        var dx = w.b[0] - w.a[0], dy = w.b[1] - w.a[1], u = Math.max(0, Math.min(1, ((pt.x - w.a[0]) * dx + (pt.y - w.a[1]) * dy) / (dx * dx + dy * dy || 1)));
+        var c = Tbl.snapCorner(sc, w.a[0] + u * dx, w.a[1] + u * dy, true);
+        if (c.x === w.a[0] && c.y === w.a[1] || c.x === w.b[0] && c.y === w.b[1]) return;
+        var nw = { id: Tbl.uid('w'), a: [c.x, c.y], b: w.b, t: w.t, open: w.open }; if (w.gen) nw.gen = w.gen;
+        w.b = [c.x, c.y]; sc.walls.splice(sc.walls.indexOf(w) + 1, 0, nw); changed(); render();
+      } },
+      { sep: true },
+      { label: 'Delete', danger: true, fn: function () { sc.walls = sc.walls.filter(function (k) { return k !== w; }); U.view.flash((w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2, '#ff9f43'); changed(); render(); } });
     return out;
   }
   function boardMenu(sc, w) {
@@ -737,7 +768,6 @@
 
   function onKey(e) {
     var sc = cur(), t = sc && tok(sc, U.sel);
-    if (e.key === 'Escape' && U.pick) { endPick('No target picked.'); render(); return; }
     if (t && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); removeToken(sc, t); return; }
     if (e.ctrlKey || e.metaKey || e.altKey || !sc) return;
     var k = e.key.toLowerCase(), hot = TOOLS.filter(function (x) { return x[3] === k; })[0];
@@ -1311,8 +1341,16 @@
       el('p', { class: 'fine', text: 'Own sight: how far it sees with no light (Dark Senses: 10+). Speed shows the move range while dragging.' }));
     else if (t.kind === 'foe') kids.push(el('label', { class: 'field' }, ['Speed', numIn(t, 'speed', 0, 30)]));
     kids.push(el('div', { class: 'checks' }, [CARRIERS.indexOf(t.kind) >= 0 ? checkIn(t, 'sees', 'Gives the party sight', 'Off: this token doesn’t see for the party (a blinded crow).') : null,
-      t.kind !== 'obj' ? null : checkIn(t, 'label', 'Show its name')]));
+      t.kind !== 'obj' ? null : checkIn(t, 'label', 'Show its name'),
+      t.kind !== 'obj' ? null : el('label', { class: 'check', title: 'Its footprint stops the party\'s line of sight and players\' moves (a pillar, a bookcase)' }, [
+        el('input', { type: 'checkbox', checked: !!t.blocks, onchange: function () { setBlocks(t, this.checked); changed(); render(); } }), ' Blocks sight and movement'])]));
+    if (t.kind === 'obj' && t.fw && t.fh) kids.push(el('div', { class: 'row center' }, ['Footprint ', numIn(t, 'fw', 1, 40, function () { t.fw = Math.round(t.fw) || 1; }, '4rem'), ' × ', numIn(t, 'fh', 1, 40, function () { t.fh = Math.round(t.fh) || 1; }, '4rem'), ' squares']));
     return el('div', { class: 'dr-stack' }, kids);
+  }
+  /* Make an object block (a footprint the size of its token, unless it has one) or stop blocking (it keeps its footprint). */
+  function setBlocks(t, on) {
+    t.blocks = !!on;
+    if (on && !(t.fw && t.fh)) { t.fw = t.fh = Math.max(1, Math.round(t.size || 1)); }
   }
   function sceneSettings(sc) {
     var name = el('input', { type: 'text', class: 'in', value: sc.name, maxlength: 60, 'aria-label': 'Scene name' }); name.addEventListener('change', function () { sc.name = this.value.slice(0, 60) || 'Scene'; changed(); render(); });

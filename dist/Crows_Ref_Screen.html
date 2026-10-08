@@ -2279,6 +2279,19 @@ CROWS.NAME_IDEAS = {
     return n + ' sq' + (sc.unit ? ' (' + Math.round(n * sc.unit) + ' ft)' : '');
   }
   function tokenSize(t) { return t.size || 1; }
+  /* A blocking object's footprint (fw x fh squares, centred on it) as { x0, y0, x1, y1 } in map pixels, or null for a round token. */
+  function footprint(t, g) { if (!t.fw || !t.fh) return null; var hw = t.fw * g / 2, hh = t.fh * g / 2; return { x0: t.x - hw, y0: t.y - hh, x1: t.x + hw, y1: t.y + hh }; }
+  /* The footprints of the objects that block sight and movement (a pillar, a bookcase), but `skip` (a token id: the one moving). */
+  function blockRects(sc, skip) {
+    return (sc.tokens || []).filter(function (t) { return t.blocks && t.fw && t.fh && t.id !== skip; }).map(function (t) { return footprint(t, sc.g); });
+  }
+  /* A token's spot snapped to the grid: a footprint snaps each side to grid lines (an odd number of squares centres in a square). */
+  function snapTok(sc, x, y, t) {
+    if (!t || !t.fw || !t.fh || sc.grid !== 'square') return snap(sc, x, y, tokenSize(t || {}));
+    var g = sc.g;
+    function ax(v, o, n) { var k = (v - o) / g; return Math.round(n) % 2 ? (Math.floor(k) + .5) * g + o : Math.round(k) * g + o; }
+    return { x: ax(x, sc.ox, t.fw), y: ax(y, sc.oy, t.fh) };
+  }
 
   // ------------------------------------------------------------------ fog cells
   function fogCell(sc) { return Math.max(sc.g / 3, Math.max(sc.w, sc.h) / 240); }
@@ -2343,10 +2356,12 @@ CROWS.NAME_IDEAS = {
   }
 
   // ------------------------------------------------------------------ line of sight
-  /* The segments that block sight (walls, closed doors) or movement (those and windows). */
-  function blockers(sc, what) {
-    return (sc.walls || []).filter(function (w) { return what === 'move' ? !(w.t === 'door' && w.open) : w.t === 'wall' || w.t === 'door' && !w.open; })
+  /* The segments that block sight (walls, closed doors, blocking objects' sides) or movement (those and windows). skip: a token id left out. */
+  function blockers(sc, what, skip) {
+    var out = (sc.walls || []).filter(function (w) { return what === 'move' ? !(w.t === 'door' && w.open) : w.t === 'wall' || w.t === 'door' && !w.open; })
       .map(function (w) { return [w.a[0], w.a[1], w.b[0], w.b[1]]; });
+    blockRects(sc, skip).forEach(function (r) { out.push([r.x0, r.y0, r.x1, r.y0], [r.x1, r.y0, r.x1, r.y1], [r.x1, r.y1, r.x0, r.y1], [r.x0, r.y1, r.x0, r.y0]); });
+    return out;
   }
   function rayHit(px, py, dx, dy, s) {
     var sx = s[2] - s[0], sy = s[3] - s[1], den = dx * sy - dy * sx;
@@ -2369,11 +2384,11 @@ CROWS.NAME_IDEAS = {
     });
     return pts;
   }
-  /* Does a straight move from a to b cross a wall, a closed door, or a window? */
-  function pathBlocked(sc, a, b) {
+  /* Does a straight move from a to b cross a wall, a closed door, a window, or a blocking object (but the token `skip`, the one moving)? */
+  function pathBlocked(sc, a, b, skip) {
     var dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
     if (len < 1) return false;
-    var segs = blockers(sc, 'move');
+    var segs = blockers(sc, 'move', skip);
     for (var i = 0; i < segs.length; i++) { var t = rayHit(a.x, a.y, dx / len, dy / len, segs[i]); if (t > 1e-6 && t < len - 1e-6) return true; }
     return false;
   }
@@ -2387,6 +2402,19 @@ CROWS.NAME_IDEAS = {
     return g;
   }
   function poly(g, pts) { g.beginPath(); pts.forEach(function (p, i) { if (i) g.lineTo(p[0], p[1]); else g.moveTo(p[0], p[1]); }); g.closePath(); }
+  /* The path of what a point sees within R px: its line of sight, plus the tops of the blocking objects it sees a side of (so a pillar in view shows). */
+  function seenArea(g, px, py, segs, R, rects) {
+    var pts = los(px, py, segs, R);
+    poly(g, pts);
+    rects.forEach(function (r) {
+      var e = 2, probes = [];
+      [0, .25, .5, .75, 1].forEach(function (k) {
+        var x = r.x0 + (r.x1 - r.x0) * k, y = r.y0 + (r.y1 - r.y0) * k;
+        probes.push([x, r.y0 - e], [x, r.y1 + e], [r.x0 - e, y], [r.x1 + e, y]);
+      });
+      if (probes.some(function (p) { return inPoly(p[0], p[1], pts); })) g.rect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+    });
+  }
   /* Who sees (the crows and allies on the map) and what lights it (tokens with a light, and each viewer's own sight). */
   function viewers(sc) { return sc.tokens.filter(function (t) { return (t.kind === 'pc' || t.kind === 'ally') && !t.dead && t.sees !== false && !t.hidden; }); }
   function lightsOf(sc) {
@@ -2405,20 +2433,20 @@ CROWS.NAME_IDEAS = {
     if (sc.fog === 'off') return null;
     var d = fogDims(sc), seen = seenOf(sc), cells = new Uint8Array(d.cw * d.ch), i;
     if (sc.fog === 'manual') { for (i = 0; i < cells.length; i++) cells[i] = seen[i] ? 3 : 0; return { cw: d.cw, ch: d.ch, cell: d.cell, cells: cells, grew: false }; }
-    var segs = blockers(sc, 'sight'), vs = viewers(sc), big = Math.max(sc.w, sc.h) * 1.5, k = 1 / d.cell;
+    var segs = blockers(sc, 'sight'), rects = blockRects(sc), vs = viewers(sc), big = Math.max(sc.w, sc.h) * 1.5, k = 1 / d.cell;
     var L = canvas('L', d.cw, d.ch), V = canvas('V', d.cw, d.ch), grew = false;
     L.setTransform(k, 0, 0, k, 0, 0); V.setTransform(k, 0, 0, k, 0, 0);
     if (sc.ambient !== 'dark') { L.fillStyle = 'rgba(255,255,255,' + (sc.ambient === 'dim' ? .5 : 1) + ')'; L.fillRect(0, 0, sc.w, sc.h); }
     lightsOf(sc).forEach(function (l) {
       var rb = (l.b + l.s / 2) * sc.g, rd = rb + l.d * sc.g, g = L;
-      g.save(); poly(g, los(l.x, l.y, segs, rd)); g.clip();
+      g.save(); seenArea(g, l.x, l.y, segs, rd, rects); g.clip();
       var gr = g.createRadialGradient(l.x, l.y, 0, l.x, l.y, rd), f = rb / rd;
       gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(Math.min(1, f), 'rgba(255,255,255,1)');
       if (l.d) { gr.addColorStop(Math.min(1, f + .002), 'rgba(255,255,255,.5)'); gr.addColorStop(1, 'rgba(255,255,255,.5)'); }
       g.fillStyle = gr; g.beginPath(); g.arc(l.x, l.y, rd, 0, 7); g.fill(); g.restore();
     });
     V.fillStyle = '#fff';
-    vs.forEach(function (t) { poly(V, los(t.x, t.y, segs, big)); V.fill(); });
+    vs.forEach(function (t) { seenArea(V, t.x, t.y, segs, big, rects); V.fill(); });
     L.setTransform(1, 0, 0, 1, 0, 0); L.globalCompositeOperation = 'destination-in'; L.drawImage(V.canvas, 0, 0);
     var px = L.getImageData(0, 0, d.cw, d.ch).data;
     for (i = 0; i < cells.length; i++) {
@@ -2469,6 +2497,7 @@ CROWS.NAME_IDEAS = {
   /*
    * options: ref (the Ref's controls and view), scene() -> the scene, mask() -> the fog mask, tokenSrc(t), mapSrc(scene), canMove(t),
    * speedOf(t), onSelect(t | null), onMove(t, x, y), onPing(x, y), onWall(seg), onErase(wall), onDoor(wall), onPaint(x, y, r, reveal),
+   * onWallEdit(wall) (a wall, door, or window was dragged: its ends are already moved), onWallMenu(wall, event, world point),
    * onRoom(rect), onFogRect(pts, reveal), onMenu(token | null, event, world point), onPin(pin), onDrop(x, y), onFrame() (after each drawn frame: overlays follow the camera)
    *
    * Everything that changes is animated (unless the system asks for reduced motion): tokens glide to where they moved, pop in when they
@@ -2588,7 +2617,7 @@ CROWS.NAME_IDEAS = {
   }
   function view(host, o) {
     var cv = document.createElement('canvas'), ctx = cv.getContext('2d'), cam = { x: 0, y: 0, z: 1 }, V = { tool: 'select', player: false, sel: null, ghost: {}, pings: [], size: { w: 0, h: 0 }, dpr: 1,
-      brush: 1, drag: null, hover: null, ruler: null, chain: null, queued: false, sceneId: null, fogImg: null, fogKey: '', lastPing: 0, spaceDown: false, keep: {},
+      brush: 1, wsel: null, drag: null, hover: null, ruler: null, chain: null, queued: false, sceneId: null, fogImg: null, fogKey: '', lastPing: 0, spaceDown: false, keep: {},
       // animation state: shown positions, tweens, what each token looked like last frame, arrivals, departures, effects
       shown: {}, tw: {}, seen: {}, born: {}, leaving: [], fx: {}, condT: {}, alpha: {}, floats: [], rings: [], camTw: null, fogPrev: null, fogT0: 0, sceneT0: 0,
       primed: false, intro: 0, wallSeen: {}, wallT: {}, pinSeen: {}, pinT: {}, selT0: 0, lastT: 0, busy: false };
@@ -2637,7 +2666,14 @@ CROWS.NAME_IDEAS = {
     function tokens() { var s = sc(); return s ? s.tokens.filter(function (t) { return !(V.player && t.hidden); }) : []; }
     function target(t) { var g = V.ghost[t.id]; return g && g.until > Date.now() ? g : t; }
     function pos(t) { return V.shown[t.id] || target(t); }
-    function radius(s, t) { return Math.max(.35, tokenSize(t) * .46) * s.g; }
+    function radius(s, t) { return Math.max(.35, (t.fw && t.fh ? Math.min(t.fw, t.fh) : tokenSize(t)) * .46) * s.g; }
+    /* A token's outline, `pad` px out: a circle, or a rounded box for an object with a footprint. */
+    function shape(s, t, r, pad) {
+      ctx.beginPath();
+      if (!(t.fw && t.fh)) { ctx.arc(0, 0, r + pad, 0, 7); return; }
+      var hw = t.fw * s.g / 2 - s.g * .05 + pad, hh = t.fh * s.g / 2 - s.g * .05 + pad;
+      if (ctx.roundRect) ctx.roundRect(-hw, -hh, hw * 2, hh * 2, Math.min(hw, hh) * .2); else ctx.rect(-hw, -hh, hw * 2, hh * 2);
+    }
     /*
      * Once a frame: glide each token toward where it is now (a drag follows the pointer at once), and note what changed since the last
      * frame (hurt, healed, died, a new condition) to start its effect. Tokens that are new pop in (staggered when a scene opens);
@@ -2683,7 +2719,10 @@ CROWS.NAME_IDEAS = {
     }
     function hitToken(w) {
       var list = tokens().slice().sort(function (a, b) { return tokenSize(a) - tokenSize(b); }), s = sc();
-      for (var i = 0; i < list.length; i++) { var t = list[i], p = pos(t); if (Math.hypot(p.x - w.x, p.y - w.y) <= Math.max(.35, tokenSize(t) * .5) * s.g) return t; }
+      for (var i = 0; i < list.length; i++) {
+        var t = list[i], p = pos(t);
+        if (t.fw && t.fh ? Math.abs(p.x - w.x) <= t.fw * s.g / 2 && Math.abs(p.y - w.y) <= t.fh * s.g / 2 : Math.hypot(p.x - w.x, p.y - w.y) <= Math.max(.35, tokenSize(t) * .5) * s.g) return t;
+      }
       return null;
     }
     function hitWall(w) {
@@ -2694,6 +2733,16 @@ CROWS.NAME_IDEAS = {
       });
       return best;
     }
+    /* The selected wall (the Ref's Select tool), its end under a world point, and every wall end sitting on a point (so a dragged corner keeps its joints). */
+    function selWall() { var r = null; if (V.wsel) (sc().walls || []).forEach(function (k) { if ((k.id || k.a.join() + k.b.join()) === V.wsel) r = k; }); return r; }
+    function endAt(k, w) { var r = 10 / cam.z; return Math.hypot(k.a[0] - w.x, k.a[1] - w.y) <= r ? 'a' : Math.hypot(k.b[0] - w.x, k.b[1] - w.y) <= r ? 'b' : null; }
+    function jointEnds(p) {
+      var r = [];
+      (sc().walls || []).forEach(function (k) { ['a', 'b'].forEach(function (e) { if (Math.hypot(k[e][0] - p[0], k[e][1] - p[1]) <= .5) r.push({ w: k, k: e }); }); });
+      return r;
+    }
+    function wallSnap(s, w, e) { return e.shiftKey ? { x: Math.round(w.x), y: Math.round(w.y) } : snapCorner(s, w.x, w.y, true); }
+    function wallRestore(d) { d.orig.forEach(function (r) { r[0].a = r[1]; r[0].b = r[2]; }); }
     function hitPin(w) {
       var s = sc(), list = (s.pins || []).filter(function (p) { return o.ref && !V.player || p.vis; });
       for (var i = 0; i < list.length; i++) if (Math.hypot(list[i].x - w.x, list[i].y - w.y) < s.g * .4) return list[i];
@@ -2745,26 +2794,26 @@ CROWS.NAME_IDEAS = {
       ctx.save(); ctx.translate(p.x + dx, p.y); if (scale !== 1) ctx.scale(scale, scale);
       ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
       if (fx && fx.type === 'die') { ctx.rotate(Math.sin(fk * Math.PI) * .25); }
-      if (t.light && t.light.on !== false && (o.ref && !V.player)) { ctx.beginPath(); ctx.arc(0, 0, r + 3 / cam.z, 0, 7); ctx.strokeStyle = 'rgba(255,200,90,.9)'; ctx.lineWidth = 3 / cam.z; ctx.stroke(); }
+      if (t.light && t.light.on !== false && (o.ref && !V.player)) { shape(s, t, r, 3 / cam.z); ctx.strokeStyle = 'rgba(255,200,90,.9)'; ctx.lineWidth = 3 / cam.z; ctx.stroke(); }
       ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = dragging ? 18 : 7; ctx.shadowOffsetY = dragging ? 6 : 2;
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = kc; ctx.fill(); ctx.restore();
+      shape(s, t, r, 0); ctx.fillStyle = kc; if (t.fw && t.fh) ctx.globalAlpha *= .55; ctx.fill(); ctx.restore();   // a footprint lets the map's picture show through
       var src = o.tokenSrc ? o.tokenSrc(t) : null, im = src ? pic(src, redraw) : null;
-      if (im) { ctx.save(); ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.clip(); ctx.drawImage(im, -r, -r, r * 2, r * 2); ctx.restore(); }
+      if (im) { ctx.save(); shape(s, t, r, 0); ctx.clip(); ctx.drawImage(im, -r, -r, r * 2, r * 2); ctx.restore(); }
       else if (t.kind === 'obj') { ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.font = 'bold ' + r * 1.1 + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t.icon || (t.light ? '✶' : '◆'), 0, 0); }
       else { ctx.fillStyle = '#fff'; ctx.font = 'bold ' + r * .95 + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText((t.name || '?').replace(/^(the|a|an)\s+/i, '').slice(0, 2).toUpperCase(), 0, 0); }
-      if (fx && fx.type === 'hit') { ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = 'rgba(230,40,30,' + (.6 * (1 - fk)) + ')'; ctx.fill(); }
+      if (fx && fx.type === 'hit') { shape(s, t, r, 0); ctx.fillStyle = 'rgba(230,40,30,' + (.6 * (1 - fk)) + ')'; ctx.fill(); }
       if (fx && fx.type === 'heal') {
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = 'rgba(90,220,120,' + (.4 * (1 - fk)) + ')'; ctx.fill();
+        shape(s, t, r, 0); ctx.fillStyle = 'rgba(90,220,120,' + (.4 * (1 - fk)) + ')'; ctx.fill();
         for (var hi = 0; hi < 2; hi++) { var hk = Math.max(0, fk - hi * .2); ctx.beginPath(); ctx.arc(0, 0, r * (1 + easeOut(hk) * .7), 0, 7); ctx.strokeStyle = 'rgba(110,235,140,' + (1 - hk) * .9 + ')'; ctx.lineWidth = 3 / cam.z; ctx.stroke(); }
       }
       if (fx && fx.type === 'die') { ctx.beginPath(); ctx.arc(0, 0, r * (1 + easeOut(fk) * .9), 0, 7); ctx.strokeStyle = 'rgba(255,255,255,' + (1 - fk) * .8 + ')'; ctx.lineWidth = 4 / cam.z; ctx.stroke(); }
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.lineWidth = Math.max(2.5, r * .1); ctx.strokeStyle = t.hidden ? '#9aa' : kc;
+      shape(s, t, r, 0); ctx.lineWidth = Math.max(2.5, r * .1); ctx.strokeStyle = t.hidden ? '#9aa' : kc;
       if (t.hidden) ctx.setLineDash([r * .3, r * .2]);
       ctx.stroke(); ctx.setLineDash([]);
-      if (t.mine) { ctx.beginPath(); ctx.arc(0, 0, r + 4 / cam.z, 0, 7); ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = 2.5 / cam.z; ctx.stroke(); }
+      if (t.mine) { shape(s, t, r, 4 / cam.z); ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = 2.5 / cam.z; ctx.stroke(); }
       if (V.sel === t.id && !a) {
         var sk = RM ? 1 : Math.min(1, (now - V.selT0) / 320); if (sk < 1) V.busy = true;
-        ctx.beginPath(); ctx.arc(0, 0, r + (6 + (1 - easeOut(sk)) * 16) / cam.z, 0, 7); ctx.strokeStyle = 'rgba(255,255,255,' + (.4 + .6 * sk) + ')'; ctx.lineWidth = 2 / cam.z;
+        shape(s, t, r, (6 + (1 - easeOut(sk)) * 16) / cam.z); ctx.strokeStyle = 'rgba(255,255,255,' + (.4 + .6 * sk) + ')'; ctx.lineWidth = 2 / cam.z;
         ctx.setLineDash([6 / cam.z, 4 / cam.z]); ctx.stroke(); ctx.setLineDash([]);
       }
       if (t.dead) {
@@ -2854,6 +2903,10 @@ CROWS.NAME_IDEAS = {
         ctx.strokeStyle = w.t === 'wall' ? '#ff9f43' : w.t === 'window' ? '#6ec1ff' : w.open ? '#5fe08a' : '#ff5d5d';
         if (w.t === 'door' && w.open) ctx.setLineDash([8 / cam.z, 6 / cam.z]);
         ctx.stroke(); ctx.setLineDash([]);
+        if (id === V.wsel) {
+          ctx.save(); ctx.globalAlpha = .45; ctx.lineCap = 'round'; ctx.lineWidth = 14 / cam.z; ctx.strokeStyle = '#ffd25a'; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); ctx.restore();
+          [[ax, ay], [bx, by]].forEach(function (q) { ctx.beginPath(); ctx.arc(q[0], q[1], 6 / cam.z, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2 / cam.z; ctx.strokeStyle = '#222'; ctx.stroke(); });
+        }
       });
     }
     function draw() {
@@ -3008,6 +3061,7 @@ CROWS.NAME_IDEAS = {
       e.preventDefault();
       if (V.chain) { V.chain = null; redraw(); return; }
       var w = toWorld(e), t = hitToken(w);
+      if (o.ref && !V.player && o.onWallMenu && !(t && movable(t)) && !(V.drag && V.drag.type !== 'pan')) { var wk = hitWall(w); if (wk) { V.wsel = wk.id || wk.a.join() + wk.b.join(); redraw(); o.onWallMenu(wk, e, w); return; } }
       if (!o.onMenu || V.drag && V.drag.type !== 'pan') return;
       o.onMenu(t || null, e, w);
     });
@@ -3025,7 +3079,7 @@ CROWS.NAME_IDEAS = {
       var s = sc(); if (!s) return;
       var w = toWorld(e), tool = V.tool;
       if (e.button === 1 || V.spaceDown || e.button === 2) { V.camTw = null; V.drag = { type: 'pan', sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y }; return; }
-      if (e.altKey && o.onPing) { ping(w.x, w.y, true); return; }
+      if (e.altKey && o.onPing && !(o.ref && !V.player && o.onWallEdit && tool === 'select' && selWall() && endAt(selWall(), w))) { ping(w.x, w.y, true); return; }
       if (tool === 'ping') { ping(w.x, w.y, true); return; }
       if (tool === 'measure') { var a = isHex(s) || s.grid === 'none' ? snap(s, w.x, w.y, 1) : snap(s, w.x, w.y, 1); V.ruler = { a: a, b: a }; V.drag = { type: 'ruler' }; redraw(); return; }
       if (o.ref && !V.player) {
@@ -3050,6 +3104,19 @@ CROWS.NAME_IDEAS = {
       }
       var t = hitToken(w);
       if (o.onPick && o.onPick(t || null)) { redraw(); return; }   // picking a target: the click is the answer, not a selection or a drag
+      if (o.ref && !V.player && tool === 'select' && o.onWallEdit) {   // a wall, door, or window: a handle of the selected one, else any under the pointer (a token you can move wins)
+        var sw = selWall(), he = sw && endAt(sw, w), wk = he ? sw : t && movable(t) ? null : hitWall(w);
+        if (wk) {
+          if (V.sel) { V.sel = null; if (o.onSelect) o.onSelect(null); }
+          V.wsel = wk.id || wk.a.join() + wk.b.join();
+          var js = he && !e.altKey ? jointEnds(wk[he]) : null, og = js ? js.map(function (j) { return j.w; }) : [wk], orig = [];
+          if (js && !js.some(function (j) { return j.w === wk && j.k === he; })) { js.push({ w: wk, k: he }); og.push(wk); }
+          og.forEach(function (g) { if (!orig.some(function (r) { return r[0] === g; })) orig.push([g, g.a.slice(), g.b.slice()]); });
+          V.drag = { type: 'wall', wall: wk, end: he, start: { x: w.x, y: w.y }, sx: e.clientX, sy: e.clientY, orig: orig, ends: js, moved: false };
+          redraw(); return;
+        }
+      }
+      if (V.wsel) V.wsel = null;
       if (t) {
         if (V.sel !== t.id) V.selT0 = Date.now();
         V.sel = t.id; if (o.onSelect) o.onSelect(t);
@@ -3072,11 +3139,20 @@ CROWS.NAME_IDEAS = {
       showTip(d || e.pointerType === 'touch' ? null : hitToken(w), e);
       if (d) {
         if (d.type === 'pan') { cam.x = d.cx - (e.clientX - d.sx) / cam.z; cam.y = d.cy - (e.clientY - d.sy) / cam.z; if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 4) d.click = false; }
-        else if (d.type === 'token') { var pt = snap(s, w.x - d.off.x, w.y - d.off.y, tokenSize(d.token)); d.to = s.grid === 'none' ? { x: w.x - d.off.x, y: w.y - d.off.y } : pt; d.moved = true; V.ghost[d.token.id] = { x: d.to.x, y: d.to.y, until: Date.now() + 60000, drag: true }; }
+        else if (d.type === 'token') { var pt = snapTok(s, w.x - d.off.x, w.y - d.off.y, d.token); d.to = s.grid === 'none' ? { x: w.x - d.off.x, y: w.y - d.off.y } : pt; d.moved = true; V.ghost[d.token.id] = { x: d.to.x, y: d.to.y, until: Date.now() + 60000, drag: true }; }
+        else if (d.type === 'wall') {
+          if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 3) d.moved = true;
+          if (d.moved) {
+            var q;
+            if (d.end) { q = wallSnap(s, w, e); (d.ends || [{ w: d.wall, k: d.end }]).forEach(function (j) { j.w[j.k] = [q.x, q.y]; }); }
+            else { var oa = d.orig[0][1], ob = d.orig[0][2]; q = wallSnap(s, { x: oa[0] + w.x - d.start.x, y: oa[1] + w.y - d.start.y }, e); d.wall.a = [q.x, q.y]; d.wall.b = [ob[0] + q.x - oa[0], ob[1] + q.y - oa[1]]; }
+          }
+        }
         else if (d.type === 'ruler') V.ruler.b = snap(s, w.x, w.y, 1);
         else if (d.type === 'rect') { d.b = d.room ? snapCorner(s, w.x, w.y) : w; }
         else if (d.type === 'paint') o.onPaint(w.x, w.y, V.brush * s.g, d.reveal);
       }
+      if (!d && o.ref && !V.player && V.tool === 'select') { var sw = selWall(); cv.style.cursor = sw && endAt(sw, w) || hitWall(w) ? 'move' : 'default'; }
       redraw();
     });
     function up(e) {
@@ -3090,6 +3166,11 @@ CROWS.NAME_IDEAS = {
           if (r === false) delete V.ghost[d.token.id];
         }
         V.drag = null;
+      } else if (d.type === 'wall') {
+        V.drag = null;
+        if (d.moved && d.orig.some(function (r) { return r[0].a[0] !== r[1][0] || r[0].a[1] !== r[1][1] || r[0].b[0] !== r[2][0] || r[0].b[1] !== r[2][1]; })) {
+          if (Math.hypot(d.wall.b[0] - d.wall.a[0], d.wall.b[1] - d.wall.a[1]) < 1) wallRestore(d); else o.onWallEdit(d.wall);
+        }
       } else if (d.type === 'rect') {
         var a = d.a, b = d.b;
         if (Math.abs(a.x - b.x) > 4 && Math.abs(a.y - b.y) > 4) { if (d.room) o.onRoom({ x1: Math.min(a.x, b.x), y1: Math.min(a.y, b.y), x2: Math.max(a.x, b.x), y2: Math.max(a.y, b.y) }); else if (o.onFogRect) o.onFogRect([[a.x, a.y], [b.x, a.y], [b.x, b.y], [a.x, b.y]], d.fog); }
@@ -3113,7 +3194,9 @@ CROWS.NAME_IDEAS = {
     }
     cv.addEventListener('keydown', function (e) {
       if (e.key === ' ') { V.spaceDown = true; e.preventDefault(); }
-      if (e.key === 'Escape') { V.chain = null; V.ruler = null; V.drag = null; redraw(); }
+      if (e.key === 'Escape' && V.drag && V.drag.type === 'wall') { wallRestore(V.drag); V.drag = null; V.wsel = null; e.preventDefault(); redraw(); return; }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && V.wsel && !V.drag && o.ref && !V.player && o.onErase) { var dw = selWall(); V.wsel = null; if (dw) { e.preventDefault(); o.onErase(dw); redraw(); return; } }
+      if (e.key === 'Escape') { if (V.chain || V.ruler || V.drag) e.preventDefault(); V.chain = null; V.ruler = null; V.drag = null; redraw(); }   // a cancelled ruler or drag keeps Escape from closing more
       if (e.key === 'Enter') { V.chain = null; if (V.drag && V.drag.type === 'poly') finishPoly(); redraw(); }
       if (e.key === '+' || e.key === '=') zoomAt(1.25, V.size.w / 2, V.size.h / 2, true);
       if (e.key === '-') zoomAt(.8, V.size.w / 2, V.size.h / 2, true);
@@ -3157,7 +3240,7 @@ CROWS.NAME_IDEAS = {
 
     return {
       canvas: cv, redraw: redraw, fit: fit, centerOn: centerOn, resize: resize, zoom: function (f) { zoomAt(f, V.size.w / 2, V.size.h / 2, true); },
-      tool: function (t) { V.tool = t; V.chain = null; V.ruler = null; if (!/poly/.test(t)) V.drag = null; cv.style.cursor = t === 'select' ? 'default' : t === 'ping' || t === 'measure' ? 'crosshair' : 'cell'; redraw(); },
+      tool: function (t) { V.tool = t; V.wsel = null; V.chain = null; V.ruler = null; if (!/poly/.test(t)) V.drag = null; cv.style.cursor = t === 'select' ? 'default' : t === 'ping' || t === 'measure' ? 'crosshair' : 'cell'; redraw(); },
       getTool: function () { return V.tool; },
       /* A right-click menu over the map (T.menu), kept inside the host so it shows in fullscreen too. */
       menu: function (x, y, items) { T.menu(x, y, items, host); },
@@ -3166,10 +3249,11 @@ CROWS.NAME_IDEAS = {
       isPlayer: function () { return V.player; },
       select: function (id) { if (V.sel !== id) V.selT0 = Date.now(); V.sel = id; redraw(); },
       selected: function () { return V.sel; },
+      selectWall: function (id) { V.wsel = id || null; redraw(); },
       ping: function (x, y, color) { V.pings.push({ x: x, y: y, t0: Date.now(), color: color }); redraw(); },
       sceneChanged: function (id) {
         if (V.sceneId === id) { redraw(); return; }
-        V.sceneId = id; V.fogMask = null; V.fogImg = null; V.fogPrev = null; V.ghost = {}; V.sel = null; V.chain = null; V.ruler = null;
+        V.sceneId = id; V.fogMask = null; V.fogImg = null; V.fogPrev = null; V.ghost = {}; V.sel = null; V.wsel = null; V.chain = null; V.ruler = null;
         V.shown = {}; V.tw = {}; V.seen = {}; V.born = {}; V.leaving = []; V.fx = {}; V.condT = {}; V.alpha = {}; V.floats = []; V.rings = [];
         V.wallSeen = {}; V.wallT = {}; V.pinSeen = {}; V.pinT = {}; V.primed = false; V.intro = 0; V.sceneT0 = RM ? 0 : Date.now();
         fit();
@@ -3391,7 +3475,7 @@ CROWS.NAME_IDEAS = {
   T.icon = icon; T.REDUCED_MOTION = RM;
   T.SIZES = SIZES; T.KIND_COLOR = KIND_COLOR; T.COND_STYLE = COND_STYLE; T.condStyle = condStyle; T.uid = uid; T.newScene = newScene; T.isHex = isHex; T.hexAt = hexAt; T.hexCenter = hexCenter; T.snap = snap;
   T.dist = dist; T.distText = distText; T.fogDims = fogDims; T.seenOf = seenOf; T.paintSeen = paintSeen; T.paintPoly = paintPoly; T.fillSeen = fillSeen; T.computeVision = computeVision;
-  T.packMask = packMask; T.unpackMask = unpackMask; T.maskAt = maskAt; T.pathBlocked = pathBlocked; T.los = los; T.view = view; T.tokenArt = tokenArt; T.lightsOf = lightsOf;
+  T.packMask = packMask; T.unpackMask = unpackMask; T.maskAt = maskAt; T.pathBlocked = pathBlocked; T.snapTok = snapTok; T.snapCorner = snapCorner; T.footprint = footprint; T.los = los; T.view = view; T.tokenArt = tokenArt; T.lightsOf = lightsOf;
   T.viewers = viewers;
 })();
 
@@ -9448,7 +9532,7 @@ CROWS.NAME_IDEAS = {
     ['blank', 'Blank board', 'An empty board for theater of the mind.']];
   var PRESETS = [['', 'No light'], ['5/5', 'Torch (5/5)'], ['10/10', 'Lantern (10/10)'], ['10/10c', 'Campfire (10/10)'], ['2/2', 'Candle (2/2)'], ['15/15', 'Large fire (15/15)']];
   // [id, name, what it does, hotkey, group]: the palette down the map's left side
-  var TOOLS = [['select', 'Select', 'Move tokens (drag), select, and pan (drag the board). Right-click a token for its details; double-click a door to open or close it.', 'v', 'play'],
+  var TOOLS = [['select', 'Select', 'Move tokens (drag), select, and pan (drag the board). Right-click a token for its details; double-click a door to open or close it. Drag a wall, door, or window to move it, or drag its end to move a corner; Delete removes it; right-click it for more.', 'v', 'play'],
     ['measure', 'Measure', 'Drag to measure squares or hexes.', 'm', 'play'], ['ping', 'Ping', 'Click to point something out to everyone (Alt-click works in any tool).', 'p', 'play'],
     ['wall', 'Wall', 'Click points to draw walls that block sight and movement. Double-click or Esc to finish; Shift snaps to half squares.', 'w', 'walls'],
     ['door', 'Door', 'Click both ends of a door (closed doors block sight and movement).', 'd', 'walls'], ['window', 'Window', 'A window blocks movement but not sight.', 'n', 'walls'],
@@ -9458,6 +9542,7 @@ CROWS.NAME_IDEAS = {
     ['pin', 'Pin', 'Click to place a labeled pin (a place, a clue, a door to remember).', 'i', 'pins']];
   var CARRIERS = ['pc', 'ally'];
 
+  var escBound = false;
   var U = ui.vtt = ui.vtt || { view: null, built: false, sel: null, mask: null, sig: '', art: {}, playerView: false, cols: 40, hurt: 1, spawn: 0 };
   
   function V() { return state.vtt; }
@@ -9852,7 +9937,7 @@ CROWS.NAME_IDEAS = {
   /* The fog mask for this scene (worked out again only when something that affects it changed). */
   function maskFor(sc) {
     if (sc.fog === 'off') return null;
-    var sig = [sc.id, sc.fog, sc.ambient, sc.w, sc.h, sc.g, sc.seen, JSON.stringify(sc.walls), JSON.stringify(sc.tokens.map(function (t) { return [t.id, t.x, t.y, t.kind, t.dead, t.hidden, t.light, t.sight, t.sees, t.size]; }))].join('|');
+    var sig = [sc.id, sc.fog, sc.ambient, sc.w, sc.h, sc.g, sc.seen, JSON.stringify(sc.walls), JSON.stringify(sc.tokens.map(function (t) { return [t.id, t.x, t.y, t.kind, t.dead, t.hidden, t.light, t.sight, t.sees, t.size, t.blocks, t.fw, t.fh]; }))].join('|');
     if (sig === U.sig && U.mask) return U.mask;
     var m = Tbl.computeVision(sc);
     U.mask = m; U.sig = sig;
@@ -9889,6 +9974,7 @@ CROWS.NAME_IDEAS = {
       var pc = (t.conds || []).filter(function (k) { return k !== 'Hidden'; });
       if (pc.length) o.conds = pc;
       if (t.icon) o.icon = t.icon;
+      if (t.fw && t.fh) { o.fw = t.fw; o.fh = t.fh; }
       if (t.label) o.label = true;
       if (t.speed && t.pcId) o.speed = t.speed;
       var k = artKey(t), src = artSrc(k);
@@ -9916,7 +10002,7 @@ CROWS.NAME_IDEAS = {
   /* A token moved by the Ref's hand (free) or a player's (blocked by walls). Returns false if it can't. */
   function moveToken(sc, t, x, y, byPlayer) {
     var from = { x: t.x, y: t.y }, to = { x: x, y: y };
-    if (byPlayer && Tbl.pathBlocked(sc, from, to)) return false;
+    if (byPlayer && Tbl.pathBlocked(sc, from, to, t.id)) return false;
     var n = Tbl.dist(sc, from, to);
     t.x = x; t.y = y;
     if (sc.kind === 'travel' && t.kind === 'pc') {
@@ -10005,6 +10091,8 @@ CROWS.NAME_IDEAS = {
       onWall: function (w) { var sc = cur(); sc.walls.push({ id: Tbl.uid('w'), a: w.a, b: w.b, t: w.t, open: false }); changed(); render(); },
       onErase: function (w) { var sc = cur(); sc.walls = sc.walls.filter(function (k) { return k !== w; }); U.view.flash((w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2, '#ff9f43'); changed(); render(); },
       onDoor: function (w) { w.open = !w.open; changed(); render(); },
+      onWallEdit: function (w) { changed(); render(); },
+      onWallMenu: function (w, e, pt) { var sc = cur(); if (sc) U.view.menu(e.clientX, e.clientY, wallMenu(sc, w, pt)); },
       onRoom: function (r) {
         var sc = cur(), pts = [[r.x1, r.y1], [r.x2, r.y1], [r.x2, r.y2], [r.x1, r.y2]];
         for (var i = 0; i < 4; i++) sc.walls.push({ id: Tbl.uid('w'), a: pts[i], b: pts[(i + 1) % 4], t: 'wall', open: false });
@@ -10034,6 +10122,15 @@ CROWS.NAME_IDEAS = {
     });
     U.ui = el('div', { class: 'vtt-ui' });
     U.L = {};
+    if (!escBound) {
+      escBound = true;
+      // Escape (once the right-click menu, a pop-up, or the map's own ruler hasn't taken it) stops picking a target, else closes the open drawer.
+      document.addEventListener('keydown', function (e) {
+        if (e.key !== 'Escape' || e.defaultPrevented || !U.host || !U.host.getClientRects().length) return;
+        if (U.pick) { e.preventDefault(); endPick('No target picked.'); render(); return; }
+        if (U.drawer) { e.preventDefault(); U.drawer = null; render(); }
+      });
+    }
     ['tl', 'tc', 'tr', 'tools', 'zoom', 'roster', 'ticker', 'roll', 'hud', 'floats', 'ask', 'drawer', 'banners', 'tip', 'empty'].forEach(function (k) { U.L[k] = el('div', { class: 'vtt-' + k }); U.ui.appendChild(U.L[k]); });
     // The bars (scene, clock and fight, share and view, tools, zoom, tokens) are movable: top, bottom, either side (T.docks).
     Tbl.docks(U.ui, [['tl', 'top'], ['tc', 'top'], ['tr', 'top'], ['tools', 'left'], ['zoom', 'right'], ['roster', 'bottom']].map(function (b) { return { id: b[0], el: U.L[b[0]], zone: b[1] }; }), { key: 'crows-ref-bars' });
@@ -10076,7 +10173,8 @@ CROWS.NAME_IDEAS = {
       } });
     } else if (p && !x && S().combat.round) out.push({ label: 'Not in the fight', off: true });
     if (t.kind === 'obj' || t.kind === 'npc') out.push({ label: 'Rename…', fn: function () { var v = prompt('Name', t.name); if (v !== null && v.trim()) { t.name = v.trim().slice(0, 40); changed(); render(); } } });
-    if (t.kind === 'obj') out.push({ label: 'Show its label on the map', on: !!t.label, fn: function () { t.label = !t.label; changed(); render(); } });
+    if (t.kind === 'obj') out.push({ label: 'Show its label on the map', on: !!t.label, fn: function () { t.label = !t.label; changed(); render(); } },
+      { label: 'Blocks sight and movement', on: !!t.blocks, hint: 'Walls of its footprint stop the party\'s line of sight and players\' moves', fn: function () { setBlocks(t, !t.blocks); changed(); render(); } });
     out.push({ sep: true },
       { label: 'Details…', fn: function () { openDrawer('token'); } },
       { label: t.hidden ? 'Show to the players' : 'Hide from the players', fn: function () { t.hidden = !t.hidden; changed(); render(); } },
@@ -10089,6 +10187,23 @@ CROWS.NAME_IDEAS = {
       { label: 'Center the view on it', fn: function () { U.view.centerOn(t.x, t.y, true); } },
       { label: 'Duplicate', fn: function () { var c2 = JSON.parse(JSON.stringify(t)); c2.id = Tbl.uid('k'); c2.cid = null; c2.pcId = null; c2.link = null; c2.x += sc.g; sc.tokens.push(c2); U.sel = c2.id; changed(); render(); } },
       { label: 'Remove from the map', danger: true, fn: function () { removeToken(sc, t); } });
+    return out;
+  }
+  /* Right-click a wall, door, or window: open or close it, change what it is, cut it in two, delete it. */
+  function wallMenu(sc, w, pt) {
+    var name = { wall: 'Wall', door: 'Door · ' + (w.open ? 'open' : 'closed'), window: 'Window' }[w.t] || 'Wall', out = [{ head: name + (w.gen ? ' · from the map' : '') }];
+    function set(t) { w.t = t; if (t !== 'door') w.open = false; changed(); render(); }
+    if (w.t === 'door') out.push({ label: w.open ? 'Close it' : 'Open it', fn: function () { w.open = !w.open; changed(); render(); } });
+    out.push({ label: 'Make it', sub: [['wall', 'Wall'], ['door', 'Door'], ['window', 'Window']].map(function (k) { return { label: k[1], on: w.t === k[0], fn: function () { set(k[0]); } }; }) },
+      { label: 'Split here', hint: 'Cut it in two at this point (to move part of it, or make part a door)', fn: function () {
+        var dx = w.b[0] - w.a[0], dy = w.b[1] - w.a[1], u = Math.max(0, Math.min(1, ((pt.x - w.a[0]) * dx + (pt.y - w.a[1]) * dy) / (dx * dx + dy * dy || 1)));
+        var c = Tbl.snapCorner(sc, w.a[0] + u * dx, w.a[1] + u * dy, true);
+        if (c.x === w.a[0] && c.y === w.a[1] || c.x === w.b[0] && c.y === w.b[1]) return;
+        var nw = { id: Tbl.uid('w'), a: [c.x, c.y], b: w.b, t: w.t, open: w.open }; if (w.gen) nw.gen = w.gen;
+        w.b = [c.x, c.y]; sc.walls.splice(sc.walls.indexOf(w) + 1, 0, nw); changed(); render();
+      } },
+      { sep: true },
+      { label: 'Delete', danger: true, fn: function () { sc.walls = sc.walls.filter(function (k) { return k !== w; }); U.view.flash((w.a[0] + w.b[0]) / 2, (w.a[1] + w.b[1]) / 2, '#ff9f43'); changed(); render(); } });
     return out;
   }
   function boardMenu(sc, w) {
@@ -10137,7 +10252,6 @@ CROWS.NAME_IDEAS = {
 
   function onKey(e) {
     var sc = cur(), t = sc && tok(sc, U.sel);
-    if (e.key === 'Escape' && U.pick) { endPick('No target picked.'); render(); return; }
     if (t && (e.key === 'Delete' || e.key === 'Backspace')) { e.preventDefault(); removeToken(sc, t); return; }
     if (e.ctrlKey || e.metaKey || e.altKey || !sc) return;
     var k = e.key.toLowerCase(), hot = TOOLS.filter(function (x) { return x[3] === k; })[0];
@@ -10711,8 +10825,16 @@ CROWS.NAME_IDEAS = {
       el('p', { class: 'fine', text: 'Own sight: how far it sees with no light (Dark Senses: 10+). Speed shows the move range while dragging.' }));
     else if (t.kind === 'foe') kids.push(el('label', { class: 'field' }, ['Speed', numIn(t, 'speed', 0, 30)]));
     kids.push(el('div', { class: 'checks' }, [CARRIERS.indexOf(t.kind) >= 0 ? checkIn(t, 'sees', 'Gives the party sight', 'Off: this token doesn’t see for the party (a blinded crow).') : null,
-      t.kind !== 'obj' ? null : checkIn(t, 'label', 'Show its name')]));
+      t.kind !== 'obj' ? null : checkIn(t, 'label', 'Show its name'),
+      t.kind !== 'obj' ? null : el('label', { class: 'check', title: 'Its footprint stops the party\'s line of sight and players\' moves (a pillar, a bookcase)' }, [
+        el('input', { type: 'checkbox', checked: !!t.blocks, onchange: function () { setBlocks(t, this.checked); changed(); render(); } }), ' Blocks sight and movement'])]));
+    if (t.kind === 'obj' && t.fw && t.fh) kids.push(el('div', { class: 'row center' }, ['Footprint ', numIn(t, 'fw', 1, 40, function () { t.fw = Math.round(t.fw) || 1; }, '4rem'), ' × ', numIn(t, 'fh', 1, 40, function () { t.fh = Math.round(t.fh) || 1; }, '4rem'), ' squares']));
     return el('div', { class: 'dr-stack' }, kids);
+  }
+  /* Make an object block (a footprint the size of its token, unless it has one) or stop blocking (it keeps its footprint). */
+  function setBlocks(t, on) {
+    t.blocks = !!on;
+    if (on && !(t.fw && t.fh)) { t.fw = t.fh = Math.max(1, Math.round(t.size || 1)); }
   }
   function sceneSettings(sc) {
     var name = el('input', { type: 'text', class: 'in', value: sc.name, maxlength: 60, 'aria-label': 'Scene name' }); name.addEventListener('change', function () { sc.name = this.value.slice(0, 60) || 'Scene'; changed(); render(); });
@@ -10922,14 +11044,16 @@ CROWS.NAME_IDEAS = {
 </script>
 <script>
 /*
- * Ref Screen: map objects. A "map kit" is the furniture, lights, and environment of one map picture, kept in state.mapKits[mapId]
- * ({ objects, env, src: 'ai' | 'auto' | 'ref', at, noAsk }; positions are fractions of that map's picture). Kits come from:
+ * Ref Screen: map objects. A "map kit" is the walls, doors, blocking objects, and environment of one map picture, kept in state.mapKits[mapId]
+ * ({ objects, walls, env, src: 'ai' | 'auto' | 'ref', at, noAsk }; positions are fractions of that map's picture; walls are { x1, y1, x2, y2, door };
+ * an object with `blocks` becomes a footprint token, sized to the scene's grid, that stops sight and movement). Kits come from:
  *   - detection when a map is uploaded or the Ref asks (generateKit): Claude's vision through the accounts server (api.php map.detect, when
  *     logged in and the server has a key), otherwise the browser's own shape finding (src/shared/map-vision.js, src 'auto');
  *   - the Ref saving the objects and environment standing on a scene's map (saveFromScene, src 'ref').
  * A map with labeled and unlabeled versions (siblings: an official map's variants, uploads with matching titles, or uploads the Ref paired in
  * state.mapPairs) is read on its labeled version, and the objects are carried to every other version by aligning the pictures.
- * Loading a map onto a scene (mapLoaded, called from ref-vtt.js) places the kit, or offers to generate one. Tokens are kind 'obj' with gen = map id.
+ * Loading a map onto a scene (mapLoaded, called from ref-vtt.js) places the kit, or offers to generate one. Tokens are kind 'obj' and walls are
+ * scene walls, each with gen = map id.
  */
 (function () {
   'use strict';
@@ -10939,7 +11063,7 @@ CROWS.NAME_IDEAS = {
   var el = A.el, toast = A.toast, plural = A.plural, clone = A.clone, REFD = window.REF, Tbl = window.CrowsTable;
   var state = A.state; A.share('state', function (v) { state = v; });
   var KINDS_OK = { dungeon: 1, open: 1, village: 1 };
-  var ICONS = { chest: '▣', table: '▭', chair: '⊓', bed: '▬', shelf: '≡', altar: '✚', statue: '♜', pillar: '●', barrel: '◍', crate: '▢', well: '◎', fountain: '≈',
+  var ICONS = { boulder: '⬣', tree: '♣', chest: '▣', table: '▭', chair: '⊓', bed: '▬', shelf: '≡', altar: '✚', statue: '♜', pillar: '●', barrel: '◍', crate: '▢', well: '◎', fountain: '≈',
     trap: '⚠', door: '▯', stairs: '☰', light: '✶', plant: '♣', rubble: '∴', body: '☠', other: '◆' };
   var LABELS = /\b(labell?ed|labels?|key|gm|dm|players?|unlabell?ed|no labels)\b/ig;
   var running = {}, waiting = {};   // map id -> the generation under way; map id -> the scene waiting for its objects
@@ -11010,7 +11134,7 @@ CROWS.NAME_IDEAS = {
   function envKeys() { return (REFD.ENV || []).map(function (e) { return [e[0], e[1]]; }); }
   function askServer(body) {
     return window.CrowsCloud.api('POST', 'map.detect', '', body).then(function (j) {
-      return { objects: Array.isArray(j.objects) ? j.objects : [], env: Array.isArray(j.env) ? j.env : [] };
+      return { objects: Array.isArray(j.objects) ? j.objects : [], walls: Array.isArray(j.walls) ? j.walls : [], env: Array.isArray(j.env) ? j.env : [] };
     });
   }
   /* Claude's reading of the picture, in one call or (a wide map) up to four overlapping tiles with their results mapped back and de-duplicated. */
@@ -11024,26 +11148,52 @@ CROWS.NAME_IDEAS = {
       var whole = jobs.length === 1;
       return ask(Object.assign({ image: whole ? V.jpeg(img, 1600, .85) : cropJpeg(img, t.x0, t.y0, t.x1, t.y1, 1600),
         cols: whole ? cols : Math.round(cols * (t.x1 - t.x0)), rows: cols ? Math.round(cols * (t.y1 - t.y0) * H / W) : 0 }, base)).then(function (r) {
-        r.objects = r.objects.map(function (o) { var c = clone(o); c.x = t.x0 + o.x * (t.x1 - t.x0); c.y = t.y0 + o.y * (t.y1 - t.y0); c.w = o.w * (t.x1 - t.x0); c.h = o.h * (t.y1 - t.y0); return c; });
+        var X = function (v) { return t.x0 + v * (t.x1 - t.x0); }, Y = function (v) { return t.y0 + v * (t.y1 - t.y0); };
+        r.objects = r.objects.map(function (o) { var c = clone(o); c.x = X(o.x); c.y = Y(o.y); c.w = o.w * (t.x1 - t.x0); c.h = o.h * (t.y1 - t.y0); c.blocks = true; return c; });
+        r.walls = (r.walls || []).map(function (w) { return { x1: X(w.x1), y1: Y(w.y1), x2: X(w.x2), y2: Y(w.y2), door: !!w.door }; });
         return r;
       });
     })).then(function (rs) {
-      var out = [], env = [];
+      var out = [], walls = [], env = [];
+      function near(a, b) { return Math.hypot(a.x1 - b.x1, a.y1 - b.y1) + Math.hypot(a.x2 - b.x2, a.y2 - b.y2) < .02 || Math.hypot(a.x1 - b.x2, a.y1 - b.y2) + Math.hypot(a.x2 - b.x1, a.y2 - b.y1) < .02; }
       rs.forEach(function (r) {
         r.env.forEach(function (k) { if (env.indexOf(k) < 0) env.push(k); });
+        r.walls.forEach(function (w) { if (!walls.some(function (p) { return near(p, w); })) walls.push(w); });   // tiles overlap: the same wall twice
         r.objects.forEach(function (o) {
           var dup = out.some(function (p) { return String(p.name).toLowerCase() === String(o.name).toLowerCase() && Math.hypot(p.x - o.x, p.y - o.y) < .02; });
           if (!dup) out.push(o);
         });
       });
-      return { objects: out, env: env };
+      return { objects: out, walls: walls, env: env };
     });
   }
   function cleanObjects(list) {
     return (list || []).filter(function (o) { return o && isFinite(o.x) && isFinite(o.y) && o.x >= 0 && o.x <= 1 && o.y >= 0 && o.y <= 1; }).slice(0, 80).map(function (o) {
-      return { name: String(o.name || 'Object').slice(0, 40), type: ICONS[o.type] ? o.type : 'other', x: +o.x, y: +o.y, w: Math.max(0.002, +o.w || 0.02), h: Math.max(0.002, +o.h || 0.02),
+      var c = { name: String(o.name || 'Object').slice(0, 40), type: ICONS[o.type] ? o.type : 'other', x: +o.x, y: +o.y, w: Math.max(0.002, +o.w || 0.02), h: Math.max(0.002, +o.h || 0.02),
         light: !!o.light, hidden: !!o.hidden, note: String(o.note || '').slice(0, 200) };
+      ['blocks', 'shown', 'fire'].forEach(function (k) { if (o[k]) c[k] = true; });
+      if (typeof o.lp === 'string') c.lp = o.lp;
+      return c;
     });
+  }
+  function cleanWalls(list) {
+    var ok = function (v) { return typeof v === 'number' && isFinite(v) && v >= -0.05 && v <= 1.05; };
+    return (Array.isArray(list) ? list : []).filter(function (w) { return w && ok(w.x1) && ok(w.y1) && ok(w.x2) && ok(w.y2); }).slice(0, 400).map(function (w) {
+      return { x1: +w.x1, y1: +w.y1, x2: +w.x2, y2: +w.y2, door: !!w.door };
+    });
+  }
+  /* Walls carried to another version of the map by an align() result; those whose middle leaves the picture are dropped. */
+  function moveWalls(walls, T) {
+    return (walls || []).map(function (w) { return { x1: w.x1 * T.sx + T.ox, y1: w.y1 * T.sy + T.oy, x2: w.x2 * T.sx + T.ox, y2: w.y2 * T.sy + T.oy, door: !!w.door }; })
+      .filter(function (w) { var mx = (w.x1 + w.x2) / 2, my = (w.y1 + w.y2) / 2; return mx >= 0 && mx <= 1 && my >= 0 && my <= 1; });
+  }
+  /* "3 objects and 40 walls": what a kit holds. */
+  function kitText(k) {
+    var nw = (k.walls || []).length, nd = (k.walls || []).filter(function (w) { return w.door; }).length, parts = [];
+    if (nw - nd) parts.push(plural(nw - nd, 'wall'));
+    if (nd) parts.push(plural(nd, 'door'));
+    if (k.objects.length) parts.push(plural(k.objects.length, 'blocking object'));
+    return parts.length ? parts.join(', ') : 'nothing';
   }
 
   /* Find the objects on a map (and its other versions) and keep them as its kit. Resolves with the kit; never throws. opts: { cols, kind, force,
@@ -11069,8 +11219,9 @@ CROWS.NAME_IDEAS = {
         return artRemote() ? detectRemote(img, info).then(function (r2) { used = 'the site\'s key'; return r2; }) : Promise.reject(new Error('no login'));
       });
       return remote.then(function (r) { r.src = 'ai'; r.used = used; return r; }, function (e) {
-        var r = V.detect(V.pixels(img, 1024), { cols: info.cols });
-        return { objects: r || [], env: [], src: 'auto', why: ownWhy ? ownWhy + (artRemote() ? '; the server can\'t name them right now' : '') : !artRemote() ? 'log in, or add your own key in the AI tab, for named objects' : e && e.status === 429 ? 'the server\'s hourly limit is used up' : 'the server can\'t name them right now' };
+        var r = V.detect(V.pixels(img, 1024), { cols: info.cols }), sq = info.cols ? 1 / info.cols : 0.03;
+        r = (r || []).filter(function (o) { return !o.light && o.w >= sq * 1.5 && o.h * img.naturalHeight / img.naturalWidth >= sq * 1.5; });   // large shapes only; no lights
+        return { objects: r, walls: [], env: [], src: 'auto', why: ownWhy ? ownWhy + (artRemote() ? '; the server can\'t name them right now' : '') : !artRemote() ? 'log in, or add your own key in the AI tab, for named objects' : e && e.status === 429 ? 'the server\'s hourly limit is used up' : 'the server can\'t name them right now' };
       }).then(function (r) { r.img = img; return r; });
     })).then(function (r) {
       var at = Date.now(), noAsk = !!((kits()[srcId] || {}).noAsk), env = {};
@@ -11078,7 +11229,7 @@ CROWS.NAME_IDEAS = {
       if (r && r.used) used = r.used;
       if (r) {
         r.env.forEach(function (k) { env[k] = true; });
-        made = { objects: cleanObjects(r.objects), env: env, src: r.src, at: at, noAsk: noAsk };
+        made = { objects: cleanObjects(r.objects), walls: cleanWalls(r.walls), env: env, src: r.src, at: at, noAsk: noAsk };
         kits()[srcId] = made;
       } else made = srcKit;
       // carry them to the other versions that don't have a kit the Ref saved
@@ -11091,7 +11242,7 @@ CROWS.NAME_IDEAS = {
             return (a ? Promise.resolve(a) : loadImg(srcId).then(function (i) { return V.pixels(i, 512); })).then(function (pa) {
               var T = V.align(pa, V.pixels(img2, 512));
               if (!T) return;
-              kits()[s] = { objects: cleanObjects(V.transform(made.objects, T)), env: clone(made.env), src: made.src, at: at, noAsk: !!(kits()[s] && kits()[s].noAsk) };
+              kits()[s] = { objects: cleanObjects(V.transform(made.objects, T)), walls: moveWalls(made.walls, T), env: clone(made.env), src: made.src, at: at, noAsk: !!(kits()[s] && kits()[s].noAsk) };
             });
           }).catch(function () { /* that version's picture is missing or can't be read */ });
         });
@@ -11101,8 +11252,8 @@ CROWS.NAME_IDEAS = {
       save();
       var k = kitOf(id) || made;
       if (!opts.quiet) {
-        var n = k ? k.objects.length : 0, via = k && k.src === 'ai' && used ? ', using ' + used : '';
-        toast(!k ? 'Couldn\'t read objects from ' + title + '.' : n ? 'Found ' + plural(n, 'object') + ' on ' + title + (k.src === 'auto' ? ', by shape only (' + why + ').' : via + '.') : 'Found no objects on ' + title + (k.src === 'auto' ? ' by shape (' + why + ').' : via + '.'), 5000);
+        var n = k ? k.objects.length + (k.walls || []).length : 0, via = k && k.src === 'ai' && used ? ', using ' + used : '';
+        toast(!k ? 'Couldn\'t read objects from ' + title + '.' : n ? 'Found ' + kitText(k) + ' on ' + title + (k.src === 'auto' ? ', by shape only (' + why + ').' : via + '.') : 'Found no walls or blocking objects on ' + title + (k.src === 'auto' ? ' by shape (' + why + ').' : via + '.'), 5000);
       }
       var sid = waiting[id]; delete waiting[id];
       if (sid && k) { var sc = scenes().filter(function (s) { return s.id === sid; })[0]; if (sc && mapIdOf(sc.map) === id) { placeKit(sc, id); vttChanged(); render(); } }
@@ -11120,6 +11271,7 @@ CROWS.NAME_IDEAS = {
   // ------------------------------------------------------------------ kits on scenes
   function scenes() { return (state.vtt && state.vtt.scenes) || []; }
   function genTokens(sc, id) { return sc.tokens.filter(function (t) { return t.gen === id; }); }
+  function genWalls(sc, id) { return (sc.walls || []).filter(function (w) { return w.gen === id; }); }
   function objTokens(sc) { return sc.tokens.filter(function (t) { return t.kind === 'obj'; }); }
   function mergeEnv(sc, env) {
     var added = 0; sc.env = sc.env || {};
@@ -11131,18 +11283,34 @@ CROWS.NAME_IDEAS = {
     });
     return added;
   }
-  /* Put a kit's objects (and environment) on the scene: tokens the Ref sees (lights the players see too). Returns how many were placed; a scene that
-     already has this map's generated tokens gets none. */
+  /* Put a kit's walls, doors, objects (and environment) on the scene: walls snap to the grid's half squares, a blocking object gets a footprint of
+     whole squares on the scene's grid, other objects are tokens the Ref sees (lights the players see too). Returns how many pieces were placed; a
+     scene that already has this map's generated tokens or walls gets none. */
   function placeKit(sc, id, opts) {
     var k = kitOf(id); if (!k || !sc.w || !sc.g) return 0;
-    if (genTokens(sc, id).length && !(opts && opts.again)) return 0;
-    var n = 0;
+    if ((genTokens(sc, id).length || genWalls(sc, id).length) && !(opts && opts.again)) return 0;
+    var n = 0, g = sc.g;
     k.objects.forEach(function (o) {
-      var size = Math.max(1, Math.round(Math.max(o.w * sc.w, o.h * sc.h) / sc.g)), p = Tbl.snap(sc, o.x * sc.w, o.y * sc.h, size);
+      var size, p, fw = 0, fh = 0;
+      if (o.blocks) {
+        fw = Math.max(1, Math.min(40, Math.round(o.w * sc.w / g))); fh = Math.max(1, Math.min(40, Math.round(o.h * sc.h / g))); size = Math.min(fw, fh);
+        p = Tbl.snapTok(sc, o.x * sc.w, o.y * sc.h, { fw: fw, fh: fh });
+      } else { size = Math.max(1, Math.round(Math.max(o.w * sc.w, o.h * sc.h) / g)); p = Tbl.snap(sc, o.x * sc.w, o.y * sc.h, size); }
       var lp = /^(\d+)\/(\d+)/.exec(o.lp || '5/5') || [0, 5, 5], light = o.light ? { b: +lp[1], d: +lp[2], on: true } : null;
       if (light && o.fire) light.fire = true;
-      sc.tokens.push({ id: Tbl.uid('k'), name: o.name || 'Object', kind: 'obj', x: p.x, y: p.y, size: size, hidden: !!o.hidden || (!o.light && !o.shown), speed: 5,
-        gen: id, otype: o.type || 'other', secret: !!o.hidden, icon: ICONS[o.type] || (o.light ? '✶' : '◆'), light: light, label: false, locked: true, note: o.note || '' });
+      var t = { id: Tbl.uid('k'), name: o.name || 'Object', kind: 'obj', x: p.x, y: p.y, size: size, hidden: !!o.hidden || (!o.light && !o.shown), speed: 5,
+        gen: id, otype: o.type || 'other', secret: !!o.hidden, icon: ICONS[o.type] || (o.light ? '✶' : '◆'), light: light, label: false, locked: true, note: o.note || '' };
+      if (o.blocks) { t.blocks = true; t.fw = fw; t.fh = fh; }
+      sc.tokens.push(t);
+      n++;
+    });
+    var have = {};
+    (sc.walls || (sc.walls = [])).forEach(function (w) { have[w.a.concat(w.b).join(',')] = have[w.b.concat(w.a).join(',')] = true; });
+    (k.walls || []).forEach(function (w) {
+      var a = Tbl.snapCorner(sc, w.x1 * sc.w, w.y1 * sc.h, true), b = Tbl.snapCorner(sc, w.x2 * sc.w, w.y2 * sc.h, true), key = [a.x, a.y, b.x, b.y].join(',');
+      if (Math.hypot(a.x - b.x, a.y - b.y) < g * .25 || have[key]) return;   // shorter than the grid can show, or already there
+      have[key] = have[[b.x, b.y, a.x, a.y].join(',')] = true;
+      sc.walls.push({ id: Tbl.uid('w'), a: [a.x, a.y], b: [b.x, b.y], t: w.door ? 'door' : 'wall', open: false, gen: id });
       n++;
     });
     var e = mergeEnv(sc, k.env);
@@ -11150,11 +11318,12 @@ CROWS.NAME_IDEAS = {
     return n;
   }
   function removeGen(sc, id) {
-    var n = genTokens(sc, id).length; sc.tokens = sc.tokens.filter(function (t) { return t.gen !== id; });
+    var n = genTokens(sc, id).length + genWalls(sc, id).length;
+    sc.tokens = sc.tokens.filter(function (t) { return t.gen !== id; }); sc.walls = (sc.walls || []).filter(function (w) { return w.gen !== id; });
     if (n) vttChanged();
     return n;
   }
-  /* Keep the objects (all the scene's marker tokens) and environment on the scene's map as that map's kit; offers to copy to its other versions. */
+  /* Keep the walls, doors, objects (all the scene's marker tokens), and environment on the scene's map as that map's kit; offers to copy to its other versions. */
   function saveFromScene(sc) {
     var id = mapIdOf(sc && sc.map); if (!id) return toast('Put a map on this scene first.');
     if (!sc.w || !sc.h) return;
@@ -11163,15 +11332,17 @@ CROWS.NAME_IDEAS = {
         light: !!t.light, hidden: t.secret != null ? !!t.secret : !!t.hidden && !!t.light, note: t.note || '' };
       if (!t.light && !t.hidden) o.shown = true;
       if (t.light) { o.lp = t.light.b + '/' + t.light.d; if (t.light.fire) o.fire = true; }
+      if (t.fw && t.fh) { o.w = t.fw * sc.g / sc.w; o.h = t.fh * sc.g / sc.h; if (t.blocks) o.blocks = true; }
       return o;
     });
+    var walls = (sc.walls || []).map(function (w) { return { x1: w.a[0] / sc.w, y1: w.a[1] / sc.h, x2: w.b[0] / sc.w, y2: w.b[1] / sc.h, door: w.t === 'door' }; });
     var env = {}; Object.keys(sc.env || {}).forEach(function (k) { if (sc.env[k]) env[k] = true; });
     var old = kits()[id];
-    kits()[id] = { objects: objs, env: env, src: 'ref', at: Date.now(), noAsk: !!(old && old.noAsk) };
-    objTokens(sc).forEach(function (t) { t.gen = id; });
+    kits()[id] = { objects: objs, walls: walls, env: env, src: 'ref', at: Date.now(), noAsk: !!(old && old.noAsk) };
+    objTokens(sc).forEach(function (t) { t.gen = id; }); (sc.walls || []).forEach(function (w) { w.gen = id; });
     save();
     var others = siblings(id).filter(function (s) { return s !== id; });
-    toast('Saved ' + plural(objs.length, 'object') + (Object.keys(env).length ? ' and the environment' : '') + ' for ' + titleOf(id) + '.');
+    toast('Saved ' + kitText(kits()[id]) + (Object.keys(env).length ? ' and the environment' : '') + ' for ' + titleOf(id) + '.');
     if (others.length) ask('Copy to the other versions?', 'Carry these objects over to ' + others.map(titleOf).join(', ') + '? Their own saved sets are replaced.', [
       { label: 'Copy to ' + plural(others.length, 'other version'), primary: true, fn: function () { copyKit(id, others); } }, { label: 'Only this one' }]);
     render();
@@ -11186,7 +11357,7 @@ CROWS.NAME_IDEAS = {
         return p.then(function () {
           return loadImg(s).then(function (i2) {
             var T = V.align(pa, V.pixels(i2, 512)); if (!T) return;
-            kits()[s] = { objects: cleanObjects(V.transform(k.objects, T)), env: clone(k.env), src: k.src, at: Date.now(), noAsk: !!(kits()[s] && kits()[s].noAsk) }; done++;
+            kits()[s] = { objects: cleanObjects(V.transform(k.objects, T)), walls: moveWalls(k.walls, T), env: clone(k.env), src: k.src, at: Date.now(), noAsk: !!(kits()[s] && kits()[s].noAsk) }; done++;
           }).catch(function () { /* unreadable */ });
         });
       }, Promise.resolve());
@@ -11220,17 +11391,17 @@ CROWS.NAME_IDEAS = {
     var k = kitOf(id), title = titleOf(id);
     if (k) {
       var n = placeKit(sc, id);
-      if (n) { toast('Placed ' + plural(n, 'object') + ' on ' + title + ' from its saved set.'); render(); }
+      if (n) { toast('Placed ' + kitText(k) + ' on ' + title + ' from its saved set.'); render(); }
       return;
     }
     if (running[id]) { waiting[id] = sc.id; toast('Still looking for objects on ' + title + '; they go on the map when found.'); return; }
     if ((kits()[id] || {}).noAsk || objTokens(sc).length) return;
-    ask('Generate objects for ' + title + '?', 'This map has no objects yet. Generate them? (Furniture, chests, altars, and lights are found from the picture.)', [
+    ask('Generate objects for ' + title + '?', 'This map has no walls or objects yet. Generate them? (Walls, doors, and large objects that block sight are found from the picture.)', [
       { label: 'Generate', primary: true, fn: function () { generateHere(sc, id); } }, { label: 'Not now' },
       { label: 'Don\'t ask for this map', fn: function () { setNoAsk(id, true); } }]);
   }
   function setNoAsk(id, on) {
-    var k = kits()[id] || (kits()[id] = { objects: [], env: {}, src: '', at: 0, noAsk: false });
+    var k = kits()[id] || (kits()[id] = { objects: [], walls: [], env: {}, src: '', at: 0, noAsk: false });
     k.noAsk = !!on; save(); render();
   }
   /* Generate for this scene's map and put the objects on it (replacing any generated ones when `again`). */
@@ -11240,7 +11411,7 @@ CROWS.NAME_IDEAS = {
     generateKit(id, { cols: colsOf(id, sc), kind: sc.kind, force: !!again }).then(function (k) {
       if (!again || !k || mapIdOf(sc.map) !== id) return;
       removeGen(sc, id);
-      var n = placeKit(sc, id, { again: true }); toast('Placed ' + plural(n, 'object') + '.'); vttChanged(); render();
+      var n = placeKit(sc, id, { again: true }); toast(n ? 'Placed ' + kitText(k) + '.' : 'Nothing to place.'); vttChanged(); render();
     });
   }
 
@@ -11248,14 +11419,14 @@ CROWS.NAME_IDEAS = {
   /* The board menu's "Map objects" submenu for the scene (null when it has no map). */
   function menuItems(sc) {
     var id = mapIdOf(sc && sc.map); if (!id) return null;
-    var k = kitOf(id), mine = genTokens(sc, id).length, busy = !!running[id];
+    var k = kitOf(id), mine = genTokens(sc, id).length + genWalls(sc, id).length, busy = !!running[id];
     return { label: 'Map objects', sub: [
-      { label: 'Save objects & environment for this map', hint: 'Keeps every marker token and the environment as this map\'s set, to place whenever the map is loaded.', fn: function () { saveFromScene(sc); } },
-      { label: 'Place saved objects', off: !k || !k.objects.length && !Object.keys(k.env || {}).length, hint: k ? '' : 'No saved or found objects for this map yet.', fn: function () {
-        var n = placeKit(sc, id, { again: true }); toast(n ? 'Placed ' + plural(n, 'object') + '.' : 'Nothing new to place.'); render(); } },
-      { label: busy ? 'Looking for objects…' : k ? 'Generate objects again' : 'Generate objects', off: busy, hint: 'Reads the picture for furniture, chests, and lights (Claude with your own key from the AI tab, or the site\'s key when logged in; shapes otherwise).',
+      { label: 'Save walls, objects & environment for this map', hint: 'Keeps the walls and doors, every marker token, and the environment as this map\'s set, to place whenever the map is loaded.', fn: function () { saveFromScene(sc); } },
+      { label: 'Place saved objects', off: !k || !k.objects.length && !(k.walls || []).length && !Object.keys(k.env || {}).length, hint: k ? '' : 'No saved or found objects for this map yet.', fn: function () {
+        var n = placeKit(sc, id, { again: true }); toast(n ? 'Placed ' + plural(n, 'piece') + ' (' + kitText(k) + ').' : 'Nothing new to place.'); render(); } },
+      { label: busy ? 'Looking for objects…' : k ? 'Generate objects again' : 'Generate objects', off: busy, hint: 'Reads the picture for walls, doors, and large objects that block sight (Claude with your own key from the AI tab, or the site\'s key when logged in; shapes otherwise).',
         fn: function () { if (k && k.src === 'ref' && !confirm('Replace the objects you saved for this map?')) return; generateHere(sc, id, true); } },
-      { label: 'Remove generated objects', off: !mine, danger: true, fn: function () { var n = removeGen(sc, id); toast('Removed ' + plural(n, 'object') + '.'); render(); } },
+      { label: 'Remove generated walls & objects', off: !mine, danger: true, fn: function () { var n = removeGen(sc, id); toast('Removed ' + plural(n, 'piece') + '.'); render(); } },
       { sep: true },
       { label: 'Ask about objects for this map', on: !(kits()[id] || {}).noAsk, hint: 'The pop-up when a map with no objects is loaded.', fn: function () { setNoAsk(id, !(kits()[id] || {}).noAsk); } }] };
   }
@@ -12434,7 +12605,7 @@ CROWS.NAME_IDEAS = {
   var VERSION = 'crows-ai-vault-v1', ITER = 600000, MIN_PASS = 12, IDLE_MS = 30 * 60 * 1000, LOCAL_KEY = 'crows-ai-vault';
   var DEFAULT_MODEL = 'claude-sonnet-5-5', TEST_MODEL = 'claude-haiku-4-5-20251001';
   var MODELS = [['claude-sonnet-5-5', 'Claude Sonnet 5.5 (default)'], ['claude-opus-5-5', 'Claude Opus 5.5 (best, slower, costs more)'], [TEST_MODEL, 'Claude Haiku 4.5 (fastest, cheapest)']];
-  var MAP_OBJECT_TYPES = ['chest', 'table', 'chair', 'bed', 'shelf', 'altar', 'statue', 'pillar', 'barrel', 'crate', 'well', 'fountain', 'trap', 'door', 'stairs', 'light', 'plant', 'rubble', 'body', 'other'];
+  var MAP_OBJECT_TYPES = ['pillar', 'statue', 'shelf', 'crate', 'boulder', 'tree', 'rubble', 'other'], MAP_MAX_WALLS = 200, MAP_MAX_OBJECTS = 40;
   var subtle = typeof globalThis !== 'undefined' && globalThis.crypto && globalThis.crypto.subtle;
 
   // ------------------------------------------------------------------ crypto (pure: no state, no DOM)
@@ -12506,38 +12677,52 @@ CROWS.NAME_IDEAS = {
     var objSchema = { type: 'object', properties: {
       name: { type: 'string', description: 'Short name, at most 30 characters' }, type: { type: 'string', 'enum': MAP_OBJECT_TYPES },
       x: { type: 'number', description: 'Centre, fraction of image width, 0 to 1' }, y: { type: 'number', description: 'Centre, fraction of image height, 0 to 1' },
-      w: { type: 'number', description: 'Width, fraction of image width' }, h: { type: 'number', description: 'Height, fraction of image height' },
-      light: { type: 'boolean', description: 'It gives off light (lit brazier, torch, fireplace, candles)' },
-      hidden: { type: 'boolean', description: 'A secret or trap players should not see at first' }, note: { type: 'string', description: 'Optional short note, may be empty' } },
+      w: { type: 'number', description: 'Footprint width, fraction of image width' }, h: { type: 'number', description: 'Footprint height, fraction of image height' } },
       required: ['name', 'type', 'x', 'y', 'w', 'h'] };
+    var wallSchema = { type: 'object', properties: {
+      x1: { type: 'number', description: 'One end, fraction of image width' }, y1: { type: 'number', description: 'One end, fraction of image height' },
+      x2: { type: 'number', description: 'Other end, fraction of image width' }, y2: { type: 'number', description: 'Other end, fraction of image height' },
+      door: { type: 'boolean', description: 'A door across a doorway, not a wall' } },
+      required: ['x1', 'y1', 'x2', 'y2'] };
     var names = Object.keys(envKeys);
-    var tool = { name: 'report_objects', description: 'Report the objects found on the battle map.', input_schema: { type: 'object', properties: {
-      objects: { type: 'array', maxItems: 60, items: objSchema }, env: { type: 'array', items: names.length ? { type: 'string', 'enum': names } : { type: 'string' } } }, required: ['objects', 'env'] } };
+    var tool = { name: 'report_objects', description: 'Report the walls, doors, and large blocking objects on the battle map.', input_schema: { type: 'object', properties: {
+      walls: { type: 'array', maxItems: MAP_MAX_WALLS, items: wallSchema }, objects: { type: 'array', maxItems: MAP_MAX_OBJECTS, items: objSchema },
+      env: { type: 'array', items: names.length ? { type: 'string', 'enum': names } : { type: 'string' } } }, required: ['walls', 'objects', 'env'] } };
     var prompt = 'This image is a top-down tabletop RPG battle map' + (title ? ' titled "' + title + '"' : '') + ' (' + kind + ' setting' + (cols > 0 && rows > 0 ? ', ' + cols + ' x ' + rows + ' squares' : '') + '). '
-      + 'List the distinct physical objects a game master would want as movable tokens: furniture, chests, altars, statues, pillars, barrels, wells, traps, doors, stairs, lit braziers or torches, and the like. '
-      + 'Do not report walls, floors, rug patterns, or decorative texture. '
-      + 'Give each object\'s centre (x, y) and size (w, h) as fractions of the image width and height. '
-      + (body.hasLabels ? 'The map has printed labels or a legend: use them to name objects, and do NOT report the label text itself as an object. ' : '')
-      + 'Keep names short (30 characters or fewer). Report at most 60 objects. '
+      + (cols > 0 ? 'One grid square is 1/' + cols + ' of the image width' + (rows > 0 ? ' and 1/' + rows + ' of its height' : '') + '. ' : 'If the map shows a grid, measure against it. ')
+      + 'Report only what stops a person both moving and seeing past it. '
+      + 'Walls: each straight run of wall as one segment along its middle, from corner to corner; split a curved or cave wall into short straight segments; follow grid lines where the wall does. '
+      + 'Leave a gap at every doorway and report each door as its own segment across the doorway with door true. Open archways, windows, low walls, cliff edges, and map borders with no wall drawn are not walls. '
+      + 'Objects: only large solid things a person cannot see over or walk through, about one square across or more, such as pillars, columns, big statues, bookcases and tall shelves, stacked crates, boulders, tree trunks, standing stones. '
+      + 'Give each one\'s centre (x, y) and the footprint it is drawn with (w, h), measured on the grid. '
+      + 'Do not report anything a person can see over or that is small: tables, chairs, beds, chests, barrels, altars, wells, lights, traps, stairs, rugs, bodies, or decoration. '
+      + 'All positions and sizes are fractions of the image width (x, w) and height (y, h), 0 to 1. '
+      + (body.hasLabels ? 'The map has printed labels or a legend: use them to name objects, and do NOT report the label text itself. ' : '')
+      + 'Keep names short (30 characters or fewer). Report at most ' + MAP_MAX_WALLS + ' wall segments and ' + MAP_MAX_OBJECTS + ' objects. '
       + (names.length ? 'In env, list keys from the allowed set only when the picture clearly implies them (for example a dark cave); usually leave it empty. Allowed: '
         + names.map(function (k) { return envKeys[k] ? k + ' (' + envKeys[k] + ')' : k; }).join(', ') + '. ' : 'Leave env empty. ')
       + 'Answer by calling report_objects.';
-    return { envKeys: envKeys, payload: { model: model, max_tokens: 4096, tools: [tool], tool_choice: { type: 'auto' },
+    return { envKeys: envKeys, payload: { model: model, max_tokens: 16000, tools: [tool], tool_choice: { type: 'auto' },
       messages: [{ role: 'user', content: [{ type: 'image', source: { type: 'base64', media_type: ['image/jpeg', 'image/png', 'image/webp'].indexOf(body.mime) >= 0 ? body.mime : 'image/jpeg', data: body.image } }, { type: 'text', text: prompt }] }] } };
   }
   function detectResult(j, envKeys, model) {
     var input = null;
     (Array.isArray(j && j.content) ? j.content : []).forEach(function (b) { if (!input && b && b.type === 'tool_use' && b.name === 'report_objects' && b.input && typeof b.input === 'object') input = b.input; });
     if (!input) throw new Error('The model gave no answer.');
-    var objects = [], env = [];
+    var objects = [], walls = [], env = [];
     (Array.isArray(input.objects) ? input.objects : []).forEach(function (o) {
-      if (objects.length >= 60 || !o || typeof o.x !== 'number' || typeof o.y !== 'number') return;
+      if (objects.length >= MAP_MAX_OBJECTS || !o || typeof o.x !== 'number' || typeof o.y !== 'number') return;
       var name = clip(o.name, 30); if (!name) return;
-      objects.push({ name: name, type: MAP_OBJECT_TYPES.indexOf(o.type) >= 0 ? o.type : 'other', x: frac(o.x), y: frac(o.y), w: Math.max(0.005, frac(o.w, 0.03)), h: Math.max(0.005, frac(o.h, 0.03)),
-        light: o.light === true, hidden: o.hidden === true, note: clip(o.note, 120) });
+      objects.push({ name: name, type: MAP_OBJECT_TYPES.indexOf(o.type) >= 0 ? o.type : 'other', x: frac(o.x), y: frac(o.y), w: Math.max(0.005, frac(o.w, 0.03)), h: Math.max(0.005, frac(o.h, 0.03)) });
+    });
+    (Array.isArray(input.walls) ? input.walls : []).forEach(function (w) {
+      if (walls.length >= MAP_MAX_WALLS || !w || ['x1', 'y1', 'x2', 'y2'].some(function (k) { return typeof w[k] !== 'number'; })) return;
+      var seg = { x1: frac(w.x1), y1: frac(w.y1), x2: frac(w.x2), y2: frac(w.y2) };
+      if (Math.abs(seg.x1 - seg.x2) + Math.abs(seg.y1 - seg.y2) < 0.002) return;
+      seg.door = w.door === true; walls.push(seg);
     });
     (Array.isArray(input.env) ? input.env : []).forEach(function (e) { if (typeof e === 'string' && Object.prototype.hasOwnProperty.call(envKeys, e) && env.indexOf(e) < 0) env.push(e); });
-    return { objects: objects, env: env, model: model };
+    return { objects: objects, walls: walls, env: env, model: model };
   }
   /* One call to the Anthropic API from the browser. Rejects with Error(message from Anthropic) and .status. */
   function callAnthropic(apiKey, payload) {
@@ -12763,7 +12948,7 @@ CROWS.NAME_IDEAS = {
     var about = document.getElementById('sec-ai-about');
     if (about && !about.firstChild) {
       about.appendChild(el('h2', { text: 'How your key is protected' }));
-      [ 'With your own key, Claude reads the maps you upload and lists their furniture and lights. You pay Anthropic directly; nothing is billed through this site.',
+      [ 'With your own key, Claude reads the maps you upload and traces their walls, doors, and large objects that block sight. You pay Anthropic directly; nothing is billed through this site.',
         'Your key is encrypted in this browser with a vault passphrase you choose (not your account password), using AES-GCM with a key made from the passphrase by 600,000 rounds of PBKDF2. Only the scrambled result is stored: in your account when you are logged in, or in this browser when you are not. The site\'s server, its administrator, and anyone who gets into its database see only that, and cannot read the key. Nobody can recover a forgotten passphrase; you would add the key again.',
         'To scan a map, your browser unlocks the key and talks to Anthropic directly. The decrypted key is held in memory only: never saved with the campaign, never shown again after you type it, and dropped after 30 minutes idle, on logout, or when you leave the page.',
         'What this cannot stop: whoever controls this site\'s scripts could change them to capture the key at the moment you unlock it. The page\'s security policy blocks scripts injected by others, but you are trusting whoever publishes this page. Use a key with a spending limit you are comfortable with, and revoke it at Anthropic if you doubt anything.'

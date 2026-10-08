@@ -17,6 +17,11 @@
   var P = { view: null, host: null, ui: null, L: null, hudFor: null, scene: null, mask: null, maskKey: '', data: null, sel: null, version: 0, seenPing: -1, sceneId: null, live: false, you: null, campaign: 0,
     drawer: null, drawerWas: '', rollGone: null, feedSeen: 0 };
   var Play = window.CrowsPlay;
+  // Escape (once the right-click menu or the map's ruler hasn't taken it) closes the open drawer.
+  document.addEventListener('keydown', function (e) {
+    if (e.key !== 'Escape' || e.defaultPrevented || !P.drawer || !P.host || !P.host.getClientRects().length) return;
+    e.preventDefault(); P.drawer = null; renderFight();
+  });
 
   function scene() { return P.scene; }
   function mine(t) { return !!(t && t.link && P.you && t.link === P.you); }

@@ -1,12 +1,14 @@
 /*
- * Ref Screen: map objects. A "map kit" is the furniture, lights, and environment of one map picture, kept in state.mapKits[mapId]
- * ({ objects, env, src: 'ai' | 'auto' | 'ref', at, noAsk }; positions are fractions of that map's picture). Kits come from:
+ * Ref Screen: map objects. A "map kit" is the walls, doors, blocking objects, and environment of one map picture, kept in state.mapKits[mapId]
+ * ({ objects, walls, env, src: 'ai' | 'auto' | 'ref', at, noAsk }; positions are fractions of that map's picture; walls are { x1, y1, x2, y2, door };
+ * an object with `blocks` becomes a footprint token, sized to the scene's grid, that stops sight and movement). Kits come from:
  *   - detection when a map is uploaded or the Ref asks (generateKit): Claude's vision through the accounts server (api.php map.detect, when
  *     logged in and the server has a key), otherwise the browser's own shape finding (src/shared/map-vision.js, src 'auto');
  *   - the Ref saving the objects and environment standing on a scene's map (saveFromScene, src 'ref').
  * A map with labeled and unlabeled versions (siblings: an official map's variants, uploads with matching titles, or uploads the Ref paired in
  * state.mapPairs) is read on its labeled version, and the objects are carried to every other version by aligning the pictures.
- * Loading a map onto a scene (mapLoaded, called from ref-vtt.js) places the kit, or offers to generate one. Tokens are kind 'obj' with gen = map id.
+ * Loading a map onto a scene (mapLoaded, called from ref-vtt.js) places the kit, or offers to generate one. Tokens are kind 'obj' and walls are
+ * scene walls, each with gen = map id.
  */
 (function () {
   'use strict';
@@ -16,7 +18,7 @@
   var el = A.el, toast = A.toast, plural = A.plural, clone = A.clone, REFD = window.REF, Tbl = window.CrowsTable;
   var state = A.state; A.share('state', function (v) { state = v; });
   var KINDS_OK = { dungeon: 1, open: 1, village: 1 };
-  var ICONS = { chest: '▣', table: '▭', chair: '⊓', bed: '▬', shelf: '≡', altar: '✚', statue: '♜', pillar: '●', barrel: '◍', crate: '▢', well: '◎', fountain: '≈',
+  var ICONS = { boulder: '⬣', tree: '♣', chest: '▣', table: '▭', chair: '⊓', bed: '▬', shelf: '≡', altar: '✚', statue: '♜', pillar: '●', barrel: '◍', crate: '▢', well: '◎', fountain: '≈',
     trap: '⚠', door: '▯', stairs: '☰', light: '✶', plant: '♣', rubble: '∴', body: '☠', other: '◆' };
   var LABELS = /\b(labell?ed|labels?|key|gm|dm|players?|unlabell?ed|no labels)\b/ig;
   var running = {}, waiting = {};   // map id -> the generation under way; map id -> the scene waiting for its objects
@@ -87,7 +89,7 @@
   function envKeys() { return (REFD.ENV || []).map(function (e) { return [e[0], e[1]]; }); }
   function askServer(body) {
     return window.CrowsCloud.api('POST', 'map.detect', '', body).then(function (j) {
-      return { objects: Array.isArray(j.objects) ? j.objects : [], env: Array.isArray(j.env) ? j.env : [] };
+      return { objects: Array.isArray(j.objects) ? j.objects : [], walls: Array.isArray(j.walls) ? j.walls : [], env: Array.isArray(j.env) ? j.env : [] };
     });
   }
   /* Claude's reading of the picture, in one call or (a wide map) up to four overlapping tiles with their results mapped back and de-duplicated. */
@@ -101,26 +103,52 @@
       var whole = jobs.length === 1;
       return ask(Object.assign({ image: whole ? V.jpeg(img, 1600, .85) : cropJpeg(img, t.x0, t.y0, t.x1, t.y1, 1600),
         cols: whole ? cols : Math.round(cols * (t.x1 - t.x0)), rows: cols ? Math.round(cols * (t.y1 - t.y0) * H / W) : 0 }, base)).then(function (r) {
-        r.objects = r.objects.map(function (o) { var c = clone(o); c.x = t.x0 + o.x * (t.x1 - t.x0); c.y = t.y0 + o.y * (t.y1 - t.y0); c.w = o.w * (t.x1 - t.x0); c.h = o.h * (t.y1 - t.y0); return c; });
+        var X = function (v) { return t.x0 + v * (t.x1 - t.x0); }, Y = function (v) { return t.y0 + v * (t.y1 - t.y0); };
+        r.objects = r.objects.map(function (o) { var c = clone(o); c.x = X(o.x); c.y = Y(o.y); c.w = o.w * (t.x1 - t.x0); c.h = o.h * (t.y1 - t.y0); c.blocks = true; return c; });
+        r.walls = (r.walls || []).map(function (w) { return { x1: X(w.x1), y1: Y(w.y1), x2: X(w.x2), y2: Y(w.y2), door: !!w.door }; });
         return r;
       });
     })).then(function (rs) {
-      var out = [], env = [];
+      var out = [], walls = [], env = [];
+      function near(a, b) { return Math.hypot(a.x1 - b.x1, a.y1 - b.y1) + Math.hypot(a.x2 - b.x2, a.y2 - b.y2) < .02 || Math.hypot(a.x1 - b.x2, a.y1 - b.y2) + Math.hypot(a.x2 - b.x1, a.y2 - b.y1) < .02; }
       rs.forEach(function (r) {
         r.env.forEach(function (k) { if (env.indexOf(k) < 0) env.push(k); });
+        r.walls.forEach(function (w) { if (!walls.some(function (p) { return near(p, w); })) walls.push(w); });   // tiles overlap: the same wall twice
         r.objects.forEach(function (o) {
           var dup = out.some(function (p) { return String(p.name).toLowerCase() === String(o.name).toLowerCase() && Math.hypot(p.x - o.x, p.y - o.y) < .02; });
           if (!dup) out.push(o);
         });
       });
-      return { objects: out, env: env };
+      return { objects: out, walls: walls, env: env };
     });
   }
   function cleanObjects(list) {
     return (list || []).filter(function (o) { return o && isFinite(o.x) && isFinite(o.y) && o.x >= 0 && o.x <= 1 && o.y >= 0 && o.y <= 1; }).slice(0, 80).map(function (o) {
-      return { name: String(o.name || 'Object').slice(0, 40), type: ICONS[o.type] ? o.type : 'other', x: +o.x, y: +o.y, w: Math.max(0.002, +o.w || 0.02), h: Math.max(0.002, +o.h || 0.02),
+      var c = { name: String(o.name || 'Object').slice(0, 40), type: ICONS[o.type] ? o.type : 'other', x: +o.x, y: +o.y, w: Math.max(0.002, +o.w || 0.02), h: Math.max(0.002, +o.h || 0.02),
         light: !!o.light, hidden: !!o.hidden, note: String(o.note || '').slice(0, 200) };
+      ['blocks', 'shown', 'fire'].forEach(function (k) { if (o[k]) c[k] = true; });
+      if (typeof o.lp === 'string') c.lp = o.lp;
+      return c;
     });
+  }
+  function cleanWalls(list) {
+    var ok = function (v) { return typeof v === 'number' && isFinite(v) && v >= -0.05 && v <= 1.05; };
+    return (Array.isArray(list) ? list : []).filter(function (w) { return w && ok(w.x1) && ok(w.y1) && ok(w.x2) && ok(w.y2); }).slice(0, 400).map(function (w) {
+      return { x1: +w.x1, y1: +w.y1, x2: +w.x2, y2: +w.y2, door: !!w.door };
+    });
+  }
+  /* Walls carried to another version of the map by an align() result; those whose middle leaves the picture are dropped. */
+  function moveWalls(walls, T) {
+    return (walls || []).map(function (w) { return { x1: w.x1 * T.sx + T.ox, y1: w.y1 * T.sy + T.oy, x2: w.x2 * T.sx + T.ox, y2: w.y2 * T.sy + T.oy, door: !!w.door }; })
+      .filter(function (w) { var mx = (w.x1 + w.x2) / 2, my = (w.y1 + w.y2) / 2; return mx >= 0 && mx <= 1 && my >= 0 && my <= 1; });
+  }
+  /* "3 objects and 40 walls": what a kit holds. */
+  function kitText(k) {
+    var nw = (k.walls || []).length, nd = (k.walls || []).filter(function (w) { return w.door; }).length, parts = [];
+    if (nw - nd) parts.push(plural(nw - nd, 'wall'));
+    if (nd) parts.push(plural(nd, 'door'));
+    if (k.objects.length) parts.push(plural(k.objects.length, 'blocking object'));
+    return parts.length ? parts.join(', ') : 'nothing';
   }
 
   /* Find the objects on a map (and its other versions) and keep them as its kit. Resolves with the kit; never throws. opts: { cols, kind, force,
@@ -146,8 +174,9 @@
         return artRemote() ? detectRemote(img, info).then(function (r2) { used = 'the site\'s key'; return r2; }) : Promise.reject(new Error('no login'));
       });
       return remote.then(function (r) { r.src = 'ai'; r.used = used; return r; }, function (e) {
-        var r = V.detect(V.pixels(img, 1024), { cols: info.cols });
-        return { objects: r || [], env: [], src: 'auto', why: ownWhy ? ownWhy + (artRemote() ? '; the server can\'t name them right now' : '') : !artRemote() ? 'log in, or add your own key in the AI tab, for named objects' : e && e.status === 429 ? 'the server\'s hourly limit is used up' : 'the server can\'t name them right now' };
+        var r = V.detect(V.pixels(img, 1024), { cols: info.cols }), sq = info.cols ? 1 / info.cols : 0.03;
+        r = (r || []).filter(function (o) { return !o.light && o.w >= sq * 1.5 && o.h * img.naturalHeight / img.naturalWidth >= sq * 1.5; });   // large shapes only; no lights
+        return { objects: r, walls: [], env: [], src: 'auto', why: ownWhy ? ownWhy + (artRemote() ? '; the server can\'t name them right now' : '') : !artRemote() ? 'log in, or add your own key in the AI tab, for named objects' : e && e.status === 429 ? 'the server\'s hourly limit is used up' : 'the server can\'t name them right now' };
       }).then(function (r) { r.img = img; return r; });
     })).then(function (r) {
       var at = Date.now(), noAsk = !!((kits()[srcId] || {}).noAsk), env = {};
@@ -155,7 +184,7 @@
       if (r && r.used) used = r.used;
       if (r) {
         r.env.forEach(function (k) { env[k] = true; });
-        made = { objects: cleanObjects(r.objects), env: env, src: r.src, at: at, noAsk: noAsk };
+        made = { objects: cleanObjects(r.objects), walls: cleanWalls(r.walls), env: env, src: r.src, at: at, noAsk: noAsk };
         kits()[srcId] = made;
       } else made = srcKit;
       // carry them to the other versions that don't have a kit the Ref saved
@@ -168,7 +197,7 @@
             return (a ? Promise.resolve(a) : loadImg(srcId).then(function (i) { return V.pixels(i, 512); })).then(function (pa) {
               var T = V.align(pa, V.pixels(img2, 512));
               if (!T) return;
-              kits()[s] = { objects: cleanObjects(V.transform(made.objects, T)), env: clone(made.env), src: made.src, at: at, noAsk: !!(kits()[s] && kits()[s].noAsk) };
+              kits()[s] = { objects: cleanObjects(V.transform(made.objects, T)), walls: moveWalls(made.walls, T), env: clone(made.env), src: made.src, at: at, noAsk: !!(kits()[s] && kits()[s].noAsk) };
             });
           }).catch(function () { /* that version's picture is missing or can't be read */ });
         });
@@ -178,8 +207,8 @@
       save();
       var k = kitOf(id) || made;
       if (!opts.quiet) {
-        var n = k ? k.objects.length : 0, via = k && k.src === 'ai' && used ? ', using ' + used : '';
-        toast(!k ? 'Couldn\'t read objects from ' + title + '.' : n ? 'Found ' + plural(n, 'object') + ' on ' + title + (k.src === 'auto' ? ', by shape only (' + why + ').' : via + '.') : 'Found no objects on ' + title + (k.src === 'auto' ? ' by shape (' + why + ').' : via + '.'), 5000);
+        var n = k ? k.objects.length + (k.walls || []).length : 0, via = k && k.src === 'ai' && used ? ', using ' + used : '';
+        toast(!k ? 'Couldn\'t read objects from ' + title + '.' : n ? 'Found ' + kitText(k) + ' on ' + title + (k.src === 'auto' ? ', by shape only (' + why + ').' : via + '.') : 'Found no walls or blocking objects on ' + title + (k.src === 'auto' ? ' by shape (' + why + ').' : via + '.'), 5000);
       }
       var sid = waiting[id]; delete waiting[id];
       if (sid && k) { var sc = scenes().filter(function (s) { return s.id === sid; })[0]; if (sc && mapIdOf(sc.map) === id) { placeKit(sc, id); vttChanged(); render(); } }
@@ -197,6 +226,7 @@
   // ------------------------------------------------------------------ kits on scenes
   function scenes() { return (state.vtt && state.vtt.scenes) || []; }
   function genTokens(sc, id) { return sc.tokens.filter(function (t) { return t.gen === id; }); }
+  function genWalls(sc, id) { return (sc.walls || []).filter(function (w) { return w.gen === id; }); }
   function objTokens(sc) { return sc.tokens.filter(function (t) { return t.kind === 'obj'; }); }
   function mergeEnv(sc, env) {
     var added = 0; sc.env = sc.env || {};
@@ -208,18 +238,34 @@
     });
     return added;
   }
-  /* Put a kit's objects (and environment) on the scene: tokens the Ref sees (lights the players see too). Returns how many were placed; a scene that
-     already has this map's generated tokens gets none. */
+  /* Put a kit's walls, doors, objects (and environment) on the scene: walls snap to the grid's half squares, a blocking object gets a footprint of
+     whole squares on the scene's grid, other objects are tokens the Ref sees (lights the players see too). Returns how many pieces were placed; a
+     scene that already has this map's generated tokens or walls gets none. */
   function placeKit(sc, id, opts) {
     var k = kitOf(id); if (!k || !sc.w || !sc.g) return 0;
-    if (genTokens(sc, id).length && !(opts && opts.again)) return 0;
-    var n = 0;
+    if ((genTokens(sc, id).length || genWalls(sc, id).length) && !(opts && opts.again)) return 0;
+    var n = 0, g = sc.g;
     k.objects.forEach(function (o) {
-      var size = Math.max(1, Math.round(Math.max(o.w * sc.w, o.h * sc.h) / sc.g)), p = Tbl.snap(sc, o.x * sc.w, o.y * sc.h, size);
+      var size, p, fw = 0, fh = 0;
+      if (o.blocks) {
+        fw = Math.max(1, Math.min(40, Math.round(o.w * sc.w / g))); fh = Math.max(1, Math.min(40, Math.round(o.h * sc.h / g))); size = Math.min(fw, fh);
+        p = Tbl.snapTok(sc, o.x * sc.w, o.y * sc.h, { fw: fw, fh: fh });
+      } else { size = Math.max(1, Math.round(Math.max(o.w * sc.w, o.h * sc.h) / g)); p = Tbl.snap(sc, o.x * sc.w, o.y * sc.h, size); }
       var lp = /^(\d+)\/(\d+)/.exec(o.lp || '5/5') || [0, 5, 5], light = o.light ? { b: +lp[1], d: +lp[2], on: true } : null;
       if (light && o.fire) light.fire = true;
-      sc.tokens.push({ id: Tbl.uid('k'), name: o.name || 'Object', kind: 'obj', x: p.x, y: p.y, size: size, hidden: !!o.hidden || (!o.light && !o.shown), speed: 5,
-        gen: id, otype: o.type || 'other', secret: !!o.hidden, icon: ICONS[o.type] || (o.light ? '✶' : '◆'), light: light, label: false, locked: true, note: o.note || '' });
+      var t = { id: Tbl.uid('k'), name: o.name || 'Object', kind: 'obj', x: p.x, y: p.y, size: size, hidden: !!o.hidden || (!o.light && !o.shown), speed: 5,
+        gen: id, otype: o.type || 'other', secret: !!o.hidden, icon: ICONS[o.type] || (o.light ? '✶' : '◆'), light: light, label: false, locked: true, note: o.note || '' };
+      if (o.blocks) { t.blocks = true; t.fw = fw; t.fh = fh; }
+      sc.tokens.push(t);
+      n++;
+    });
+    var have = {};
+    (sc.walls || (sc.walls = [])).forEach(function (w) { have[w.a.concat(w.b).join(',')] = have[w.b.concat(w.a).join(',')] = true; });
+    (k.walls || []).forEach(function (w) {
+      var a = Tbl.snapCorner(sc, w.x1 * sc.w, w.y1 * sc.h, true), b = Tbl.snapCorner(sc, w.x2 * sc.w, w.y2 * sc.h, true), key = [a.x, a.y, b.x, b.y].join(',');
+      if (Math.hypot(a.x - b.x, a.y - b.y) < g * .25 || have[key]) return;   // shorter than the grid can show, or already there
+      have[key] = have[[b.x, b.y, a.x, a.y].join(',')] = true;
+      sc.walls.push({ id: Tbl.uid('w'), a: [a.x, a.y], b: [b.x, b.y], t: w.door ? 'door' : 'wall', open: false, gen: id });
       n++;
     });
     var e = mergeEnv(sc, k.env);
@@ -227,11 +273,12 @@
     return n;
   }
   function removeGen(sc, id) {
-    var n = genTokens(sc, id).length; sc.tokens = sc.tokens.filter(function (t) { return t.gen !== id; });
+    var n = genTokens(sc, id).length + genWalls(sc, id).length;
+    sc.tokens = sc.tokens.filter(function (t) { return t.gen !== id; }); sc.walls = (sc.walls || []).filter(function (w) { return w.gen !== id; });
     if (n) vttChanged();
     return n;
   }
-  /* Keep the objects (all the scene's marker tokens) and environment on the scene's map as that map's kit; offers to copy to its other versions. */
+  /* Keep the walls, doors, objects (all the scene's marker tokens), and environment on the scene's map as that map's kit; offers to copy to its other versions. */
   function saveFromScene(sc) {
     var id = mapIdOf(sc && sc.map); if (!id) return toast('Put a map on this scene first.');
     if (!sc.w || !sc.h) return;
@@ -240,15 +287,17 @@
         light: !!t.light, hidden: t.secret != null ? !!t.secret : !!t.hidden && !!t.light, note: t.note || '' };
       if (!t.light && !t.hidden) o.shown = true;
       if (t.light) { o.lp = t.light.b + '/' + t.light.d; if (t.light.fire) o.fire = true; }
+      if (t.fw && t.fh) { o.w = t.fw * sc.g / sc.w; o.h = t.fh * sc.g / sc.h; if (t.blocks) o.blocks = true; }
       return o;
     });
+    var walls = (sc.walls || []).map(function (w) { return { x1: w.a[0] / sc.w, y1: w.a[1] / sc.h, x2: w.b[0] / sc.w, y2: w.b[1] / sc.h, door: w.t === 'door' }; });
     var env = {}; Object.keys(sc.env || {}).forEach(function (k) { if (sc.env[k]) env[k] = true; });
     var old = kits()[id];
-    kits()[id] = { objects: objs, env: env, src: 'ref', at: Date.now(), noAsk: !!(old && old.noAsk) };
-    objTokens(sc).forEach(function (t) { t.gen = id; });
+    kits()[id] = { objects: objs, walls: walls, env: env, src: 'ref', at: Date.now(), noAsk: !!(old && old.noAsk) };
+    objTokens(sc).forEach(function (t) { t.gen = id; }); (sc.walls || []).forEach(function (w) { w.gen = id; });
     save();
     var others = siblings(id).filter(function (s) { return s !== id; });
-    toast('Saved ' + plural(objs.length, 'object') + (Object.keys(env).length ? ' and the environment' : '') + ' for ' + titleOf(id) + '.');
+    toast('Saved ' + kitText(kits()[id]) + (Object.keys(env).length ? ' and the environment' : '') + ' for ' + titleOf(id) + '.');
     if (others.length) ask('Copy to the other versions?', 'Carry these objects over to ' + others.map(titleOf).join(', ') + '? Their own saved sets are replaced.', [
       { label: 'Copy to ' + plural(others.length, 'other version'), primary: true, fn: function () { copyKit(id, others); } }, { label: 'Only this one' }]);
     render();
@@ -263,7 +312,7 @@
         return p.then(function () {
           return loadImg(s).then(function (i2) {
             var T = V.align(pa, V.pixels(i2, 512)); if (!T) return;
-            kits()[s] = { objects: cleanObjects(V.transform(k.objects, T)), env: clone(k.env), src: k.src, at: Date.now(), noAsk: !!(kits()[s] && kits()[s].noAsk) }; done++;
+            kits()[s] = { objects: cleanObjects(V.transform(k.objects, T)), walls: moveWalls(k.walls, T), env: clone(k.env), src: k.src, at: Date.now(), noAsk: !!(kits()[s] && kits()[s].noAsk) }; done++;
           }).catch(function () { /* unreadable */ });
         });
       }, Promise.resolve());
@@ -297,17 +346,17 @@
     var k = kitOf(id), title = titleOf(id);
     if (k) {
       var n = placeKit(sc, id);
-      if (n) { toast('Placed ' + plural(n, 'object') + ' on ' + title + ' from its saved set.'); render(); }
+      if (n) { toast('Placed ' + kitText(k) + ' on ' + title + ' from its saved set.'); render(); }
       return;
     }
     if (running[id]) { waiting[id] = sc.id; toast('Still looking for objects on ' + title + '; they go on the map when found.'); return; }
     if ((kits()[id] || {}).noAsk || objTokens(sc).length) return;
-    ask('Generate objects for ' + title + '?', 'This map has no objects yet. Generate them? (Furniture, chests, altars, and lights are found from the picture.)', [
+    ask('Generate objects for ' + title + '?', 'This map has no walls or objects yet. Generate them? (Walls, doors, and large objects that block sight are found from the picture.)', [
       { label: 'Generate', primary: true, fn: function () { generateHere(sc, id); } }, { label: 'Not now' },
       { label: 'Don\'t ask for this map', fn: function () { setNoAsk(id, true); } }]);
   }
   function setNoAsk(id, on) {
-    var k = kits()[id] || (kits()[id] = { objects: [], env: {}, src: '', at: 0, noAsk: false });
+    var k = kits()[id] || (kits()[id] = { objects: [], walls: [], env: {}, src: '', at: 0, noAsk: false });
     k.noAsk = !!on; save(); render();
   }
   /* Generate for this scene's map and put the objects on it (replacing any generated ones when `again`). */
@@ -317,7 +366,7 @@
     generateKit(id, { cols: colsOf(id, sc), kind: sc.kind, force: !!again }).then(function (k) {
       if (!again || !k || mapIdOf(sc.map) !== id) return;
       removeGen(sc, id);
-      var n = placeKit(sc, id, { again: true }); toast('Placed ' + plural(n, 'object') + '.'); vttChanged(); render();
+      var n = placeKit(sc, id, { again: true }); toast(n ? 'Placed ' + kitText(k) + '.' : 'Nothing to place.'); vttChanged(); render();
     });
   }
 
@@ -325,14 +374,14 @@
   /* The board menu's "Map objects" submenu for the scene (null when it has no map). */
   function menuItems(sc) {
     var id = mapIdOf(sc && sc.map); if (!id) return null;
-    var k = kitOf(id), mine = genTokens(sc, id).length, busy = !!running[id];
+    var k = kitOf(id), mine = genTokens(sc, id).length + genWalls(sc, id).length, busy = !!running[id];
     return { label: 'Map objects', sub: [
-      { label: 'Save objects & environment for this map', hint: 'Keeps every marker token and the environment as this map\'s set, to place whenever the map is loaded.', fn: function () { saveFromScene(sc); } },
-      { label: 'Place saved objects', off: !k || !k.objects.length && !Object.keys(k.env || {}).length, hint: k ? '' : 'No saved or found objects for this map yet.', fn: function () {
-        var n = placeKit(sc, id, { again: true }); toast(n ? 'Placed ' + plural(n, 'object') + '.' : 'Nothing new to place.'); render(); } },
-      { label: busy ? 'Looking for objects…' : k ? 'Generate objects again' : 'Generate objects', off: busy, hint: 'Reads the picture for furniture, chests, and lights (Claude with your own key from the AI tab, or the site\'s key when logged in; shapes otherwise).',
+      { label: 'Save walls, objects & environment for this map', hint: 'Keeps the walls and doors, every marker token, and the environment as this map\'s set, to place whenever the map is loaded.', fn: function () { saveFromScene(sc); } },
+      { label: 'Place saved objects', off: !k || !k.objects.length && !(k.walls || []).length && !Object.keys(k.env || {}).length, hint: k ? '' : 'No saved or found objects for this map yet.', fn: function () {
+        var n = placeKit(sc, id, { again: true }); toast(n ? 'Placed ' + plural(n, 'piece') + ' (' + kitText(k) + ').' : 'Nothing new to place.'); render(); } },
+      { label: busy ? 'Looking for objects…' : k ? 'Generate objects again' : 'Generate objects', off: busy, hint: 'Reads the picture for walls, doors, and large objects that block sight (Claude with your own key from the AI tab, or the site\'s key when logged in; shapes otherwise).',
         fn: function () { if (k && k.src === 'ref' && !confirm('Replace the objects you saved for this map?')) return; generateHere(sc, id, true); } },
-      { label: 'Remove generated objects', off: !mine, danger: true, fn: function () { var n = removeGen(sc, id); toast('Removed ' + plural(n, 'object') + '.'); render(); } },
+      { label: 'Remove generated walls & objects', off: !mine, danger: true, fn: function () { var n = removeGen(sc, id); toast('Removed ' + plural(n, 'piece') + '.'); render(); } },
       { sep: true },
       { label: 'Ask about objects for this map', on: !(kits()[id] || {}).noAsk, hint: 'The pop-up when a map with no objects is loaded.', fn: function () { setNoAsk(id, !(kits()[id] || {}).noAsk); } }] };
   }

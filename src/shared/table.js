@@ -87,6 +87,19 @@
     return n + ' sq' + (sc.unit ? ' (' + Math.round(n * sc.unit) + ' ft)' : '');
   }
   function tokenSize(t) { return t.size || 1; }
+  /* A blocking object's footprint (fw x fh squares, centred on it) as { x0, y0, x1, y1 } in map pixels, or null for a round token. */
+  function footprint(t, g) { if (!t.fw || !t.fh) return null; var hw = t.fw * g / 2, hh = t.fh * g / 2; return { x0: t.x - hw, y0: t.y - hh, x1: t.x + hw, y1: t.y + hh }; }
+  /* The footprints of the objects that block sight and movement (a pillar, a bookcase), but `skip` (a token id: the one moving). */
+  function blockRects(sc, skip) {
+    return (sc.tokens || []).filter(function (t) { return t.blocks && t.fw && t.fh && t.id !== skip; }).map(function (t) { return footprint(t, sc.g); });
+  }
+  /* A token's spot snapped to the grid: a footprint snaps each side to grid lines (an odd number of squares centres in a square). */
+  function snapTok(sc, x, y, t) {
+    if (!t || !t.fw || !t.fh || sc.grid !== 'square') return snap(sc, x, y, tokenSize(t || {}));
+    var g = sc.g;
+    function ax(v, o, n) { var k = (v - o) / g; return Math.round(n) % 2 ? (Math.floor(k) + .5) * g + o : Math.round(k) * g + o; }
+    return { x: ax(x, sc.ox, t.fw), y: ax(y, sc.oy, t.fh) };
+  }
 
   // ------------------------------------------------------------------ fog cells
   function fogCell(sc) { return Math.max(sc.g / 3, Math.max(sc.w, sc.h) / 240); }
@@ -151,10 +164,12 @@
   }
 
   // ------------------------------------------------------------------ line of sight
-  /* The segments that block sight (walls, closed doors) or movement (those and windows). */
-  function blockers(sc, what) {
-    return (sc.walls || []).filter(function (w) { return what === 'move' ? !(w.t === 'door' && w.open) : w.t === 'wall' || w.t === 'door' && !w.open; })
+  /* The segments that block sight (walls, closed doors, blocking objects' sides) or movement (those and windows). skip: a token id left out. */
+  function blockers(sc, what, skip) {
+    var out = (sc.walls || []).filter(function (w) { return what === 'move' ? !(w.t === 'door' && w.open) : w.t === 'wall' || w.t === 'door' && !w.open; })
       .map(function (w) { return [w.a[0], w.a[1], w.b[0], w.b[1]]; });
+    blockRects(sc, skip).forEach(function (r) { out.push([r.x0, r.y0, r.x1, r.y0], [r.x1, r.y0, r.x1, r.y1], [r.x1, r.y1, r.x0, r.y1], [r.x0, r.y1, r.x0, r.y0]); });
+    return out;
   }
   function rayHit(px, py, dx, dy, s) {
     var sx = s[2] - s[0], sy = s[3] - s[1], den = dx * sy - dy * sx;
@@ -177,11 +192,11 @@
     });
     return pts;
   }
-  /* Does a straight move from a to b cross a wall, a closed door, or a window? */
-  function pathBlocked(sc, a, b) {
+  /* Does a straight move from a to b cross a wall, a closed door, a window, or a blocking object (but the token `skip`, the one moving)? */
+  function pathBlocked(sc, a, b, skip) {
     var dx = b.x - a.x, dy = b.y - a.y, len = Math.hypot(dx, dy);
     if (len < 1) return false;
-    var segs = blockers(sc, 'move');
+    var segs = blockers(sc, 'move', skip);
     for (var i = 0; i < segs.length; i++) { var t = rayHit(a.x, a.y, dx / len, dy / len, segs[i]); if (t > 1e-6 && t < len - 1e-6) return true; }
     return false;
   }
@@ -195,6 +210,19 @@
     return g;
   }
   function poly(g, pts) { g.beginPath(); pts.forEach(function (p, i) { if (i) g.lineTo(p[0], p[1]); else g.moveTo(p[0], p[1]); }); g.closePath(); }
+  /* The path of what a point sees within R px: its line of sight, plus the tops of the blocking objects it sees a side of (so a pillar in view shows). */
+  function seenArea(g, px, py, segs, R, rects) {
+    var pts = los(px, py, segs, R);
+    poly(g, pts);
+    rects.forEach(function (r) {
+      var e = 2, probes = [];
+      [0, .25, .5, .75, 1].forEach(function (k) {
+        var x = r.x0 + (r.x1 - r.x0) * k, y = r.y0 + (r.y1 - r.y0) * k;
+        probes.push([x, r.y0 - e], [x, r.y1 + e], [r.x0 - e, y], [r.x1 + e, y]);
+      });
+      if (probes.some(function (p) { return inPoly(p[0], p[1], pts); })) g.rect(r.x0, r.y0, r.x1 - r.x0, r.y1 - r.y0);
+    });
+  }
   /* Who sees (the crows and allies on the map) and what lights it (tokens with a light, and each viewer's own sight). */
   function viewers(sc) { return sc.tokens.filter(function (t) { return (t.kind === 'pc' || t.kind === 'ally') && !t.dead && t.sees !== false && !t.hidden; }); }
   function lightsOf(sc) {
@@ -213,20 +241,20 @@
     if (sc.fog === 'off') return null;
     var d = fogDims(sc), seen = seenOf(sc), cells = new Uint8Array(d.cw * d.ch), i;
     if (sc.fog === 'manual') { for (i = 0; i < cells.length; i++) cells[i] = seen[i] ? 3 : 0; return { cw: d.cw, ch: d.ch, cell: d.cell, cells: cells, grew: false }; }
-    var segs = blockers(sc, 'sight'), vs = viewers(sc), big = Math.max(sc.w, sc.h) * 1.5, k = 1 / d.cell;
+    var segs = blockers(sc, 'sight'), rects = blockRects(sc), vs = viewers(sc), big = Math.max(sc.w, sc.h) * 1.5, k = 1 / d.cell;
     var L = canvas('L', d.cw, d.ch), V = canvas('V', d.cw, d.ch), grew = false;
     L.setTransform(k, 0, 0, k, 0, 0); V.setTransform(k, 0, 0, k, 0, 0);
     if (sc.ambient !== 'dark') { L.fillStyle = 'rgba(255,255,255,' + (sc.ambient === 'dim' ? .5 : 1) + ')'; L.fillRect(0, 0, sc.w, sc.h); }
     lightsOf(sc).forEach(function (l) {
       var rb = (l.b + l.s / 2) * sc.g, rd = rb + l.d * sc.g, g = L;
-      g.save(); poly(g, los(l.x, l.y, segs, rd)); g.clip();
+      g.save(); seenArea(g, l.x, l.y, segs, rd, rects); g.clip();
       var gr = g.createRadialGradient(l.x, l.y, 0, l.x, l.y, rd), f = rb / rd;
       gr.addColorStop(0, 'rgba(255,255,255,1)'); gr.addColorStop(Math.min(1, f), 'rgba(255,255,255,1)');
       if (l.d) { gr.addColorStop(Math.min(1, f + .002), 'rgba(255,255,255,.5)'); gr.addColorStop(1, 'rgba(255,255,255,.5)'); }
       g.fillStyle = gr; g.beginPath(); g.arc(l.x, l.y, rd, 0, 7); g.fill(); g.restore();
     });
     V.fillStyle = '#fff';
-    vs.forEach(function (t) { poly(V, los(t.x, t.y, segs, big)); V.fill(); });
+    vs.forEach(function (t) { seenArea(V, t.x, t.y, segs, big, rects); V.fill(); });
     L.setTransform(1, 0, 0, 1, 0, 0); L.globalCompositeOperation = 'destination-in'; L.drawImage(V.canvas, 0, 0);
     var px = L.getImageData(0, 0, d.cw, d.ch).data;
     for (i = 0; i < cells.length; i++) {
@@ -277,6 +305,7 @@
   /*
    * options: ref (the Ref's controls and view), scene() -> the scene, mask() -> the fog mask, tokenSrc(t), mapSrc(scene), canMove(t),
    * speedOf(t), onSelect(t | null), onMove(t, x, y), onPing(x, y), onWall(seg), onErase(wall), onDoor(wall), onPaint(x, y, r, reveal),
+   * onWallEdit(wall) (a wall, door, or window was dragged: its ends are already moved), onWallMenu(wall, event, world point),
    * onRoom(rect), onFogRect(pts, reveal), onMenu(token | null, event, world point), onPin(pin), onDrop(x, y), onFrame() (after each drawn frame: overlays follow the camera)
    *
    * Everything that changes is animated (unless the system asks for reduced motion): tokens glide to where they moved, pop in when they
@@ -396,7 +425,7 @@
   }
   function view(host, o) {
     var cv = document.createElement('canvas'), ctx = cv.getContext('2d'), cam = { x: 0, y: 0, z: 1 }, V = { tool: 'select', player: false, sel: null, ghost: {}, pings: [], size: { w: 0, h: 0 }, dpr: 1,
-      brush: 1, drag: null, hover: null, ruler: null, chain: null, queued: false, sceneId: null, fogImg: null, fogKey: '', lastPing: 0, spaceDown: false, keep: {},
+      brush: 1, wsel: null, drag: null, hover: null, ruler: null, chain: null, queued: false, sceneId: null, fogImg: null, fogKey: '', lastPing: 0, spaceDown: false, keep: {},
       // animation state: shown positions, tweens, what each token looked like last frame, arrivals, departures, effects
       shown: {}, tw: {}, seen: {}, born: {}, leaving: [], fx: {}, condT: {}, alpha: {}, floats: [], rings: [], camTw: null, fogPrev: null, fogT0: 0, sceneT0: 0,
       primed: false, intro: 0, wallSeen: {}, wallT: {}, pinSeen: {}, pinT: {}, selT0: 0, lastT: 0, busy: false };
@@ -445,7 +474,14 @@
     function tokens() { var s = sc(); return s ? s.tokens.filter(function (t) { return !(V.player && t.hidden); }) : []; }
     function target(t) { var g = V.ghost[t.id]; return g && g.until > Date.now() ? g : t; }
     function pos(t) { return V.shown[t.id] || target(t); }
-    function radius(s, t) { return Math.max(.35, tokenSize(t) * .46) * s.g; }
+    function radius(s, t) { return Math.max(.35, (t.fw && t.fh ? Math.min(t.fw, t.fh) : tokenSize(t)) * .46) * s.g; }
+    /* A token's outline, `pad` px out: a circle, or a rounded box for an object with a footprint. */
+    function shape(s, t, r, pad) {
+      ctx.beginPath();
+      if (!(t.fw && t.fh)) { ctx.arc(0, 0, r + pad, 0, 7); return; }
+      var hw = t.fw * s.g / 2 - s.g * .05 + pad, hh = t.fh * s.g / 2 - s.g * .05 + pad;
+      if (ctx.roundRect) ctx.roundRect(-hw, -hh, hw * 2, hh * 2, Math.min(hw, hh) * .2); else ctx.rect(-hw, -hh, hw * 2, hh * 2);
+    }
     /*
      * Once a frame: glide each token toward where it is now (a drag follows the pointer at once), and note what changed since the last
      * frame (hurt, healed, died, a new condition) to start its effect. Tokens that are new pop in (staggered when a scene opens);
@@ -491,7 +527,10 @@
     }
     function hitToken(w) {
       var list = tokens().slice().sort(function (a, b) { return tokenSize(a) - tokenSize(b); }), s = sc();
-      for (var i = 0; i < list.length; i++) { var t = list[i], p = pos(t); if (Math.hypot(p.x - w.x, p.y - w.y) <= Math.max(.35, tokenSize(t) * .5) * s.g) return t; }
+      for (var i = 0; i < list.length; i++) {
+        var t = list[i], p = pos(t);
+        if (t.fw && t.fh ? Math.abs(p.x - w.x) <= t.fw * s.g / 2 && Math.abs(p.y - w.y) <= t.fh * s.g / 2 : Math.hypot(p.x - w.x, p.y - w.y) <= Math.max(.35, tokenSize(t) * .5) * s.g) return t;
+      }
       return null;
     }
     function hitWall(w) {
@@ -502,6 +541,16 @@
       });
       return best;
     }
+    /* The selected wall (the Ref's Select tool), its end under a world point, and every wall end sitting on a point (so a dragged corner keeps its joints). */
+    function selWall() { var r = null; if (V.wsel) (sc().walls || []).forEach(function (k) { if ((k.id || k.a.join() + k.b.join()) === V.wsel) r = k; }); return r; }
+    function endAt(k, w) { var r = 10 / cam.z; return Math.hypot(k.a[0] - w.x, k.a[1] - w.y) <= r ? 'a' : Math.hypot(k.b[0] - w.x, k.b[1] - w.y) <= r ? 'b' : null; }
+    function jointEnds(p) {
+      var r = [];
+      (sc().walls || []).forEach(function (k) { ['a', 'b'].forEach(function (e) { if (Math.hypot(k[e][0] - p[0], k[e][1] - p[1]) <= .5) r.push({ w: k, k: e }); }); });
+      return r;
+    }
+    function wallSnap(s, w, e) { return e.shiftKey ? { x: Math.round(w.x), y: Math.round(w.y) } : snapCorner(s, w.x, w.y, true); }
+    function wallRestore(d) { d.orig.forEach(function (r) { r[0].a = r[1]; r[0].b = r[2]; }); }
     function hitPin(w) {
       var s = sc(), list = (s.pins || []).filter(function (p) { return o.ref && !V.player || p.vis; });
       for (var i = 0; i < list.length; i++) if (Math.hypot(list[i].x - w.x, list[i].y - w.y) < s.g * .4) return list[i];
@@ -553,26 +602,26 @@
       ctx.save(); ctx.translate(p.x + dx, p.y); if (scale !== 1) ctx.scale(scale, scale);
       ctx.globalAlpha = Math.max(0, Math.min(1, alpha));
       if (fx && fx.type === 'die') { ctx.rotate(Math.sin(fk * Math.PI) * .25); }
-      if (t.light && t.light.on !== false && (o.ref && !V.player)) { ctx.beginPath(); ctx.arc(0, 0, r + 3 / cam.z, 0, 7); ctx.strokeStyle = 'rgba(255,200,90,.9)'; ctx.lineWidth = 3 / cam.z; ctx.stroke(); }
+      if (t.light && t.light.on !== false && (o.ref && !V.player)) { shape(s, t, r, 3 / cam.z); ctx.strokeStyle = 'rgba(255,200,90,.9)'; ctx.lineWidth = 3 / cam.z; ctx.stroke(); }
       ctx.save(); ctx.shadowColor = 'rgba(0,0,0,.55)'; ctx.shadowBlur = dragging ? 18 : 7; ctx.shadowOffsetY = dragging ? 6 : 2;
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = kc; ctx.fill(); ctx.restore();
+      shape(s, t, r, 0); ctx.fillStyle = kc; if (t.fw && t.fh) ctx.globalAlpha *= .55; ctx.fill(); ctx.restore();   // a footprint lets the map's picture show through
       var src = o.tokenSrc ? o.tokenSrc(t) : null, im = src ? pic(src, redraw) : null;
-      if (im) { ctx.save(); ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.clip(); ctx.drawImage(im, -r, -r, r * 2, r * 2); ctx.restore(); }
+      if (im) { ctx.save(); shape(s, t, r, 0); ctx.clip(); ctx.drawImage(im, -r, -r, r * 2, r * 2); ctx.restore(); }
       else if (t.kind === 'obj') { ctx.fillStyle = 'rgba(0,0,0,.45)'; ctx.font = 'bold ' + r * 1.1 + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText(t.icon || (t.light ? '✶' : '◆'), 0, 0); }
       else { ctx.fillStyle = '#fff'; ctx.font = 'bold ' + r * .95 + 'px sans-serif'; ctx.textAlign = 'center'; ctx.textBaseline = 'middle'; ctx.fillText((t.name || '?').replace(/^(the|a|an)\s+/i, '').slice(0, 2).toUpperCase(), 0, 0); }
-      if (fx && fx.type === 'hit') { ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = 'rgba(230,40,30,' + (.6 * (1 - fk)) + ')'; ctx.fill(); }
+      if (fx && fx.type === 'hit') { shape(s, t, r, 0); ctx.fillStyle = 'rgba(230,40,30,' + (.6 * (1 - fk)) + ')'; ctx.fill(); }
       if (fx && fx.type === 'heal') {
-        ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.fillStyle = 'rgba(90,220,120,' + (.4 * (1 - fk)) + ')'; ctx.fill();
+        shape(s, t, r, 0); ctx.fillStyle = 'rgba(90,220,120,' + (.4 * (1 - fk)) + ')'; ctx.fill();
         for (var hi = 0; hi < 2; hi++) { var hk = Math.max(0, fk - hi * .2); ctx.beginPath(); ctx.arc(0, 0, r * (1 + easeOut(hk) * .7), 0, 7); ctx.strokeStyle = 'rgba(110,235,140,' + (1 - hk) * .9 + ')'; ctx.lineWidth = 3 / cam.z; ctx.stroke(); }
       }
       if (fx && fx.type === 'die') { ctx.beginPath(); ctx.arc(0, 0, r * (1 + easeOut(fk) * .9), 0, 7); ctx.strokeStyle = 'rgba(255,255,255,' + (1 - fk) * .8 + ')'; ctx.lineWidth = 4 / cam.z; ctx.stroke(); }
-      ctx.beginPath(); ctx.arc(0, 0, r, 0, 7); ctx.lineWidth = Math.max(2.5, r * .1); ctx.strokeStyle = t.hidden ? '#9aa' : kc;
+      shape(s, t, r, 0); ctx.lineWidth = Math.max(2.5, r * .1); ctx.strokeStyle = t.hidden ? '#9aa' : kc;
       if (t.hidden) ctx.setLineDash([r * .3, r * .2]);
       ctx.stroke(); ctx.setLineDash([]);
-      if (t.mine) { ctx.beginPath(); ctx.arc(0, 0, r + 4 / cam.z, 0, 7); ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = 2.5 / cam.z; ctx.stroke(); }
+      if (t.mine) { shape(s, t, r, 4 / cam.z); ctx.strokeStyle = '#ffd25a'; ctx.lineWidth = 2.5 / cam.z; ctx.stroke(); }
       if (V.sel === t.id && !a) {
         var sk = RM ? 1 : Math.min(1, (now - V.selT0) / 320); if (sk < 1) V.busy = true;
-        ctx.beginPath(); ctx.arc(0, 0, r + (6 + (1 - easeOut(sk)) * 16) / cam.z, 0, 7); ctx.strokeStyle = 'rgba(255,255,255,' + (.4 + .6 * sk) + ')'; ctx.lineWidth = 2 / cam.z;
+        shape(s, t, r, (6 + (1 - easeOut(sk)) * 16) / cam.z); ctx.strokeStyle = 'rgba(255,255,255,' + (.4 + .6 * sk) + ')'; ctx.lineWidth = 2 / cam.z;
         ctx.setLineDash([6 / cam.z, 4 / cam.z]); ctx.stroke(); ctx.setLineDash([]);
       }
       if (t.dead) {
@@ -662,6 +711,10 @@
         ctx.strokeStyle = w.t === 'wall' ? '#ff9f43' : w.t === 'window' ? '#6ec1ff' : w.open ? '#5fe08a' : '#ff5d5d';
         if (w.t === 'door' && w.open) ctx.setLineDash([8 / cam.z, 6 / cam.z]);
         ctx.stroke(); ctx.setLineDash([]);
+        if (id === V.wsel) {
+          ctx.save(); ctx.globalAlpha = .45; ctx.lineCap = 'round'; ctx.lineWidth = 14 / cam.z; ctx.strokeStyle = '#ffd25a'; ctx.beginPath(); ctx.moveTo(ax, ay); ctx.lineTo(bx, by); ctx.stroke(); ctx.restore();
+          [[ax, ay], [bx, by]].forEach(function (q) { ctx.beginPath(); ctx.arc(q[0], q[1], 6 / cam.z, 0, 7); ctx.fillStyle = '#fff'; ctx.fill(); ctx.lineWidth = 2 / cam.z; ctx.strokeStyle = '#222'; ctx.stroke(); });
+        }
       });
     }
     function draw() {
@@ -816,6 +869,7 @@
       e.preventDefault();
       if (V.chain) { V.chain = null; redraw(); return; }
       var w = toWorld(e), t = hitToken(w);
+      if (o.ref && !V.player && o.onWallMenu && !(t && movable(t)) && !(V.drag && V.drag.type !== 'pan')) { var wk = hitWall(w); if (wk) { V.wsel = wk.id || wk.a.join() + wk.b.join(); redraw(); o.onWallMenu(wk, e, w); return; } }
       if (!o.onMenu || V.drag && V.drag.type !== 'pan') return;
       o.onMenu(t || null, e, w);
     });
@@ -833,7 +887,7 @@
       var s = sc(); if (!s) return;
       var w = toWorld(e), tool = V.tool;
       if (e.button === 1 || V.spaceDown || e.button === 2) { V.camTw = null; V.drag = { type: 'pan', sx: e.clientX, sy: e.clientY, cx: cam.x, cy: cam.y }; return; }
-      if (e.altKey && o.onPing) { ping(w.x, w.y, true); return; }
+      if (e.altKey && o.onPing && !(o.ref && !V.player && o.onWallEdit && tool === 'select' && selWall() && endAt(selWall(), w))) { ping(w.x, w.y, true); return; }
       if (tool === 'ping') { ping(w.x, w.y, true); return; }
       if (tool === 'measure') { var a = isHex(s) || s.grid === 'none' ? snap(s, w.x, w.y, 1) : snap(s, w.x, w.y, 1); V.ruler = { a: a, b: a }; V.drag = { type: 'ruler' }; redraw(); return; }
       if (o.ref && !V.player) {
@@ -858,6 +912,19 @@
       }
       var t = hitToken(w);
       if (o.onPick && o.onPick(t || null)) { redraw(); return; }   // picking a target: the click is the answer, not a selection or a drag
+      if (o.ref && !V.player && tool === 'select' && o.onWallEdit) {   // a wall, door, or window: a handle of the selected one, else any under the pointer (a token you can move wins)
+        var sw = selWall(), he = sw && endAt(sw, w), wk = he ? sw : t && movable(t) ? null : hitWall(w);
+        if (wk) {
+          if (V.sel) { V.sel = null; if (o.onSelect) o.onSelect(null); }
+          V.wsel = wk.id || wk.a.join() + wk.b.join();
+          var js = he && !e.altKey ? jointEnds(wk[he]) : null, og = js ? js.map(function (j) { return j.w; }) : [wk], orig = [];
+          if (js && !js.some(function (j) { return j.w === wk && j.k === he; })) { js.push({ w: wk, k: he }); og.push(wk); }
+          og.forEach(function (g) { if (!orig.some(function (r) { return r[0] === g; })) orig.push([g, g.a.slice(), g.b.slice()]); });
+          V.drag = { type: 'wall', wall: wk, end: he, start: { x: w.x, y: w.y }, sx: e.clientX, sy: e.clientY, orig: orig, ends: js, moved: false };
+          redraw(); return;
+        }
+      }
+      if (V.wsel) V.wsel = null;
       if (t) {
         if (V.sel !== t.id) V.selT0 = Date.now();
         V.sel = t.id; if (o.onSelect) o.onSelect(t);
@@ -880,11 +947,20 @@
       showTip(d || e.pointerType === 'touch' ? null : hitToken(w), e);
       if (d) {
         if (d.type === 'pan') { cam.x = d.cx - (e.clientX - d.sx) / cam.z; cam.y = d.cy - (e.clientY - d.sy) / cam.z; if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 4) d.click = false; }
-        else if (d.type === 'token') { var pt = snap(s, w.x - d.off.x, w.y - d.off.y, tokenSize(d.token)); d.to = s.grid === 'none' ? { x: w.x - d.off.x, y: w.y - d.off.y } : pt; d.moved = true; V.ghost[d.token.id] = { x: d.to.x, y: d.to.y, until: Date.now() + 60000, drag: true }; }
+        else if (d.type === 'token') { var pt = snapTok(s, w.x - d.off.x, w.y - d.off.y, d.token); d.to = s.grid === 'none' ? { x: w.x - d.off.x, y: w.y - d.off.y } : pt; d.moved = true; V.ghost[d.token.id] = { x: d.to.x, y: d.to.y, until: Date.now() + 60000, drag: true }; }
+        else if (d.type === 'wall') {
+          if (Math.hypot(e.clientX - d.sx, e.clientY - d.sy) > 3) d.moved = true;
+          if (d.moved) {
+            var q;
+            if (d.end) { q = wallSnap(s, w, e); (d.ends || [{ w: d.wall, k: d.end }]).forEach(function (j) { j.w[j.k] = [q.x, q.y]; }); }
+            else { var oa = d.orig[0][1], ob = d.orig[0][2]; q = wallSnap(s, { x: oa[0] + w.x - d.start.x, y: oa[1] + w.y - d.start.y }, e); d.wall.a = [q.x, q.y]; d.wall.b = [ob[0] + q.x - oa[0], ob[1] + q.y - oa[1]]; }
+          }
+        }
         else if (d.type === 'ruler') V.ruler.b = snap(s, w.x, w.y, 1);
         else if (d.type === 'rect') { d.b = d.room ? snapCorner(s, w.x, w.y) : w; }
         else if (d.type === 'paint') o.onPaint(w.x, w.y, V.brush * s.g, d.reveal);
       }
+      if (!d && o.ref && !V.player && V.tool === 'select') { var sw = selWall(); cv.style.cursor = sw && endAt(sw, w) || hitWall(w) ? 'move' : 'default'; }
       redraw();
     });
     function up(e) {
@@ -898,6 +974,11 @@
           if (r === false) delete V.ghost[d.token.id];
         }
         V.drag = null;
+      } else if (d.type === 'wall') {
+        V.drag = null;
+        if (d.moved && d.orig.some(function (r) { return r[0].a[0] !== r[1][0] || r[0].a[1] !== r[1][1] || r[0].b[0] !== r[2][0] || r[0].b[1] !== r[2][1]; })) {
+          if (Math.hypot(d.wall.b[0] - d.wall.a[0], d.wall.b[1] - d.wall.a[1]) < 1) wallRestore(d); else o.onWallEdit(d.wall);
+        }
       } else if (d.type === 'rect') {
         var a = d.a, b = d.b;
         if (Math.abs(a.x - b.x) > 4 && Math.abs(a.y - b.y) > 4) { if (d.room) o.onRoom({ x1: Math.min(a.x, b.x), y1: Math.min(a.y, b.y), x2: Math.max(a.x, b.x), y2: Math.max(a.y, b.y) }); else if (o.onFogRect) o.onFogRect([[a.x, a.y], [b.x, a.y], [b.x, b.y], [a.x, b.y]], d.fog); }
@@ -921,7 +1002,9 @@
     }
     cv.addEventListener('keydown', function (e) {
       if (e.key === ' ') { V.spaceDown = true; e.preventDefault(); }
-      if (e.key === 'Escape') { V.chain = null; V.ruler = null; V.drag = null; redraw(); }
+      if (e.key === 'Escape' && V.drag && V.drag.type === 'wall') { wallRestore(V.drag); V.drag = null; V.wsel = null; e.preventDefault(); redraw(); return; }
+      if ((e.key === 'Delete' || e.key === 'Backspace') && V.wsel && !V.drag && o.ref && !V.player && o.onErase) { var dw = selWall(); V.wsel = null; if (dw) { e.preventDefault(); o.onErase(dw); redraw(); return; } }
+      if (e.key === 'Escape') { if (V.chain || V.ruler || V.drag) e.preventDefault(); V.chain = null; V.ruler = null; V.drag = null; redraw(); }   // a cancelled ruler or drag keeps Escape from closing more
       if (e.key === 'Enter') { V.chain = null; if (V.drag && V.drag.type === 'poly') finishPoly(); redraw(); }
       if (e.key === '+' || e.key === '=') zoomAt(1.25, V.size.w / 2, V.size.h / 2, true);
       if (e.key === '-') zoomAt(.8, V.size.w / 2, V.size.h / 2, true);
@@ -965,7 +1048,7 @@
 
     return {
       canvas: cv, redraw: redraw, fit: fit, centerOn: centerOn, resize: resize, zoom: function (f) { zoomAt(f, V.size.w / 2, V.size.h / 2, true); },
-      tool: function (t) { V.tool = t; V.chain = null; V.ruler = null; if (!/poly/.test(t)) V.drag = null; cv.style.cursor = t === 'select' ? 'default' : t === 'ping' || t === 'measure' ? 'crosshair' : 'cell'; redraw(); },
+      tool: function (t) { V.tool = t; V.wsel = null; V.chain = null; V.ruler = null; if (!/poly/.test(t)) V.drag = null; cv.style.cursor = t === 'select' ? 'default' : t === 'ping' || t === 'measure' ? 'crosshair' : 'cell'; redraw(); },
       getTool: function () { return V.tool; },
       /* A right-click menu over the map (T.menu), kept inside the host so it shows in fullscreen too. */
       menu: function (x, y, items) { T.menu(x, y, items, host); },
@@ -974,10 +1057,11 @@
       isPlayer: function () { return V.player; },
       select: function (id) { if (V.sel !== id) V.selT0 = Date.now(); V.sel = id; redraw(); },
       selected: function () { return V.sel; },
+      selectWall: function (id) { V.wsel = id || null; redraw(); },
       ping: function (x, y, color) { V.pings.push({ x: x, y: y, t0: Date.now(), color: color }); redraw(); },
       sceneChanged: function (id) {
         if (V.sceneId === id) { redraw(); return; }
-        V.sceneId = id; V.fogMask = null; V.fogImg = null; V.fogPrev = null; V.ghost = {}; V.sel = null; V.chain = null; V.ruler = null;
+        V.sceneId = id; V.fogMask = null; V.fogImg = null; V.fogPrev = null; V.ghost = {}; V.sel = null; V.wsel = null; V.chain = null; V.ruler = null;
         V.shown = {}; V.tw = {}; V.seen = {}; V.born = {}; V.leaving = []; V.fx = {}; V.condT = {}; V.alpha = {}; V.floats = []; V.rings = [];
         V.wallSeen = {}; V.wallT = {}; V.pinSeen = {}; V.pinT = {}; V.primed = false; V.intro = 0; V.sceneT0 = RM ? 0 : Date.now();
         fit();
@@ -1199,6 +1283,6 @@
   T.icon = icon; T.REDUCED_MOTION = RM;
   T.SIZES = SIZES; T.KIND_COLOR = KIND_COLOR; T.COND_STYLE = COND_STYLE; T.condStyle = condStyle; T.uid = uid; T.newScene = newScene; T.isHex = isHex; T.hexAt = hexAt; T.hexCenter = hexCenter; T.snap = snap;
   T.dist = dist; T.distText = distText; T.fogDims = fogDims; T.seenOf = seenOf; T.paintSeen = paintSeen; T.paintPoly = paintPoly; T.fillSeen = fillSeen; T.computeVision = computeVision;
-  T.packMask = packMask; T.unpackMask = unpackMask; T.maskAt = maskAt; T.pathBlocked = pathBlocked; T.los = los; T.view = view; T.tokenArt = tokenArt; T.lightsOf = lightsOf;
+  T.packMask = packMask; T.unpackMask = unpackMask; T.maskAt = maskAt; T.pathBlocked = pathBlocked; T.snapTok = snapTok; T.snapCorner = snapCorner; T.footprint = footprint; T.los = los; T.view = view; T.tokenArt = tokenArt; T.lightsOf = lightsOf;
   T.viewers = viewers;
 })();
